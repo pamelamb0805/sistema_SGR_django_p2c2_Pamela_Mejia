@@ -1,0 +1,165 @@
+{% load static ui_extras %}<!DOCTYPE html>
+<html lang="es-CL">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>{% block title %}{% if titulo %}{{ titulo }} · {% endif %}SGR{% endblock %}</title>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="{% static 'css/sgr.css' %}">
+  {% block extra_css %}{% endblock %}
+</head>
+<body class="{% if user.is_authenticated %}sgr-app{% else %}sgr-guest{% endif %}">
+<a class="visually-hidden-focusable position-absolute p-2 bg-white" href="#contenido">Saltar al contenido</a>
+
+{% if user.is_authenticated %}
+{% with ns=request.resolver_match.app_name name=request.resolver_match.url_name %}
+
+{# ------------------------------------------------------------- Barra superior #}
+<header class="navbar navbar-dark sticky-top sgr-topbar flex-nowrap p-0 shadow-sm">
+  <div class="d-flex align-items-center">
+    <button class="navbar-toggler d-lg-none border-0 ms-2" type="button" data-bs-toggle="offcanvas"
+            data-bs-target="#sgr-sidebar" aria-controls="sgr-sidebar" aria-label="Abrir menú">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <a class="navbar-brand px-3 mb-0 fw-semibold" href="{% url 'dashboard' %}">
+      <i class="bi bi-bar-chart-steps me-1" aria-hidden="true"></i> SGR
+      <small class="d-none d-md-inline fw-normal opacity-75">Sistema de Gestión de Resultados</small>
+    </a>
+  </div>
+
+  <div class="dropdown ms-auto me-2 me-lg-3">
+    <button class="btn btn-sm text-white d-flex align-items-center gap-2" type="button"
+            data-bs-toggle="dropdown" aria-expanded="false" aria-label="Menú de usuario">
+      <i class="bi bi-person-circle fs-5" aria-hidden="true"></i>
+      <span class="d-none d-sm-inline text-start lh-sm">
+        <span class="d-block small fw-semibold">{{ sgr_funcionario.nombre|default:user.username }}</span>
+        <span class="d-block small opacity-75">{{ sgr_rol_principal|default:"Sin rol" }}</span>
+      </span>
+    </button>
+    <ul class="dropdown-menu dropdown-menu-end shadow">
+      <li class="px-3 py-2 small text-body-secondary">
+        <div><i class="bi bi-person-badge me-1" aria-hidden="true"></i>{{ sgr_funcionario.nombre|default:user.username }}</div>
+        {% if sgr_funcionario %}<div><i class="bi bi-briefcase me-1" aria-hidden="true"></i>{{ sgr_funcionario.cargo }}</div>{% endif %}
+        {% if sgr_delegacion %}<div><i class="bi bi-diagram-3 me-1" aria-hidden="true"></i>{{ sgr_delegacion }}</div>{% endif %}
+        {% if sgr_roles %}<div class="mt-1">{% for r in sgr_roles %}<span class="badge text-bg-secondary me-1">{{ r }}</span>{% endfor %}</div>{% endif %}
+      </li>
+      <li><hr class="dropdown-divider"></li>
+      <li>
+        <form method="post" action="{% url 'logout' %}">
+          {% csrf_token %}
+          <button type="submit" class="dropdown-item"><i class="bi bi-box-arrow-right me-2" aria-hidden="true"></i>Cerrar sesión</button>
+        </form>
+      </li>
+    </ul>
+  </div>
+</header>
+
+<div class="container-fluid">
+  <div class="row">
+
+    {# --------------------------------------------------------- Menú lateral #}
+    <nav id="sgr-sidebar" class="offcanvas-lg offcanvas-start col-lg-2 sgr-sidebar p-0" tabindex="-1"
+         aria-label="Menú principal">
+      <div class="offcanvas-header d-lg-none">
+        <h2 class="offcanvas-title h6 mb-0">Menú</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#sgr-sidebar" aria-label="Cerrar"></button>
+      </div>
+      <div class="offcanvas-body d-block p-0">
+        <ul class="nav flex-column pt-2 pb-4">
+
+          <li class="nav-item"><a class="nav-link {% if name == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}">
+            <i class="bi bi-speedometer2" aria-hidden="true"></i> Inicio</a></li>
+          {% if sgr_funcionario %}
+          <li class="nav-item"><a class="nav-link {% if name == 'mi_desempeno' %}active{% endif %}" href="{% url 'measurement:mi_desempeno' %}">
+            <i class="bi bi-person-check" aria-hidden="true"></i> Mi desempeño</a></li>
+          {% endif %}
+
+          <li class="sgr-nav-heading">Operación</li>
+          <li class="nav-item"><a class="nav-link {% if ns == 'activities' and 'validacion' not in name %}active{% endif %}" href="{% url 'activities:actividad_list' %}">
+            <i class="bi bi-journal-check" aria-hidden="true"></i> Actividades</a></li>
+          {% if sgr_puede_validar %}
+          <li class="nav-item"><a class="nav-link {% if 'validacion' in name %}active{% endif %}" href="{% url 'activities:validacion_bandeja' %}">
+            <i class="bi bi-patch-check" aria-hidden="true"></i> Validación de evidencias</a></li>
+          {% endif %}
+          <li class="nav-item"><a class="nav-link {% if ns == 'agenda' and name != 'resumen' %}active{% endif %}" href="{% url 'agenda:compromiso_list' %}">
+            <i class="bi bi-calendar-event" aria-hidden="true"></i> Agenda colectiva</a></li>
+          <li class="nav-item"><a class="nav-link {% if ns == 'agenda' and name == 'resumen' %}active{% endif %}" href="{% url 'agenda:resumen' %}">
+            <i class="bi bi-pie-chart" aria-hidden="true"></i> Resumen de agenda</a></li>
+          {% if sgr_puede_registrar or sgr_es_transversal %}
+          <li class="nav-item"><a class="nav-link {% if ns == 'social' and name != 'estadisticas' %}active{% endif %}" href="{% url 'social:caso_list' %}">
+            <i class="bi bi-people" aria-hidden="true"></i> Atención social</a></li>
+          <li class="nav-item"><a class="nav-link {% if ns == 'social' and name == 'estadisticas' %}active{% endif %}" href="{% url 'social:estadisticas' %}">
+            <i class="bi bi-bar-chart" aria-hidden="true"></i> Estadísticas sociales</a></li>
+          {% endif %}
+
+          {% if sgr_puede_supervisar %}
+          <li class="sgr-nav-heading">Medición</li>
+          <li class="nav-item"><a class="nav-link {% if name == 'semaforo' %}active{% endif %}" href="{% url 'measurement:semaforo' %}">
+            <i class="bi bi-stoplights" aria-hidden="true"></i> Semáforo de delegación</a></li>
+          <li class="nav-item"><a class="nav-link {% if 'meta_' in name %}active{% endif %}" href="{% url 'measurement:meta_list' %}">
+            <i class="bi bi-bullseye" aria-hidden="true"></i> Metas</a></li>
+          <li class="nav-item"><a class="nav-link {% if 'periodo_' in name %}active{% endif %}" href="{% url 'measurement:periodo_list' %}">
+            <i class="bi bi-calendar-range" aria-hidden="true"></i> Períodos</a></li>
+          <li class="nav-item"><a class="nav-link {% if 'ajuste_' in name %}active{% endif %}" href="{% url 'measurement:ajuste_list' %}">
+            <i class="bi bi-plus-slash-minus" aria-hidden="true"></i> Incentivos y penalizaciones</a></li>
+
+          <li class="sgr-nav-heading">Organización</li>
+          <li class="nav-item"><a class="nav-link {% if 'funcionario_' in name %}active{% endif %}" href="{% url 'organizations:funcionario_list' %}">
+            <i class="bi bi-person-vcard" aria-hidden="true"></i> Funcionarios</a></li>
+          <li class="nav-item"><a class="nav-link {% if 'delegacion_' in name %}active{% endif %}" href="{% url 'organizations:delegacion_list' %}">
+            <i class="bi bi-diagram-3" aria-hidden="true"></i> Delegaciones</a></li>
+          <li class="nav-item"><a class="nav-link {% if 'cargo_' in name or 'item_' in name %}active{% endif %}" href="{% url 'organizations:cargo_list' %}">
+            <i class="bi bi-briefcase" aria-hidden="true"></i> Cargos y funciones</a></li>
+          <li class="nav-item"><a class="nav-link {% if 'rol_' in name %}active{% endif %}" href="{% url 'organizations:rol_list' %}">
+            <i class="bi bi-shield-lock" aria-hidden="true"></i> Roles</a></li>
+          <li class="nav-item"><a class="nav-link {% if ns == 'catalogs' %}active{% endif %}" href="{% url 'catalogs:catalogo_list' %}">
+            <i class="bi bi-list-ul" aria-hidden="true"></i> Catálogos</a></li>
+          {% url 'audit:auditoria_list' as url_auditoria %}
+          {% if url_auditoria %}
+          <li class="nav-item"><a class="nav-link {% if ns == 'audit' %}active{% endif %}" href="{{ url_auditoria }}">
+            <i class="bi bi-clipboard-data" aria-hidden="true"></i> Auditoría</a></li>
+          {% endif %}
+          {% endif %}
+
+        </ul>
+      </div>
+    </nav>
+{% endwith %}
+
+    {# ----------------------------------------------------------- Contenido #}
+    <main id="contenido" class="col-lg-10 ms-sm-auto px-3 px-md-4 py-3" tabindex="-1">
+      {% block breadcrumbs %}{% endblock %}
+
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 pb-2 mb-3 border-bottom">
+        <h1 class="h3 mb-0">{% block page_title %}{{ titulo|default:"" }}{% endblock %}</h1>
+        <div class="btn-toolbar gap-2">{% block page_actions %}{% endblock %}</div>
+      </div>
+{% else %}
+{# Páginas públicas (login): sin menú ni barra de usuario #}
+<main id="contenido" class="container py-5" tabindex="-1">
+{% endif %}
+
+{% block content %}{% endblock %}
+
+{% if user.is_authenticated %}
+      <footer class="text-body-secondary small border-top mt-5 pt-3">
+        SGR · Delegaciones municipales · Proyecto académico INACAP — solo datos ficticios.
+      </footer>
+    </main>
+  </div>
+</div>
+{% else %}
+</main>
+{% endif %}
+
+{% include "partials/_messages.html" %}
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.10.8/dist/sweetalert2.all.min.js"></script>
+<script src="{% static 'js/alerts.js' %}"></script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

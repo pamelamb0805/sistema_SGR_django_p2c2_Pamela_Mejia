@@ -1,0 +1,49 @@
+{% comment %}
+  Paginación Bootstrap 5 que conserva los filtros de la búsqueda (?q=...&estado=...).
+  Uso (en una ListView con paginate_by):  {% include "partials/_pagination.html" %}
+  Opcional:  with page_obj=otra_pagina
+{% endcomment %}
+{% load ui_extras %}
+{% if page_obj %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3">
+  <div class="small text-body-secondary" aria-live="polite">
+    {% if page_obj.paginator.count %}
+      Mostrando {{ page_obj.start_index }}–{{ page_obj.end_index }} de {{ page_obj.paginator.count }} registro{{ page_obj.paginator.count|pluralize }}
+    {% else %}
+      Sin registros para los filtros seleccionados
+    {% endif %}
+  </div>
+
+  {% if page_obj.paginator.num_pages > 1 %}
+  <nav aria-label="Paginación">
+    <ul class="pagination pagination-sm mb-0">
+      {% if page_obj.has_previous %}
+        <li class="page-item"><a class="page-link" href="{% url_pagina 1 %}" aria-label="Primera página"><span aria-hidden="true">«</span></a></li>
+        <li class="page-item"><a class="page-link" href="{% url_pagina page_obj.previous_page_number %}" rel="prev">Anterior</a></li>
+      {% else %}
+        <li class="page-item disabled"><span class="page-link" aria-hidden="true">«</span></li>
+        <li class="page-item disabled"><span class="page-link">Anterior</span></li>
+      {% endif %}
+
+      {% for p in page_obj|rango_paginas %}
+        {% if p == page_obj.number %}
+          <li class="page-item active" aria-current="page"><span class="page-link">{{ p }}</span></li>
+        {% elif p == page_obj.paginator.ELLIPSIS %}
+          <li class="page-item disabled"><span class="page-link">{{ p }}</span></li>
+        {% else %}
+          <li class="page-item"><a class="page-link" href="{% url_pagina p %}">{{ p }}</a></li>
+        {% endif %}
+      {% endfor %}
+
+      {% if page_obj.has_next %}
+        <li class="page-item"><a class="page-link" href="{% url_pagina page_obj.next_page_number %}" rel="next">Siguiente</a></li>
+        <li class="page-item"><a class="page-link" href="{% url_pagina page_obj.paginator.num_pages %}" aria-label="Última página"><span aria-hidden="true">»</span></a></li>
+      {% else %}
+        <li class="page-item disabled"><span class="page-link">Siguiente</span></li>
+        <li class="page-item disabled"><span class="page-link" aria-hidden="true">»</span></li>
+      {% endif %}
+    </ul>
+  </nav>
+  {% endif %}
+</div>
+{% endif %}

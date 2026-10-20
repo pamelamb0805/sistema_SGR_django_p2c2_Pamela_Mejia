@@ -1,0 +1,11 @@
+{% comment %}
+  Errores generales del formulario (los que no pertenecen a un campo), p. ej. reglas de negocio:
+  «La suma de ponderaciones superaría 100 %». Colocar al inicio del <form>.
+  Uso:  {% include "partials/_form_errors.html" with form=form %}
+{% endcomment %}
+{% if form.non_field_errors %}
+<div class="alert alert-danger d-flex align-items-start gap-2" role="alert">
+  <i class="bi bi-exclamation-octagon-fill" aria-hidden="true"></i>
+  <div>{% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}</div>
+</div>
+{% endif %}

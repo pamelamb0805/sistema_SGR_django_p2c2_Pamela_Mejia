@@ -1,0 +1,68 @@
+/* SGR · estilos propios sobre Bootstrap 5 */
+:root {
+  --sgr-primary: #0b4f6c;
+  --sgr-primary-dark: #083a50;
+  --sgr-sidebar-bg: #f4f7f9;
+  --sgr-verde: #198754;
+  --sgr-ambar: #f2a900;
+  --sgr-rojo: #dc3545;
+}
+
+body.sgr-app { background: #f8f9fa; }
+body.sgr-guest { background: linear-gradient(135deg, #e8f1f5 0%, #f8f9fa 100%); min-height: 100vh; }
+
+.sgr-topbar { background: var(--sgr-primary); min-height: 3.25rem; }
+.sgr-topbar .navbar-brand { color: #fff; }
+
+/* Menú lateral */
+.sgr-sidebar { background: var(--sgr-sidebar-bg); border-right: 1px solid #dee2e6; }
+@media (min-width: 992px) {
+  .sgr-sidebar { position: sticky; top: 3.25rem; height: calc(100vh - 3.25rem); overflow-y: auto; }
+}
+.sgr-sidebar .nav-link { color: #343a40; padding: .5rem 1rem; display: flex; align-items: center; gap: .6rem; border-left: 3px solid transparent; }
+.sgr-sidebar .nav-link:hover { background: #e6edf1; }
+.sgr-sidebar .nav-link.active { color: var(--sgr-primary-dark); font-weight: 600; background: #dbe8ee; border-left-color: var(--sgr-primary); }
+.sgr-sidebar .nav-link .bi { font-size: 1.05rem; width: 1.25rem; text-align: center; }
+.sgr-nav-heading { list-style: none; padding: 1rem 1rem .25rem; font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #6c757d; }
+
+/* Contenido */
+main:focus { outline: none; }
+.card { border-color: #e3e8ec; }
+.table > :not(caption) > * > * { vertical-align: middle; }
+.table-responsive { border-radius: .5rem; }
+
+/* Semáforo (RN-008) */
+.sgr-dot { display: inline-block; width: .85rem; height: .85rem; border-radius: 50%; vertical-align: -1px; margin-right: .35rem; }
+.sgr-dot.verde { background: var(--sgr-verde); }
+.sgr-dot.ambar { background: var(--sgr-ambar); }
+.sgr-dot.rojo  { background: var(--sgr-rojo); }
+
+/* Indicadores */
+.sgr-kpi { border-left: 4px solid var(--sgr-primary); }
+.sgr-kpi .valor { font-size: 1.75rem; font-weight: 700; line-height: 1.1; }
+.sgr-vencido { background-color: #fdecee !important; }
+
+/* Línea de tiempo del historial */
+.sgr-timeline { list-style: none; padding-left: 0; border-left: 2px solid #ced4da; margin-left: .5rem; }
+.sgr-timeline > li { position: relative; padding: 0 0 1rem 1.25rem; }
+.sgr-timeline > li::before { content: ""; position: absolute; left: -.45rem; top: .35rem; width: .8rem; height: .8rem; border-radius: 50%; background: var(--sgr-primary); }
+
+/* Foco visible (accesibilidad) */
+:focus-visible { outline: 3px solid #86b7fe; outline-offset: 2px; }
+
+@media print {
+  .sgr-topbar, .sgr-sidebar, footer, .btn-toolbar, .no-print { display: none !important; }
+  main { width: 100% !important; margin: 0 !important; }
+}
+
+/* Login */
+.sgr-login-logo { font-size: 3rem; color: var(--sgr-primary); }
+.sgr-login-card { border-top: 4px solid var(--sgr-primary); }
+
+/* Tarjetas de acceso rápido y contadores */
+.sgr-tarjeta { transition: transform .12s ease, box-shadow .12s ease; }
+.sgr-tarjeta:hover, .sgr-kpi:hover { transform: translateY(-2px); box-shadow: 0 .5rem 1rem rgba(0,0,0,.12) !important; }
+
+/* Barra de avance con marca de la meta esperada al día */
+.sgr-progreso { height: 1.5rem; overflow: visible; }
+.sgr-meta-marca { position: absolute; top: -4px; bottom: -4px; width: 3px; background: #212529; border-radius: 2px; transform: translateX(-1px); }

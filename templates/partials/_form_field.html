@@ -1,0 +1,33 @@
+{% comment %}
+  Campo de formulario en Bootstrap 5 (etiqueta, ayuda, errores y accesibilidad).
+  Uso:  {% include "partials/_form_field.html" with field=form.nombre %}
+  Opcionales:  label="Otra etiqueta"   col="col-md-6"  (envuelve el campo en una columna de grid)
+{% endcomment %}
+{% load ui_extras %}
+{% if field.is_hidden %}
+  {{ field }}
+{% else %}
+  {% with tipo=field|tipo_widget %}
+  <div class="mb-3 {{ col }}">
+    {% if tipo == "checkbox" %}
+      <div class="form-check">
+        {{ field|bs_campo }}
+        <label class="form-check-label" for="{{ field.id_for_label }}">{{ label|default:field.label }}</label>
+      </div>
+    {% else %}
+      <label class="form-label" for="{{ field.id_for_label }}">
+        {{ label|default:field.label }}
+        {% if field.field.required %}<span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden">(obligatorio)</span>{% endif %}
+      </label>
+      {% if tipo == "radio" %}{{ field }}{% else %}{{ field|bs_campo }}{% endif %}
+    {% endif %}
+
+    {% if field.help_text %}<div id="{{ field.auto_id }}_ayuda" class="form-text">{{ field.help_text }}</div>{% endif %}
+    {% if field.errors %}
+    <div id="{{ field.auto_id }}_errores" class="invalid-feedback d-block" role="alert">
+      {% for error in field.errors %}<div>{{ error }}</div>{% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endwith %}
+{% endif %}

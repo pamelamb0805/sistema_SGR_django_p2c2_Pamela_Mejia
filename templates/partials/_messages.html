@@ -1,0 +1,13 @@
+{# Mensajes de Django -> SweetAlert2 (los lee static/js/alerts.js). Con JS desactivado se ven como alertas de Bootstrap. #}
+{% if messages %}
+<div id="sgr-messages" hidden>
+  {% for message in messages %}<div data-sgr-message data-tag="{{ message.tags }}">{{ message }}</div>{% endfor %}
+</div>
+<noscript>
+  <div class="container mt-3">
+    {% for message in messages %}
+    <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags|default:'info' }}{% endif %}" role="alert">{{ message }}</div>
+    {% endfor %}
+  </div>
+</noscript>
+{% endif %}

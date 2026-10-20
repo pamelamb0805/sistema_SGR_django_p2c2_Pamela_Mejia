@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% load ui_extras %}
+
+{% block title %}Ingresar · SGR{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-12 col-sm-10 col-md-7 col-lg-5 col-xl-4">
+
+    <div class="text-center mb-4">
+      <i class="bi bi-bar-chart-steps sgr-login-logo" aria-hidden="true"></i>
+      <h1 class="h3 mt-2 mb-1">Sistema de Gestión de Resultados</h1>
+      <p class="text-body-secondary mb-0">Delegaciones municipales · La Serena</p>
+    </div>
+
+    <div class="card shadow-sm sgr-login-card">
+      <div class="card-body p-4">
+        <h2 class="h5 mb-3">Iniciar sesión</h2>
+
+        {# Los errores de credenciales se muestran con SweetAlert (los envía la vista); aquí van los errores por campo #}
+        <form method="post" action="{% url 'login' %}" novalidate>
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ next }}">
+
+          {% include "partials/_form_field.html" with field=form.username label="Usuario" %}
+
+          <div class="mb-3">
+            <label class="form-label" for="{{ form.password.id_for_label }}">Contraseña</label>
+            <div class="input-group has-validation">
+              {{ form.password|bs_campo }}
+              <button class="btn btn-outline-secondary" type="button" id="btn-ver-clave"
+                      aria-label="Mostrar contraseña" aria-pressed="false" title="Mostrar u ocultar contraseña">
+                <i class="bi bi-eye" aria-hidden="true"></i>
+              </button>
+              {% for error in form.password.errors %}
+              <div class="invalid-feedback">{{ error }}</div>
+              {% endfor %}
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary w-100">
+            <i class="bi bi-box-arrow-in-right me-1" aria-hidden="true"></i> Ingresar
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <p class="text-center text-body-secondary small mt-3 mb-0">
+      ¿No tiene acceso o olvidó su contraseña? Solicítelo al administrador del sistema.
+    </p>
+    <p class="text-center text-body-secondary small">Proyecto académico INACAP · solo datos ficticios.</p>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  (function () {
+    var boton = document.getElementById("btn-ver-clave");
+    var campo = document.getElementById("{{ form.password.id_for_label }}");
+    if (!boton || !campo) { return; }
+    boton.addEventListener("click", function () {
+      var oculto = campo.type === "password";
+      campo.type = oculto ? "text" : "password";
+      boton.setAttribute("aria-pressed", oculto ? "true" : "false");
+      boton.setAttribute("aria-label", oculto ? "Ocultar contraseña" : "Mostrar contraseña");
+      boton.firstElementChild.className = oculto ? "bi bi-eye-slash" : "bi bi-eye";
+    });
+  })();
+</script>
+{% endblock %}
