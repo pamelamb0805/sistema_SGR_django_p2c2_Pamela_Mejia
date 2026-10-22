@@ -49,7 +49,7 @@ class DelegacionListView(LecturaMixin, AmbitoDelegacionMixin, ModoMixin, ListVie
         qs = super().get_queryset()
         q, estado = self.request.GET.get("q", "").strip(), self.request.GET.get("estado", "")
         if q:
-            qs = qs.filter(Q(nombre__icontains=q) | Q(ambito__icontains=q))
+            qs = qs.filter(Q(codigo__icontains=q) | Q(nombre__icontains=q) | Q(direccion__icontains=q) | Q(comuna__icontains=q) | Q(ambito__icontains=q))
         if estado:
             qs = qs.filter(estado=estado)
         return qs
@@ -57,7 +57,7 @@ class DelegacionListView(LecturaMixin, AmbitoDelegacionMixin, ModoMixin, ListVie
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
         contexto.update(q=self.request.GET.get("q", ""), estado_sel=self.request.GET.get("estado", ""),
-                        estados=Delegacion.ESTADOS)
+                        total_resultados=self.get_queryset().count(), estados=Delegacion.ESTADOS)
         return contexto
 
 

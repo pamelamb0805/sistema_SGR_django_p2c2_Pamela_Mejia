@@ -8,6 +8,10 @@ Cumple RF-004 y HU-27:
   (las FK desde Actividad y AtencionSocial usarán on_delete=PROTECT).
 """
 from django.core.exceptions import ValidationError
+import uuid
+
+def generar_codigo_catalogo():
+    return "CAT-" + uuid.uuid4().hex[:16].upper()
 from django.db import models
 
 
@@ -47,8 +51,15 @@ class Catalogo(models.Model):
     AREA_GENERAL = "General"   # aplica a todas las áreas
 
     id_catalogo = models.AutoField(primary_key=True)
+    codigo = models.CharField(max_length=30, unique=True, default=generar_codigo_catalogo)
     tipo_catalogo = models.CharField(max_length=15, choices=TIPOS)
     nombre = models.CharField(max_length=150)
+    descripcion = models.TextField(blank=True)
+    tipo_atencion_padre = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.PROTECT,
+        related_name="subatenciones", limit_choices_to={"tipo_catalogo": TIPO_ATENCION},
+        help_text="Solo se completa para una Subatención; indica su Tipo de Atención."
+    )
     area = models.CharField(max_length=100, default=AREA_GENERAL)
     estado = models.CharField(max_length=10, choices=ESTADOS, default=ESTADO_ACTIVO)
 
@@ -73,6 +84,12 @@ class Catalogo(models.Model):
     def clean(self):
         self.nombre = (self.nombre or "").strip()
         self.area = (self.area or "").strip()
+        if self.tipo_catalogo == self.TIPO_SUBATENCION and not self.tipo_atencion_padre_id:
+            raise ValidationError({"tipo_atencion_padre": "Seleccione el Tipo de Atención al que pertenece esta subatención."})
+        if self.tipo_catalogo != self.TIPO_SUBATENCION and self.tipo_atencion_padre_id:
+            raise ValidationError({"tipo_atencion_padre": "Solo las subatenciones pueden tener un Tipo de Atención padre."})
+        if self.tipo_atencion_padre_id and self.tipo_atencion_padre.tipo_catalogo != self.TIPO_ATENCION:
+            raise ValidationError({"tipo_atencion_padre": "La relación debe apuntar a un Tipo de Atención."})
         if self.nombre and self.area and self.tipo_catalogo:
             duplicado = Catalogo.objects.filter(
                 tipo_catalogo=self.tipo_catalogo, area__iexact=self.area, nombre__iexact=self.nombre,

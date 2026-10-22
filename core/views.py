@@ -10,6 +10,8 @@ from django.db.models import Count
 from django.shortcuts import render
 from django.utils import timezone
 
+from .auth_forms import SGRAuthenticationForm, SolicitarCodigoForm, VerificarCodigoForm, NuevaClaveForm
+
 from .mixins import (
     ROL_VERIFICADOR,
     ROLES_SUPERVISION,
@@ -133,3 +135,109 @@ def dashboard(request):
     return render(request, "core/dashboard.html", {
         "datos": datos, "hoy": hoy, "sin_funcionario": funcionario is None,
     })
+
+
+# Recuperación con código de un solo uso. El estado temporal vive en la sesión;
+# en producción se recomienda una caché compartida y SMTP configurado.
+CODIGO_VIGENCIA_SEGUNDOS = 600
+CODIGO_REENVIO_SEGUNDOS = 45
+CODIGO_MAX_INTENTOS = 5
+
+
+def recuperar_clave(request):
+    from django.contrib import messages
+    from django.shortcuts import render
+    from django.conf import settings
+    from .auth_forms import SolicitarCodigoForm
+    if request.method == "POST":
+        form = SolicitarCodigoForm(request.POST)
+        if form.is_valid():
+            email = form.cleaned_data["email"].strip().lower()
+            ahora = int(time.time())
+            estado = request.session.get("recuperacion_sgr", {})
+            if estado.get("email") == email and ahora - int(estado.get("emitido", 0)) < CODIGO_REENVIO_SEGUNDOS:
+                messages.warning(request, "Si la cuenta existe, recibirás instrucciones. Espera antes de solicitar otro código.")
+                return redirect("recuperar_clave")
+            # Respuesta neutra para no revelar si una cuenta existe.
+            user = get_user_model().objects.filter(funcionario__email__iexact=email).select_related("funcionario").first()
+            if user and user.is_active and user.funcionario_id and user.funcionario.email:
+                codigo = f"{secrets.randbelow(1000000):06d}"
+                estado = {"email": email, "user_id": user.pk,
+                          "hash": hashlib.sha256(codigo.encode()).hexdigest(),
+                          "emitido": ahora, "intentos": 0, "verificado": False}
+                request.session["recuperacion_sgr"] = estado
+                try:
+                    send_mail("Código de recuperación SGR",
+                              f"Tu código de recuperación es {codigo}. Vence en 10 minutos. Si no lo solicitaste, ignora este correo.",
+                              getattr(settings, "DEFAULT_FROM_EMAIL", "sgr@localhost"), [email], fail_silently=False)
+                except Exception:
+                    # No dejar un flujo aparentemente exitoso si el envío falla.
+                    request.session.pop("recuperacion_sgr", None)
+                    messages.error(request, "No se pudo enviar el correo. Verifica la configuración de correo e inténtalo nuevamente.")
+                    return render(request, "registration/recuperar_clave.html", {"form": form})
+            messages.info(request, "Si el correo está asociado a una cuenta activa, recibirás un código de recuperación.")
+            return redirect("validar_codigo")
+    else:
+        form = SolicitarCodigoForm()
+    return render(request, "registration/recuperar_clave.html", {"form": form})
+
+
+def validar_codigo(request):
+    from django.contrib import messages
+    from django.shortcuts import render
+    estado = request.session.get("recuperacion_sgr")
+    if not estado:
+        messages.info(request, "Solicita primero un código de recuperación.")
+        return redirect("recuperar_clave")
+    if int(time.time()) - int(estado.get("emitido", 0)) > CODIGO_VIGENCIA_SEGUNDOS:
+        request.session.pop("recuperacion_sgr", None)
+        messages.error(request, "El código venció. Solicita uno nuevo.")
+        return redirect("recuperar_clave")
+    if request.method == "POST":
+        form = VerificarCodigoForm(request.POST)
+        if form.is_valid():
+            estado["intentos"] = int(estado.get("intentos", 0)) + 1
+            recibido = hashlib.sha256(form.cleaned_data["codigo"].encode()).hexdigest()
+            if secrets.compare_digest(recibido, estado.get("hash", "")):
+                estado["verificado"] = True
+                request.session["recuperacion_sgr"] = estado
+                return redirect("nueva_clave")
+            if estado["intentos"] >= CODIGO_MAX_INTENTOS:
+                request.session.pop("recuperacion_sgr", None)
+                messages.error(request, "Se superó el máximo de intentos. Solicita un código nuevo.")
+                return redirect("recuperar_clave")
+            request.session["recuperacion_sgr"] = estado
+            messages.error(request, "Código incorrecto.")
+    else:
+        form = VerificarCodigoForm()
+    return render(request, "registration/validar_codigo.html", {"form": form})
+
+
+def nueva_clave(request):
+    from django.contrib import messages
+    from django.shortcuts import render
+    estado = request.session.get("recuperacion_sgr")
+    if not estado or not estado.get("verificado"):
+        messages.error(request, "Primero debes validar el código enviado a tu correo.")
+        return redirect("recuperar_clave")
+    if int(time.time()) - int(estado.get("emitido", 0)) > CODIGO_VIGENCIA_SEGUNDOS:
+        request.session.pop("recuperacion_sgr", None)
+        messages.error(request, "El código venció. Solicita uno nuevo.")
+        return redirect("recuperar_clave")
+    User = get_user_model()
+    user = User.objects.filter(pk=estado.get("user_id"), is_active=True).first()
+    if not user:
+        request.session.pop("recuperacion_sgr", None)
+        messages.error(request, "No se pudo completar la recuperación. Solicita un nuevo código.")
+        return redirect("recuperar_clave")
+    if request.method == "POST":
+        form = NuevaClaveForm(request.POST, user=user)
+        if form.is_valid():
+            user.set_password(form.cleaned_data["password1"])
+            user.save(update_fields=["password"])
+            request.session.pop("recuperacion_sgr", None)
+            messages.success(request, "Contraseña actualizada. Ya puedes iniciar sesión.")
+            return redirect("login")
+    else:
+        form = NuevaClaveForm(user=user)
+    return render(request, "registration/nueva_clave.html", {"form": form})

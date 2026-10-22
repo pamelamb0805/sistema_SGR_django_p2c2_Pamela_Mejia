@@ -11,7 +11,7 @@ from .models import Cargo, Delegacion, Funcionario, ItemMedible, Rol
 class DelegacionForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
         model = Delegacion
-        fields = ["nombre", "ambito", "estado"]
+        fields = ["codigo", "nombre", "direccion", "comuna", "ambito", "estado"]
 
     def clean_nombre(self):
         return self.cleaned_data["nombre"].strip()
@@ -30,13 +30,36 @@ class CargoForm(BootstrapFormMixin, forms.ModelForm):
 class ItemMedibleForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
         model = ItemMedible
-        fields = ["nombre_item", "tipo", "vigencia"]
+        fields = ["codigo", "nombre_item", "descripcion", "tipo", "vigencia"]
 
 
 class RolForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
         model = Rol
-        fields = ["nombre_rol", "descripcion"]
+        fields = ["nombre_rol", "descripcion", "permisos", "alcance_autorizado"]
+
+    permisos = forms.MultipleChoiceField(choices=[
+        ("usuarios.ver", "Ver usuarios"), ("usuarios.editar", "Administrar usuarios"),
+        ("catalogos.ver", "Ver catálogos"), ("catalogos.editar", "Administrar catálogos"),
+        ("atenciones.ver", "Ver atenciones"), ("atenciones.registrar", "Registrar atenciones"),
+        ("reportes.ver", "Ver reportes"), ("delegaciones.editar", "Administrar delegaciones")
+    ], required=False, widget=forms.CheckboxSelectMultiple)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.pk:
+            self.initial["permisos"] = self.instance.permisos or []
+
+    def clean_permisos(self):
+        return self.cleaned_data.get("permisos", [])
+
+    def save(self, commit=True):
+        obj = super().save(commit=False)
+        obj.permisos = self.cleaned_data.get("permisos", [])
+        if commit:
+            obj.save()
+            self.save_m2m()
+        return obj
 
 
 class FuncionarioForm(BootstrapFormMixin, forms.ModelForm):

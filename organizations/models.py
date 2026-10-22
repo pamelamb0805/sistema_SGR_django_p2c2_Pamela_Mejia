@@ -11,6 +11,13 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
+import uuid
+
+def generar_codigo_delegacion():
+    return uuid.uuid4().hex[:20].upper()
+
+def generar_codigo_item():
+    return "IT-" + uuid.uuid4().hex[:16].upper()
 
 
 # ---------------------------------------------------------------------------
@@ -22,10 +29,14 @@ class Delegacion(models.Model):
     ESTADOS = [(ESTADO_ACTIVA, "Activa"), (ESTADO_INACTIVA, "Inactiva")]
 
     id_delegacion = models.AutoField(primary_key=True)
+    codigo = models.CharField(max_length=20, unique=True, default=generar_codigo_delegacion,
+        error_messages={"unique": "Ya existe una delegación con ese código."})
     nombre = models.CharField(
         max_length=100, unique=True,
         error_messages={"unique": "Ya existe una delegación con ese nombre."},
     )
+    direccion = models.CharField(max_length=200)
+    comuna = models.CharField(max_length=100, default="La Serena")
     estado = models.CharField(max_length=10, choices=ESTADOS, default=ESTADO_ACTIVA)
     ambito = models.CharField(max_length=150)
 
@@ -91,7 +102,9 @@ class ItemMedible(models.Model):
     TIPOS = [(TIPO_CUANTITATIVO, "Cuantitativo"), (TIPO_PORCENTUAL, "Porcentual")]
 
     id_item = models.AutoField(primary_key=True)
+    codigo = models.CharField(max_length=30, unique=True, default=generar_codigo_item)
     nombre_item = models.CharField(max_length=150)
+    descripcion = models.TextField(blank=True)
     tipo = models.CharField(max_length=15, choices=TIPOS, default=TIPO_CUANTITATIVO)
     vigencia = models.BooleanField(default=True)
     cargo = models.ForeignKey(
@@ -121,6 +134,10 @@ class Rol(models.Model):
         error_messages={"unique": "Ya existe un rol con ese nombre."},
     )
     descripcion = models.CharField(max_length=255, blank=True)
+    permisos = models.JSONField(default=list, blank=True, help_text="Lista de permisos funcionales asignados al rol.")
+    alcance_autorizado = models.CharField(max_length=30, choices=[
+        ("propia", "Solo su delegación"), ("multiples", "Delegaciones autorizadas"),
+        ("global", "Todas las delegaciones")], default="propia")
 
     class Meta:
         db_table = "rol"

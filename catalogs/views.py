@@ -6,7 +6,8 @@ Vistas de catalogs. Plantilla única: templates/catalogs/catalogo_.html (variabl
 """
 from django.contrib.auth.decorators import login_required
 from django.db.models import Q
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
+from openpyxl import Workbook
 from django.shortcuts import get_object_or_404
 from django.views.generic import CreateView, ListView, UpdateView
 
@@ -42,7 +43,8 @@ class CatalogoListView(LecturaMixin, ModoMixin, ListView):
         qs = super().get_queryset()
         g = self.request.GET
         if g.get("q", "").strip():
-            qs = qs.filter(nombre__icontains=g["q"].strip())
+            term = g["q"].strip()
+            qs = qs.filter(Q(nombre__icontains=term) | Q(codigo__icontains=term) | Q(descripcion__icontains=term))
         for campo in ("tipo_catalogo", "area", "estado"):
             if g.get(campo):
                 qs = qs.filter(**{campo: g[campo]})
@@ -52,6 +54,7 @@ class CatalogoListView(LecturaMixin, ModoMixin, ListView):
         contexto = super().get_context_data(**kwargs)
         g = self.request.GET
         contexto.update(
+            total_resultados=self.get_queryset().count(),
             q=g.get("q", ""), tipo_sel=g.get("tipo_catalogo", ""), area_sel=g.get("area", ""),
             estado_sel=g.get("estado", ""), tipos=Catalogo.TIPOS, estados=Catalogo.ESTADOS, areas=_areas(),
         )
@@ -109,3 +112,27 @@ def catalogo_por_area(request):
     return JsonResponse({"resultados": [
         {"id": e.pk, "nombre": e.nombre, "tipo": e.tipo_catalogo, "area": e.area} for e in elementos
     ]})
+
+
+@login_required
+def exportar_catalogos_excel(request):
+    """Exporta todos los resultados filtrados; no exporta secretos ni datos de autenticación."""
+    if not any(request.user.is_superuser or request.user.is_staff for _ in [0]):
+        from core.mixins import tiene_rol, ROLES_SUPERVISION
+        if not tiene_rol(request.user, *ROLES_SUPERVISION):
+            return JsonResponse({"error": "No autorizado"}, status=403)
+    qs = Catalogo.objects.all()
+    g = request.GET
+    term = g.get("q", "").strip()
+    if term:
+        qs = qs.filter(Q(nombre__icontains=term) | Q(codigo__icontains=term) | Q(descripcion__icontains=term))
+    for field in ("tipo_catalogo", "area", "estado"):
+        if g.get(field): qs = qs.filter(**{field: g[field]})
+    wb = Workbook(); ws = wb.active; ws.title = "Catalogos"
+    ws.append(["Código", "Tipo", "Nombre", "Descripción", "Tipo de atención padre", "Área", "Estado"])
+    for item in qs.select_related("tipo_atencion_padre"):
+        ws.append([item.codigo, item.tipo_catalogo, item.nombre, item.descripcion,
+                   item.tipo_atencion_padre.nombre if item.tipo_atencion_padre_id else "", item.area, item.estado])
+    response = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    response["Content-Disposition"] = 'attachment; filename="catalogos_filtrados.xlsx"'
+    wb.save(response); return response

@@ -155,6 +155,21 @@ MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# Recuperación de contraseña: configura EMAIL_HOST/EMAIL_PORT/EMAIL_HOST_USER/
+# EMAIL_HOST_PASSWORD/EMAIL_USE_TLS en .env para enviar correos reales.
+if os.getenv("EMAIL_HOST"):
+    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+    EMAIL_HOST = os.getenv("EMAIL_HOST")
+    EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
+    EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+    EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+    EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
+    DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "sgr@localhost")
+else:
+    # En desarrollo el mensaje se imprime en la consola; no se envía por Internet.
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+    DEFAULT_FROM_EMAIL = "sgr@localhost"
+
 # ---------------------------------------------------------------------------
 # Parámetros de negocio del SGR (RF-007, RN-005, RN-006, RN-008, RNF-017)
 # Son valores por defecto configurables; no se codifican dentro de la lógica.

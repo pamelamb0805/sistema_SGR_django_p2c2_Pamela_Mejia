@@ -10,4 +10,5 @@ urlpatterns = [
     path("elementos/<int:pk>/editar/", views.CatalogoUpdateView.as_view(), name="catalogo_update"),
     path("elementos/<int:pk>/estado/", views.CatalogoToggleView.as_view(), name="catalogo_toggle"),
     path("api/por-area/", views.catalogo_por_area, name="catalogo_por_area"),
+    path("elementos/exportar-excel/", views.exportar_catalogos_excel, name="catalogo_exportar_excel"),
 ]

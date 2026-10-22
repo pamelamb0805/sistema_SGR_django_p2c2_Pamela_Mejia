@@ -1,17 +1,17 @@
 /* SGR · estilos propios sobre Bootstrap 5 */
 :root {
-  --sgr-primary: #0b4f6c;
-  --sgr-primary-dark: #083a50;
-  --sgr-sidebar-bg: #f4f7f9;
+  --sgr-primary: #AD0000;
+  --sgr-primary-dark: #660000;
+  --sgr-sidebar-bg: #ffffff;
   --sgr-verde: #198754;
   --sgr-ambar: #f2a900;
   --sgr-rojo: #dc3545;
 }
 
-body.sgr-app { background: #f8f9fa; }
-body.sgr-guest { background: linear-gradient(135deg, #e8f1f5 0%, #f8f9fa 100%); min-height: 100vh; }
+body.sgr-app { background: #f5f5f5; color: #333333; font-family: Arial, Helvetica, sans-serif; }
+body.sgr-guest { background: linear-gradient(135deg, #f9dcdc 0%, #ffffff 68%); min-height: 100vh; font-family: Arial, Helvetica, sans-serif; }
 
-.sgr-topbar { background: var(--sgr-primary); min-height: 3.25rem; }
+.sgr-topbar { background: var(--sgr-primary); min-height: 4.1rem; border-bottom: 4px solid #7a0000; }
 .sgr-topbar .navbar-brand { color: #fff; }
 
 /* Menú lateral */
@@ -20,8 +20,8 @@ body.sgr-guest { background: linear-gradient(135deg, #e8f1f5 0%, #f8f9fa 100%); 
   .sgr-sidebar { position: sticky; top: 3.25rem; height: calc(100vh - 3.25rem); overflow-y: auto; }
 }
 .sgr-sidebar .nav-link { color: #343a40; padding: .5rem 1rem; display: flex; align-items: center; gap: .6rem; border-left: 3px solid transparent; }
-.sgr-sidebar .nav-link:hover { background: #e6edf1; }
-.sgr-sidebar .nav-link.active { color: var(--sgr-primary-dark); font-weight: 600; background: #dbe8ee; border-left-color: var(--sgr-primary); }
+.sgr-sidebar .nav-link:hover { background: #f9dcdc; color: #660000; }
+.sgr-sidebar .nav-link.active { color: var(--sgr-primary-dark); font-weight: 600; background: #f9dcdc; border-left-color: var(--sgr-primary); }
 .sgr-sidebar .nav-link .bi { font-size: 1.05rem; width: 1.25rem; text-align: center; }
 .sgr-nav-heading { list-style: none; padding: 1rem 1rem .25rem; font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #6c757d; }
 
@@ -66,3 +66,30 @@ main:focus { outline: none; }
 /* Barra de avance con marca de la meta esperada al día */
 .sgr-progreso { height: 1.5rem; overflow: visible; }
 .sgr-meta-marca { position: absolute; top: -4px; bottom: -4px; width: 3px; background: #212529; border-radius: 2px; transform: translateX(-1px); }
+
+
+/* Adaptación visual institucional La Serena (paleta digital oficial) */
+:root { --bs-primary: #AD0000; --bs-primary-rgb: 173, 0, 0; --sgr-accent: #cc6600; }
+a { color: #7a0000; }
+a:hover { color: #AD0000; }
+.btn-primary, .btn-muni { --bs-btn-bg: #AD0000; --bs-btn-border-color: #AD0000; --bs-btn-hover-bg: #7a0000; --bs-btn-hover-border-color: #660000; --bs-btn-active-bg: #660000; }
+.btn-outline-primary { --bs-btn-color: #AD0000; --bs-btn-border-color: #AD0000; --bs-btn-hover-bg: #AD0000; --bs-btn-hover-border-color: #AD0000; }
+.btn-success { --bs-btn-bg: #7a0000; --bs-btn-border-color: #7a0000; --bs-btn-hover-bg: #660000; --bs-btn-hover-border-color: #660000; }
+.form-control:focus, .form-select:focus { border-color: #cc6666; box-shadow: 0 0 0 .25rem rgba(173,0,0,.15); }
+.card { border-color: #e6e6e6; border-radius: .6rem; box-shadow: 0 .15rem .6rem rgba(0,0,0,.035); }
+.card-header { background: #fff; border-bottom-color: #e6e6e6; }
+.table thead th { background: #f9dcdc; color: #4d0000; border-bottom-color: #cc6666; }
+.badge.text-bg-primary { background-color: #AD0000 !important; }
+.sgr-kpi { border-left-color: #AD0000; }
+.sgr-timeline { border-left-color: #e08080; }
+.sgr-timeline > li::before { background: #AD0000; }
+.sgr-login-logo { color: #AD0000; }
+.sgr-login-card { border-top-color: #AD0000; }
+.sgr-sidebar { border-right-color: #e6e6e6; }
+.sgr-sidebar .nav-link.active { color: #660000; }
+.sgr-nav-heading { color: #7a0000; }
+.sgr-brand-logo { height: 42px; width: auto; max-width: 190px; object-fit: contain; }
+.sgr-brand-mobile { height: 38px; width: 38px; object-fit: contain; }
+.alert-primary { --bs-alert-color: #660000; --bs-alert-bg: #f9dcdc; --bs-alert-border-color: #e08080; }
+.pagination { --bs-pagination-color: #7a0000; --bs-pagination-hover-color: #660000; --bs-pagination-focus-box-shadow: 0 0 0 .25rem rgba(173,0,0,.15); --bs-pagination-active-bg: #AD0000; --bs-pagination-active-border-color: #AD0000; }
+@media (max-width: 767.98px) { .sgr-brand-logo { height: 34px; max-width: 145px; } }

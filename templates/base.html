@@ -24,9 +24,10 @@
             data-bs-target="#sgr-sidebar" aria-controls="sgr-sidebar" aria-label="Abrir menú">
       <span class="navbar-toggler-icon"></span>
     </button>
-    <a class="navbar-brand px-3 mb-0 fw-semibold" href="{% url 'dashboard' %}">
-      <i class="bi bi-bar-chart-steps me-1" aria-hidden="true"></i> SGR
-      <small class="d-none d-md-inline fw-normal opacity-75">Sistema de Gestión de Resultados</small>
+    <a class="navbar-brand px-3 mb-0 fw-semibold d-flex align-items-center gap-3" href="{% url 'dashboard' %}" aria-label="SGR — Sistema de Gestión de Resultados">
+      <img class="sgr-brand-logo d-none d-md-block" src="https://framework.laserena.cl/img/horizontal-blanco.svg" alt="Ilustre Municipalidad de La Serena" loading="lazy">
+      <img class="sgr-brand-mobile d-md-none" src="https://framework.laserena.cl/img/escudo-blanco.svg" alt="Escudo de La Serena" loading="lazy">
+      <span class="d-flex flex-column lh-sm"><span class="fw-bold">SGR</span><small class="fw-normal opacity-75">Sistema de Gestión de Resultados</small></span>
     </a>
   </div>
 
