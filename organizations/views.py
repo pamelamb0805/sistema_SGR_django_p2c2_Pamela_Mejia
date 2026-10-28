@@ -17,9 +17,10 @@ from core.mixins import (
     ROLES_CONFIGURACION, ROLES_SUPERVISION, AccionPostView, AmbitoDelegacionMixin, GuardarMixin,
     ModoMixin, RolRequeridoMixin, errores_form as _errores,
 )
+from core.mixins import ModalFormPageMixin
 
-from .forms import AccesoForm, CargoForm, DelegacionForm, FuncionarioForm, ItemMedibleForm, RolForm
-from .models import Cargo, Delegacion, Funcionario, ItemMedible, Rol
+from .forms import AccesoForm, CargoForm, DelegacionForm, FuncionarioForm, ItemMedibleForm, RolForm, UsuarioAdminForm
+from .models import Cargo, Delegacion, Funcionario, ItemMedible, Rol, Usuario
 from .services import CRUDCargo, CRUDDelegacion, CRUDFuncionario, CRUDRol, Seguridad
 
 
@@ -61,29 +62,46 @@ class DelegacionListView(LecturaMixin, AmbitoDelegacionMixin, ModoMixin, ListVie
         return contexto
 
 
-class DelegacionCreateView(EscrituraMixin, ModoMixin, GuardarMixin, CreateView):
+class DelegacionCreateView(
+    EscrituraMixin,
+    ModalFormPageMixin,
+    ModoMixin,
+    GuardarMixin,
+    CreateView,
+):
     model = Delegacion
     form_class = DelegacionForm
     template_name = "organization/delegacion_.html"
     modo, titulo = "form", "Nueva delegación"
     success_url_name = "organizations:delegacion_list"
     mensaje_exito = "Delegación creada y disponible en filtros y asignaciones."
+    list_view_class = DelegacionListView
 
     def guardar(self, form):
-        self.object = CRUDDelegacion.crear_delegacion(form.instance, self.request.user)
+        self.object = CRUDDelegacion.crear_delegacion(
+            form.instance, self.request.user
+        )
 
 
-class DelegacionUpdateView(EscrituraMixin, ModoMixin, GuardarMixin, UpdateView):
+class DelegacionUpdateView(
+    EscrituraMixin,
+    ModalFormPageMixin,
+    ModoMixin,
+    GuardarMixin,
+    UpdateView,
+):
     model = Delegacion
     form_class = DelegacionForm
     template_name = "organization/delegacion_.html"
     modo, titulo = "form", "Editar delegación"
     success_url_name = "organizations:delegacion_list"
     mensaje_exito = "Delegación actualizada."
+    list_view_class = DelegacionListView
 
     def guardar(self, form):
-        self.object = CRUDDelegacion.modificar_delegacion(form.instance, self.request.user)
-
+        self.object = CRUDDelegacion.modificar_delegacion(
+            form.instance, self.request.user
+        )
 
 class DelegacionToggleView(AccionPostView):
     redirect_name = "organizations:delegacion_list"
@@ -132,13 +150,14 @@ class CargoDetailView(LecturaMixin, ModoMixin, DetailView):
         return contexto
 
 
-class CargoCreateView(EscrituraMixin, ModoMixin, GuardarMixin, CreateView):
+class CargoCreateView(EscrituraMixin, ModalFormPageMixin, ModoMixin, GuardarMixin, CreateView):
     model = Cargo
     form_class = CargoForm
     template_name = "organization/cargo_.html"
     modo, titulo = "form", "Nuevo cargo"
     success_url_name = "organizations:cargo_list"
     mensaje_exito = "Cargo creado."
+    list_view_class = CargoListView
 
     def guardar(self, form):
         self.object = CRUDCargo.crear_cargo(form.instance, self.request.user)
@@ -147,13 +166,14 @@ class CargoCreateView(EscrituraMixin, ModoMixin, GuardarMixin, CreateView):
         return reverse("organizations:cargo_detail", args=[self.object.pk])
 
 
-class CargoUpdateView(EscrituraMixin, ModoMixin, GuardarMixin, UpdateView):
+class CargoUpdateView(EscrituraMixin, ModalFormPageMixin, ModoMixin, GuardarMixin, UpdateView):
     model = Cargo
     form_class = CargoForm
     template_name = "organization/cargo_.html"
     modo, titulo = "form", "Editar cargo"
     success_url_name = "organizations:cargo_list"
     mensaje_exito = "Cargo actualizado."
+    list_view_class = CargoListView
 
     def guardar(self, form):
         self.object = CRUDCargo.modificar_cargo(form.instance, self.request.user)
@@ -216,25 +236,27 @@ class RolListView(LecturaMixin, ModoMixin, ListView):
     titulo = "Roles"
 
 
-class RolCreateView(EscrituraMixin, ModoMixin, GuardarMixin, CreateView):
+class RolCreateView(EscrituraMixin,ModalFormPageMixin, ModoMixin, GuardarMixin, CreateView):
     model = Rol
     form_class = RolForm
     template_name = "organization/rol_.html"
     modo, titulo = "form", "Nuevo rol"
     success_url_name = "organizations:rol_list"
     mensaje_exito = "Rol creado."
+    list_view_class = RolListView
 
     def guardar(self, form):
         self.object = CRUDRol.crear_rol(form.instance, self.request.user)
 
 
-class RolUpdateView(EscrituraMixin, ModoMixin, GuardarMixin, UpdateView):
+class RolUpdateView(EscrituraMixin,ModalFormPageMixin, ModoMixin, GuardarMixin, UpdateView):
     model = Rol
     form_class = RolForm
     template_name = "organization/rol_.html"
     modo, titulo = "form", "Editar rol"
     success_url_name = "organizations:rol_list"
     mensaje_exito = "Rol actualizado."
+    list_view_class = RolListView
 
     def guardar(self, form):
         self.object = CRUDRol.modificar_rol(form.instance, self.request.user)
@@ -308,13 +330,14 @@ class FuncionarioDetailView(LecturaMixin, AmbitoDelegacionMixin, ModoMixin, Deta
         return contexto
 
 
-class FuncionarioCreateView(EscrituraMixin, ModoMixin, GuardarMixin, CreateView):
+class FuncionarioCreateView(EscrituraMixin,  ModalFormPageMixin, ModoMixin, GuardarMixin, CreateView):
     model = Funcionario
     form_class = FuncionarioForm
     template_name = "organization/funcionario_.html"
     modo, titulo = "form", "Nuevo funcionario"
     success_url_name = "organizations:funcionario_list"
     mensaje_exito = "Funcionario registrado."
+    list_view_class = FuncionarioListView
 
     def guardar(self, form):
         self.object = CRUDFuncionario.crear_funcionario(
@@ -324,13 +347,14 @@ class FuncionarioCreateView(EscrituraMixin, ModoMixin, GuardarMixin, CreateView)
         return reverse("organizations:funcionario_detail", args=[self.object.pk])
 
 
-class FuncionarioUpdateView(EscrituraMixin, ModoMixin, GuardarMixin, UpdateView):
+class FuncionarioUpdateView(EscrituraMixin, ModalFormPageMixin, ModoMixin, GuardarMixin, UpdateView):
     model = Funcionario
     form_class = FuncionarioForm
     template_name = "organization/funcionario_.html"
     modo, titulo = "form", "Editar funcionario"
     success_url_name = "organizations:funcionario_list"
     mensaje_exito = "Funcionario actualizado."
+    list_view_class = FuncionarioListView
 
     def guardar(self, form):
         self.object = CRUDFuncionario.modificar_funcionario(
@@ -351,25 +375,187 @@ class FuncionarioToggleView(AccionPostView):
         return f"Funcionario «{objeto.nombre}» {'activado' if objeto.activo else 'desactivado'}."
 
 
+
 class FuncionarioAccesoView(EscrituraMixin, View):
-    """Crea el acceso del funcionario o cambia su contraseña."""
+    """Crea el acceso de un funcionario o actualiza sus credenciales."""
     http_method_names = ["post"]
 
     def post(self, request, pk):
         funcionario = get_object_or_404(Funcionario, pk=pk)
         usuario = getattr(funcionario, "usuario", None)
+
         form = AccesoForm(request.POST, usuario=usuario)
+
         if form.is_valid():
             try:
                 if usuario:
-                    Seguridad.cambiar_contrasenia(usuario, form.cleaned_data["password1"], request.user)
-                    messages.success(request, "Contraseña actualizada.")
+                    # Actualizar el correo y las delegaciones autorizadas.
+                    email = form.cleaned_data["email"].strip().lower()
+                    delegaciones = form.cleaned_data[
+                        "delegaciones_autorizadas"
+                    ]
+
+                    if Usuario.objects.filter(
+                        email__iexact=email
+                    ).exclude(pk=usuario.pk).exists():
+                        raise ReglaNegocioError(
+                            "Ese correo electrónico ya está registrado."
+                        )
+
+                    usuario.email = email
+                    usuario.delegaciones_autorizadas.set(delegaciones)
+                    usuario.save(update_fields=["email"])
+
+                    # Cambiar la contraseña solo si se ingresó una.
+                    password = form.cleaned_data.get("password1")
+                    if password:
+                        Seguridad.cambiar_contrasenia(
+                            usuario,
+                            password,
+                            request.user,
+                        )
+
+                    messages.success(
+                        request,
+                        "Acceso actualizado correctamente.",
+                    )
+
                 else:
-                    Seguridad.crear_usuario(funcionario, form.cleaned_data["username"],
-                                            form.cleaned_data["password1"], request.user)
-                    messages.success(request, "Acceso creado correctamente.")
+                    # Crear el acceso del funcionario.
+                    usuario = Seguridad.crear_usuario(
+                        funcionario,
+                        form.cleaned_data["username"],
+                        form.cleaned_data["password1"],
+                        request.user,
+                        email=form.cleaned_data["email"],
+                        delegaciones=form.cleaned_data[
+                            "delegaciones_autorizadas"
+                        ],
+                    )
+
+                    messages.success(
+                        request,
+                        "Acceso creado correctamente.",
+                    )
+
             except ReglaNegocioError as exc:
                 messages.error(request, str(exc))
+
         else:
             messages.error(request, _errores(form))
-        return redirect("organizations:funcionario_detail", pk=funcionario.pk)
+
+        return redirect(
+            "organizations:funcionario_detail",
+            pk=funcionario.pk,
+        )
+
+
+class UsuarioListView(EscrituraMixin, ListView):
+    model = Usuario
+    template_name = "organization/usuario_.html"
+    context_object_name = "usuarios"
+    paginate_by = 15
+
+    def get_queryset(self):
+        queryset = (
+            Usuario.objects
+            .select_related("funcionario")
+            .prefetch_related("delegaciones_autorizadas")
+            .order_by("username")
+        )
+
+        q = self.request.GET.get("q", "").strip()
+        estado = self.request.GET.get("estado", "").strip()
+
+        if q:
+            queryset = queryset.filter(
+                Q(username__icontains=q)
+                | Q(email__icontains=q)
+                | Q(funcionario__nombre__icontains=q)
+            )
+
+        if estado == "ACTIVO":
+            queryset = queryset.filter(
+                activo_acceso=True,
+                funcionario__activo=True,
+            )
+        elif estado == "INACTIVO":
+            queryset = queryset.filter(
+                Q(activo_acceso=False)
+                | Q(funcionario__activo=False)
+                | Q(funcionario__isnull=True)
+            )
+
+        return queryset
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update({
+            "q": self.request.GET.get("q", ""),
+            "estado_sel": self.request.GET.get("estado", ""),
+            "estados": [
+                ("ACTIVO", "Activo"),
+                ("INACTIVO", "Inactivo o pendiente"),
+            ],
+            "titulo": "Usuarios",
+        })
+        return context
+
+
+class UsuarioCreateView(
+    EscrituraMixin,
+    ModalFormPageMixin,
+    ModoMixin,
+    GuardarMixin,
+    CreateView,
+):
+    model = Usuario
+    form_class = UsuarioAdminForm
+    template_name = "organization/usuario_.html"
+    modo, titulo = "form", "Crear usuario"
+    success_url_name = "organizations:usuario_list"
+    mensaje_exito = "Usuario creado correctamente."
+    list_view_class = UsuarioListView
+
+    def guardar(self, form):
+        self.object = Seguridad.guardar_usuario(
+            form,
+            self.request.user,
+        )
+
+
+class UsuarioUpdateView(
+    EscrituraMixin,
+    ModalFormPageMixin,
+    ModoMixin,
+    GuardarMixin,
+    UpdateView,
+):
+    model = Usuario
+    form_class = UsuarioAdminForm
+    template_name = "organization/usuario_.html"
+    modo, titulo = "Editar usuario"
+    success_url_name = "organizations:usuario_list"
+    mensaje_exito = "Usuario actualizado correctamente."
+    list_view_class = UsuarioListView
+
+    def guardar(self, form):
+        self.object = Seguridad.guardar_usuario(
+            form,
+            self.request.user,
+        )
+
+
+class UsuarioToggleView(EscrituraMixin, AccionPostView):
+    redirect_name = "organizations:usuario_list"
+
+    def get_objeto(self, pk):
+        return get_object_or_404(Usuario, pk=pk)
+
+    def accion(self, request, objeto):
+        Seguridad.cambiar_estado_acceso(objeto, request.user)
+
+        return (
+            f"Acceso de {objeto.username} "
+            f"{'habilitado' if objeto.activo_acceso else 'deshabilitado'}."
+        )

@@ -239,6 +239,26 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
     USERNAME_FIELD = "username"
     REQUIRED_FIELDS = []
 
+    email = models.EmailField(
+    "correo electrónico",
+    max_length=254,
+    unique=True,
+    null=True,
+    blank=True,
+    )
+
+    delegaciones_autorizadas = models.ManyToManyField(
+    Delegacion,
+    blank=True,
+    related_name="usuarios_autorizados",
+    verbose_name="delegaciones autorizadas",
+    )
+
+    activo_acceso = models.BooleanField(
+    "Acceso habilitado",
+    default=True,
+    )
+
     class Meta:
         db_table = "usuario_acceso"
         verbose_name = "usuario de acceso"
@@ -249,10 +269,16 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
 
     @property
     def is_active(self):
-        """Un funcionario inactivo no puede ingresar (RF-002)."""
-        if self.funcionario_id:
-            return self.funcionario.estado == Funcionario.ESTADO_ACTIVO
-        return self.is_superuser
+        if self.is_superuser:
+            return True
+
+        funcionario = getattr(self, "funcionario", None)
+
+        return bool(
+            self.activo_acceso
+            and funcionario
+            and funcionario.activo
+        )
 
     @property
     def is_staff(self):

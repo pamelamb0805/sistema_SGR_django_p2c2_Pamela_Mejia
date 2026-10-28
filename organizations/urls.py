@@ -33,4 +33,21 @@ urlpatterns = [
     path("funcionarios/<int:pk>/editar/", views.FuncionarioUpdateView.as_view(), name="funcionario_update"),
     path("funcionarios/<int:pk>/estado/", views.FuncionarioToggleView.as_view(), name="funcionario_toggle"),
     path("funcionarios/<int:pk>/acceso/", views.FuncionarioAccesoView.as_view(), name="funcionario_acceso"),
+
+    path("usuarios/", UsuarioListView.as_view(), name="usuario_list"),
+    path(
+        "usuarios/nuevo/",
+        UsuarioCreateView.as_view(),
+        name="usuario_create",
+    ),
+    path(
+        "usuarios/<int:pk>/editar/",
+        UsuarioUpdateView.as_view(),
+        name="usuario_update",
+    ),
+    path(
+        "usuarios/<int:pk>/estado/",
+        UsuarioToggleView.as_view(),
+        name="usuario_toggle",
+    )
 ]

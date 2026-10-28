@@ -23,6 +23,9 @@ from django.views import View
 
 from .exceptions import ReglaNegocioError
 
+from django.core.exceptions import ImproperlyConfigured
+
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -267,3 +270,98 @@ class AccionPostView(RolRequeridoMixin, View):
 def errores_form(form):
     """Texto plano con los errores de un formulario (para mensajes SweetAlert)."""
     return " ".join(m for lista in form.errors.values() for m in lista)
+
+class ModalFormPageMixin:
+    """
+    Reutiliza el contexto del ListView de la entidad al crear o editar.
+    El formulario se muestra dentro de un modal en la pantalla del listado.
+    Si hay errores, conserva los datos y abre el modal nuevamente.
+    """
+
+    list_view_class = None
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+
+        if self.list_view_class is None:
+            raise ImproperlyConfigured(
+                "Debes configurar list_view_class en la vista CRUD."
+            )
+
+        # Conservar el formulario actual, incluidos sus errores.
+        form = context.get("form")
+        if form is None:
+            form = kwargs.get("form") or self.get_form()
+
+        # Construir el contexto de la lista utilizando su propia lógica
+        # de búsqueda, filtros, paginación y ámbito autorizado.
+        list_view = self.list_view_class()
+        list_view.setup(self.request, *self.args, **self.kwargs)
+        list_view.object_list = list_view.get_queryset()
+
+        list_context = list_view.get_context_data(
+            object_list=list_view.object_list
+        )
+
+        context.update(list_context)
+
+        # Restaurar el formulario y señalar que debe abrirse el modal.
+        context["form"] = form
+        context["open_modal"] = True
+        context["modo"] = "lista"
+        context["titulo_modal"] = getattr(
+            self, "titulo", "Formulario"
+        )
+
+        # En edición, el objeto queda disponible para el encabezado
+        # del modal y para los templates que lo necesiten.
+        if getattr(self, "object", None) is not None:
+            context["objeto_edicion"] = self.object
+
+        return context
+
+class ModalFormPageMixin:
+    """
+    Permite que una vista de creación o edición reutilice el contexto
+    de su vista de listado y abra el formulario dentro de un modal.
+    """
+
+    list_view_class = None
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        form = context.get("form")
+
+        if self.list_view_class is None:
+            raise ImproperlyConfigured(
+                f"{self.__class__.__name__} debe declarar list_view_class."
+            )
+
+        list_view = self.list_view_class()
+        list_view.setup(
+            self.request,
+            *getattr(self, "args", ()),
+            **getattr(self, "kwargs", {}),
+        )
+
+        list_view.object_list = list_view.get_queryset()
+        list_context = list_view.get_context_data(
+            object_list=list_view.object_list
+        )
+
+        context.update(list_context)
+
+        # El contexto de listado no debe reemplazar el formulario ni sus errores.
+        if form is not None:
+            context["form"] = form
+
+        context["view"] = self
+        context["modo"] = "lista"
+        context["open_modal"] = True
+        context["titulo_modal"] = getattr(
+            self,
+            "titulo",
+            "Formulario",
+        )
+
+        return context

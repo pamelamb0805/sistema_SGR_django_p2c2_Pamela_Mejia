@@ -211,21 +211,55 @@ class Seguridad:
         return make_password(password)
 
     @staticmethod
-    def crear_usuario(funcionario, username, password, actor=None):
+    def crear_usuario(
+        funcionario,
+        username,
+        password,
+        actor=None,
+        email=None,
+        delegaciones=None,
+    ):
         username = (username or "").strip()
         if not username:
             raise ReglaNegocioError("El nombre de usuario es obligatorio.")
+            
         if Usuario.objects.filter(funcionario=funcionario).exists():
             raise ReglaNegocioError("El funcionario ya tiene un acceso creado.")
+            
         if Usuario.objects.filter(username__iexact=username).exists():
             raise ReglaNegocioError("Ese nombre de usuario ya está en uso.")
+            
+        # Validación de duplicidad de correo (agregada de tu nuevo bloque)
+        if email and Usuario.objects.filter(email__iexact=email).exists():
+            raise ReglaNegocioError("Ese correo ya está asociado a otra cuenta.")
+
         try:
             validate_password(password)
         except ValidationError as exc:
             raise ReglaNegocioError(" ".join(exc.messages))
+
         with transaction.atomic():
-            usuario = Usuario.objects.create_user(username=username, password=password, funcionario=funcionario)
-            auditar(actor, "CREAR", "usuario_acceso", usuario.pk, None, _snapshot(usuario))
+            # Creamos el usuario incluyendo el correo y asegurando el estado activo de acceso
+            usuario = Usuario.objects.create_user(
+                username=username,
+                email=email,
+                password=password,
+                funcionario=funcionario,
+                activo_acceso=True,
+            )
+
+            # Asignamos las delegaciones autorizadas (si se proporcionan)
+            usuario.delegaciones_autorizadas.set(delegaciones or [])
+
+            auditar(
+                actor,
+                "CREAR",
+                "usuario_acceso",
+                usuario.pk,
+                None,
+                _snapshot(usuario),
+            )
+            
         return usuario
 
     @staticmethod
@@ -238,3 +272,52 @@ class Seguridad:
         usuario.save(update_fields=["password"])
         auditar(actor, "CAMBIO_CONTRASENIA", "usuario_acceso", usuario.pk, None, None)  # sin guardar la clave
         return usuario
+
+    @staticmethod
+    def guardar_usuario(form, actor=None):
+        usuario = form.instance
+        es_nuevo = not bool(usuario.pk)
+        anterior = None if es_nuevo else _snapshot(usuario)
+
+        with transaction.atomic():
+            usuario = form.save()
+
+            auditar(
+                actor,
+                "CREAR" if es_nuevo else "MODIFICAR",
+                "usuario",
+                usuario.pk,
+                anterior,
+                _snapshot(usuario),
+            )
+
+        return usuario
+
+    @staticmethod
+    def cambiar_estado_acceso(usuario, actor=None):
+        if not usuario.funcionario_id:
+            raise ReglaNegocioError(
+                "Asocia la cuenta a un funcionario antes de habilitarla."
+            )
+
+        if not usuario.funcionario.activo:
+            raise ReglaNegocioError(
+                "No se puede habilitar el acceso de un funcionario inactivo."
+            )
+
+        anterior = _snapshot(usuario)
+        usuario.activo_acceso = not usuario.activo_acceso
+        usuario.save(update_fields=["activo_acceso"])
+
+        auditar(
+            actor,
+            "CAMBIAR_ESTADO",
+            "usuario",
+            usuario.pk,
+            anterior,
+            _snapshot(usuario),
+        )
+
+        return usuario
+
+    

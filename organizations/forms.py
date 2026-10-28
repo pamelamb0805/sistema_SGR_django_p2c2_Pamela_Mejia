@@ -5,8 +5,9 @@ from django.db.models import Q
 
 from core.forms import BootstrapFormMixin
 
-from .models import Cargo, Delegacion, Funcionario, ItemMedible, Rol
+from .models import Cargo, Delegacion, Funcionario, ItemMedible, Rol, Usuario
 
+from django.core.exceptions import ValidationError
 
 class DelegacionForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
@@ -95,6 +96,20 @@ class AccesoForm(BootstrapFormMixin, forms.Form):
     username = forms.CharField(label="Nombre de usuario", max_length=150)
     password1 = forms.CharField(label="Contraseña", widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}))
     password2 = forms.CharField(label="Repetir contraseña", widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}))
+    email = forms.EmailField(
+    label="Correo electrónico",
+    max_length=254,
+    required=True,
+    )
+
+    delegaciones_autorizadas = forms.ModelMultipleChoiceField(
+        label="Delegaciones autorizadas",
+        queryset=Delegacion.objects.all(),
+        required=False,
+        widget=forms.SelectMultiple(
+            attrs={"class": "form-select"}
+        ),
+    )
 
     def __init__(self, *args, usuario=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -102,6 +117,15 @@ class AccesoForm(BootstrapFormMixin, forms.Form):
         if usuario is not None:
             self.fields["username"].initial = usuario.username
             self.fields["username"].disabled = True
+        if usuario:
+            self.fields["username"].initial = usuario.username
+            self.fields["username"].disabled = True
+            self.fields["email"].initial = usuario.email
+            self.fields["delegaciones_autorizadas"].initial = (
+                usuario.delegaciones_autorizadas.all()
+            )
+            self.fields["password1"].required = False
+            self.fields["password2"].required = False
 
     def clean(self):
         datos = super().clean()
@@ -114,3 +138,157 @@ class AccesoForm(BootstrapFormMixin, forms.Form):
             except ValidationError as exc:
                 self.add_error("password1", exc)
         return datos
+
+    def clean_email(self):
+        email = self.cleaned_data["email"].strip().lower()
+        duplicados = Usuario.objects.filter(email__iexact=email)
+
+        usuario_actual = getattr(self, "usuario", None)
+        if usuario_actual and usuario_actual.pk:
+            duplicados = duplicados.exclude(pk=usuario_actual.pk)
+
+        if duplicados.exists():
+            raise ValidationError(
+                "Ese correo ya está asociado a otra cuenta."
+            )
+
+        return email
+
+class UsuarioAdminForm(BootstrapFormMixin, forms.ModelForm):
+    password1 = forms.CharField(
+        label="Contraseña",
+        required=False,
+        widget=forms.PasswordInput(
+            attrs={"autocomplete": "new-password"}
+        ),
+    )
+    password2 = forms.CharField(
+        label="Confirmar contraseña",
+        required=False,
+        widget=forms.PasswordInput(
+            attrs={"autocomplete": "new-password"}
+        ),
+    )
+
+    class Meta:
+        model = Usuario
+        fields = [
+            "username",
+            "email",
+            "funcionario",
+            "delegaciones_autorizadas",
+            "activo_acceso",
+        ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.fields["email"].required = True
+        self.fields["delegaciones_autorizadas"].queryset = (
+            Delegacion.objects.all()
+        )
+
+        if self.instance and self.instance.pk:
+            self.fields["password1"].help_text = (
+                "Déjala vacía si no quieres cambiar la contraseña."
+            )
+            self.fields["password2"].help_text = (
+                "Déjala vacía si no quieres cambiar la contraseña."
+            )
+        else:
+            self.fields["password1"].required = True
+            self.fields["password2"].required = True
+
+        # --- MODIFICACIÓN INTEGRADA ---
+        if self.instance and self.instance.pk and self.instance.funcionario_id:
+            funcionarios = Funcionario.objects.filter(
+                Q(usuario__isnull=True)
+                | Q(pk=self.instance.funcionario_id)
+            )
+        else:
+            funcionarios = Funcionario.objects.filter(
+                usuario__isnull=True
+            )
+
+        self.fields["funcionario"].queryset = funcionarios 
+
+    def clean_username(self):
+        username = self.cleaned_data["username"].strip()
+        duplicados = Usuario.objects.filter(
+            username__iexact=username
+        )
+
+        if self.instance and self.instance.pk:
+            duplicados = duplicados.exclude(pk=self.instance.pk)
+
+        if duplicados.exists():
+            raise ValidationError(
+                "Ese nombre de usuario ya está registrado."
+            )
+
+        return username
+
+    def clean_email(self):
+        email = self.cleaned_data["email"].strip().lower()
+        duplicados = Usuario.objects.filter(email__iexact=email)
+
+        if self.instance and self.instance.pk:
+            duplicados = duplicados.exclude(pk=self.instance.pk)
+
+        if duplicados.exists():
+            raise ValidationError(
+                "Ese correo ya está asociado a otra cuenta."
+            )
+
+        return email
+
+    def clean(self):
+        datos = super().clean()
+        password1 = datos.get("password1")
+        password2 = datos.get("password2")
+
+        es_nuevo = not bool(
+            self.instance and self.instance.pk
+        )
+
+        if es_nuevo and not password1:
+            self.add_error(
+                "password1",
+                "Debes definir una contraseña para la nueva cuenta.",
+            )
+
+        if password1 or password2:
+            if password1 != password2:
+                self.add_error(
+                    "password2",
+                    "Las contraseñas no coinciden.",
+                )
+            elif password1:
+                try:
+                    validate_password(password1, user=self.instance)
+                except ValidationError as exc:
+                    self.add_error("password1", exc)
+
+        funcionario = datos.get("funcionario")
+
+        # Una cuenta sin funcionario asociado no puede quedar habilitada.
+        if not funcionario:
+            datos["activo_acceso"] = False
+
+        return datos
+
+    def save(self, commit=True):
+        usuario = super().save(commit=False)
+        password = self.cleaned_data.get("password1")
+
+        if password:
+            usuario.set_password(password)
+
+        if not usuario.funcionario:
+            usuario.activo_acceso = False
+
+        if commit:
+            usuario.save()
+            self.save_m2m()
+
+        return usuario

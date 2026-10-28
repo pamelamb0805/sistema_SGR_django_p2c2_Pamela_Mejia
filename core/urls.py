@@ -3,9 +3,26 @@ from django.urls import path
 
 from . import views
 
-# Sin app_name: settings.py usa los nombres 'login' y 'dashboard' directamente.
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
     path("login/", views.SGRLoginView.as_view(), name="login"),
-    path("logout/", LogoutView.as_view(), name="logout"),  # solo acepta POST
+    path("logout/", LogoutView.as_view(), name="logout"),
+
+    path("registro/", views.registro, name="registro"),
+
+    path(
+        "recuperar-clave/",
+        views.recuperar_clave,
+        name="recuperar_clave",
+    ),
+    path(
+        "validar-codigo/",
+        views.validar_codigo,
+        name="validar_codigo",
+    ),
+    path(
+        "nueva-clave/",
+        views.nueva_clave,
+        name="nueva_clave",
+    ),
 ]

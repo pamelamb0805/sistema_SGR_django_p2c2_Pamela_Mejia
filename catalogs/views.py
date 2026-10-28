@@ -18,6 +18,7 @@ from core.mixins import (
 from .forms import CatalogoForm
 from .models import Catalogo
 from .services import CRUDCatalogo
+from core.mixins import ModalFormPageMixin
 
 
 class LecturaMixin(RolRequeridoMixin):
@@ -61,12 +62,13 @@ class CatalogoListView(LecturaMixin, ModoMixin, ListView):
         return contexto
 
 
-class CatalogoFormMixin(EscrituraMixin, ModoMixin, GuardarMixin):
+class CatalogoFormMixin(EscrituraMixin, ModalFormPageMixin, ModoMixin, GuardarMixin):
     model = Catalogo
     form_class = CatalogoForm
     template_name = "catalogs/catalogo_.html"
     modo = "form"
     success_url_name = "catalogs:catalogo_list"
+    list_view_class = CatalogoListView
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)

@@ -1,15 +1,154 @@
 {% extends "base.html" %}
+
 {% block title %}Delegaciones · SGR{% endblock %}
 {% block page_title %}{{ titulo|default:"Delegaciones" }}{% endblock %}
-{% block page_actions %}{% if modo == "lista" or not modo %}<a class="btn btn-primary" href="{% url 'organizations:delegacion_create' %}"><i class="bi bi-plus-lg me-1"></i>Nueva delegación</a>{% endif %}{% endblock %}
+
+{% block page_actions %}
+  {% if puede_editar %}
+    <a class="btn btn-primary"
+       href="{% url 'organizations:delegacion_create' %}">
+      <i class="bi bi-plus-lg me-1"></i>Nueva delegación
+    </a>
+  {% endif %}
+{% endblock %}
+
 {% block content %}
-{% if modo == "form" %}
-<div class="card shadow-sm"><div class="card-header">Datos de la delegación</div><div class="card-body">
-<form method="post" novalidate>{% csrf_token %}{% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
-{% for field in form %}<div class="mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} *{% endif %}</label>{{ field }}{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}{% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}</div>{% endfor %}
-<div class="d-flex gap-2"><button class="btn btn-primary" type="submit">Guardar</button><a class="btn btn-outline-secondary" href="{% url 'organizations:delegacion_list' %}">Cancelar</a></div></form></div></div>
-{% else %}
-<form method="get" class="card card-body mb-3"><div class="row g-2 align-items-end"><div class="col-md-6"><label class="form-label" for="q">Buscar</label><input class="form-control" id="q" name="q" value="{{ q }}" placeholder="Nombre o ámbito"></div><div class="col-md-3"><label class="form-label" for="estado">Estado</label><select class="form-select" id="estado" name="estado"><option value="">Todos</option>{% for valor, etiqueta in estados %}<option value="{{ valor }}" {% if estado_sel == valor %}selected{% endif %}>{{ etiqueta }}</option>{% endfor %}</select></div><div class="col-md-3 d-flex gap-2"><button class="btn btn-primary" type="submit">Filtrar</button><a class="btn btn-outline-secondary" href="{% url 'organizations:delegacion_list' %}">Limpiar</a></div></div></form>
-<div class="table-responsive card"><table class="table table-hover align-middle mb-0"><thead><tr><th>Nombre</th><th>Ámbito</th><th>Estado</th><th class="text-end">Acciones</th></tr></thead><tbody>
-{% for d in delegaciones %}<tr><td>{{ d.nombre }}</td><td>{{ d.ambito }}</td><td><span class="badge {% if d.activa %}text-bg-success{% else %}text-bg-secondary{% endif %}">{{ d.estado }}</span></td><td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{% url 'organizations:delegacion_update' d.pk %}">Editar</a><form class="d-inline" method="post" action="{% url 'organizations:delegacion_toggle' d.pk %}">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary" type="submit">{% if d.activa %}Desactivar{% else %}Activar{% endif %}</button></form></td></tr>{% empty %}<tr><td colspan="4" class="text-center text-body-secondary py-4">No hay delegaciones para mostrar.</td></tr>{% endfor %}</tbody></table></div>{% include "partials/_pagination.html" %}
-{% endif %}{% endblock %}
+<div class="card card-body shadow-sm mb-3">
+  <form method="get" action="{% url 'organizations:delegacion_list' %}">
+    <div class="row g-2 align-items-end">
+      <div class="col-md-6">
+        <label class="form-label" for="q">Buscar</label>
+        <input class="form-control" id="q" name="q"
+               value="{{ q|default:'' }}"
+               placeholder="Nombre, código o comuna">
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label" for="estado">Estado</label>
+        <select class="form-select" id="estado" name="estado">
+          <option value="">Todos</option>
+          {% for valor, etiqueta in estados %}
+            <option value="{{ valor }}"
+              {% if estado_sel == valor %}selected{% endif %}>
+              {{ etiqueta }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-md-3 d-flex gap-2">
+        <button class="btn btn-primary" type="submit">
+          <i class="bi bi-search me-1"></i>Filtrar
+        </button>
+        <a class="btn btn-outline-secondary"
+           href="{% url 'organizations:delegacion_list' %}">
+          Limpiar
+        </a>
+      </div>
+    </div>
+  </form>
+</div>
+
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Código</th>
+          <th>Nombre</th>
+          <th>Dirección</th>
+          <th>Comuna</th>
+          <th>Ámbito</th>
+          <th>Estado</th>
+          <th class="text-end">Acciones</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {% for d in delegaciones %}
+          <tr>
+            <td>{{ d.codigo|default:"—" }}</td>
+            <td>{{ d.nombre }}</td>
+            <td>{{ d.direccion|default:"—" }}</td>
+            <td>{{ d.comuna|default:"—" }}</td>
+            <td>{{ d.ambito|default:"—" }}</td>
+            <td>
+              {% if d.activa %}
+                <span class="badge text-bg-success">Activa</span>
+              {% else %}
+                <span class="badge text-bg-secondary">Inactiva</span>
+              {% endif %}
+            </td>
+            <td class="text-end text-nowrap">
+              {% if puede_editar %}
+                <a class="btn btn-sm btn-outline-primary"
+                   href="{% url 'organizations:delegacion_update' d.pk %}">
+                  <i class="bi bi-pencil me-1"></i>Editar
+                </a>
+
+                <form class="d-inline confirm-action"
+                      method="post"
+                      action="{% url 'organizations:delegacion_toggle' d.pk %}"
+                      data-title="{% if d.activa %}¿Desactivar delegación?{% else %}¿Activar delegación?{% endif %}"
+                      data-text="Se cambiará el estado de {{ d.nombre|escape }}.">
+                  {% csrf_token %}
+                  <button class="btn btn-sm btn-outline-secondary" type="submit">
+                    {% if d.activa %}Desactivar{% else %}Activar{% endif %}
+                  </button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="7" class="text-center text-body-secondary py-4">
+              No hay delegaciones para mostrar.
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% include "partials/_pagination.html" %}
+</div>
+
+{% if form %}
+  {% include "partials/_modal_form.html" with modal_id="delegacionModal" %}
+{% endif %}
+
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  {% if open_modal %}
+    const modal = document.getElementById("delegacionModal");
+    if (modal) {
+      bootstrap.Modal.getOrCreateInstance(modal).show();
+    }
+  {% endif %}
+
+  document.querySelectorAll(".confirm-action").forEach(function (form) {
+    form.addEventListener("submit", function (event) {
+      if (form.dataset.confirmed === "true") return;
+
+      event.preventDefault();
+
+      Swal.fire({
+        title: form.dataset.title || "¿Confirmar operación?",
+        text: form.dataset.text || "Verifica la operación antes de continuar.",
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "Sí, continuar",
+        cancelButtonText: "Cancelar",
+        confirmButtonColor: "#AD0000"
+      }).then(function (result) {
+        if (result.isConfirmed) {
+          form.dataset.confirmed = "true";
+          form.requestSubmit();
+        }
+      });
+    });
+  });
+});
+</script>
+{% endblock %}
