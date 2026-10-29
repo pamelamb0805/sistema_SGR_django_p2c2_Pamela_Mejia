@@ -15,12 +15,37 @@ CLAVE = "Clave-Segura-2026"
 class BaseTestCase(TestCase):
     @classmethod
     def setUpTestData(cls):
-        cls.del1 = Delegacion.objects.create(nombre="Rural", ambito="Zona rural")
-        cls.del2 = Delegacion.objects.create(nombre="Centro", ambito="Casco urbano")
-        cls.cargo = Cargo.objects.create(nombre_cargo="Delegado", vigencia_desde=date(2026, 1, 1))
-        cls.roles = {n: Rol.objects.create(nombre_rol=n) for n in
-                     ("Administrador", "Coordinador", "Delegado", "Funcionario", "Verificador", "Consulta")}
+        cls.del1 = Delegacion.objects.create(
+            nombre="Rural",
+            direccion="Dirección de prueba 1",
+            comuna="La Serena",
+            ambito="Zona rural",
+        )
+        cls.del2 = Delegacion.objects.create(
+            nombre="Centro",
+            direccion="Dirección de prueba 2",
+            comuna="La Serena",
+            ambito="Casco urbano",
+        )
 
+        cls.cargo = Cargo.objects.create(
+            nombre_cargo="Delegado",
+            vigencia_desde=date(2026, 1, 1),
+        )
+
+        cls.roles = {
+            nombre: Rol.objects.create(nombre_rol=nombre)
+            for nombre in (
+                "Administrador",
+                "Coordinador",
+                "Delegado",
+                "Funcionario",
+                "Verificador",
+                "Consulta",
+            )
+        }
+
+    
     def crear(self, ident, delegacion, rol, username=None):
         f = Funcionario.objects.create(identificador_institucional=ident, nombre=f"Func {ident}",
                                        cargo=self.cargo, delegacion=delegacion)
@@ -112,17 +137,47 @@ class VistaTests(BaseTestCase):
 
     def test_admin_crea_delegacion(self):
         self.client.login(username="admin1", password=CLAVE)
-        r = self.client.post(reverse("organizations:delegacion_create"),
-                             {"nombre": "Costa", "ambito": "Borde costero", "estado": "Activa"})
-        self.assertRedirects(r, reverse("organizations:delegacion_list"), fetch_redirect_response=False)
-        self.assertTrue(Delegacion.objects.filter(nombre="Costa").exists())
+
+        respuesta = self.client.post(
+            reverse("organizations:delegacion_create"),
+            {
+                "nombre": "Costa",
+                "direccion": "Avenida Costera 123",
+                "comuna": "La Serena",
+                "ambito": "Borde costero",
+                "estado": "Activa",
+            },
+        )
+
+        self.assertRedirects(
+            respuesta,
+            reverse("organizations:delegacion_list"),
+            fetch_redirect_response=False,
+        )
+
+        self.assertTrue(
+            Delegacion.objects.filter(nombre="Costa").exists()
+        )
 
     def test_nombre_delegacion_duplicado_se_rechaza(self):
         self.client.login(username="admin1", password=CLAVE)
-        r = self.client.post(reverse("organizations:delegacion_create"),
-                             {"nombre": "Rural", "ambito": "x", "estado": "Activa"})
-        self.assertEqual(r.status_code, 200)
-        self.assertEqual(Delegacion.objects.filter(nombre="Rural").count(), 1)
+
+        respuesta = self.client.post(
+            reverse("organizations:delegacion_create"),
+            {
+                "nombre": "Rural",
+                "direccion": "Otra dirección",
+                "comuna": "La Serena",
+                "ambito": "Zona de prueba",
+                "estado": "Activa",
+            },
+        )
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(
+            Delegacion.objects.filter(nombre="Rural").count(),
+            1,
+        )
 
     def test_delegado_solo_ve_su_delegacion(self):
         self.client.login(username="deleg1", password=CLAVE)

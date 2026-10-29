@@ -271,72 +271,35 @@ def errores_form(form):
     """Texto plano con los errores de un formulario (para mensajes SweetAlert)."""
     return " ".join(m for lista in form.errors.values() for m in lista)
 
+
 class ModalFormPageMixin:
     """
-    Reutiliza el contexto del ListView de la entidad al crear o editar.
-    El formulario se muestra dentro de un modal en la pantalla del listado.
-    Si hay errores, conserva los datos y abre el modal nuevamente.
+    Permite que las vistas de creación y edición reutilicen el listado
+    de la entidad y muestren el formulario dentro de un modal.
+
+    Si el formulario tiene errores, conserva los datos y solicita
+    que el modal vuelva a abrirse.
     """
 
     list_view_class = None
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-
-        if self.list_view_class is None:
-            raise ImproperlyConfigured(
-                "Debes configurar list_view_class en la vista CRUD."
-            )
-
-        # Conservar el formulario actual, incluidos sus errores.
-        form = context.get("form")
-        if form is None:
-            form = kwargs.get("form") or self.get_form()
-
-        # Construir el contexto de la lista utilizando su propia lógica
-        # de búsqueda, filtros, paginación y ámbito autorizado.
-        list_view = self.list_view_class()
-        list_view.setup(self.request, *self.args, **self.kwargs)
-        list_view.object_list = list_view.get_queryset()
-
-        list_context = list_view.get_context_data(
-            object_list=list_view.object_list
-        )
-
-        context.update(list_context)
-
-        # Restaurar el formulario y señalar que debe abrirse el modal.
-        context["form"] = form
-        context["open_modal"] = True
-        context["modo"] = "lista"
-        context["titulo_modal"] = getattr(
-            self, "titulo", "Formulario"
-        )
-
-        # En edición, el objeto queda disponible para el encabezado
-        # del modal y para los templates que lo necesiten.
-        if getattr(self, "object", None) is not None:
-            context["objeto_edicion"] = self.object
-
-        return context
-
-class ModalFormPageMixin:
-    """
-    Permite que una vista de creación o edición reutilice el contexto
-    de su vista de listado y abra el formulario dentro de un modal.
-    """
-
-    list_view_class = None
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        form = context.get("form")
 
         if self.list_view_class is None:
             raise ImproperlyConfigured(
                 f"{self.__class__.__name__} debe declarar list_view_class."
             )
 
+        # Preservar el formulario actual, incluidos sus errores.
+        form = context.get("form")
+        if form is None:
+            form = kwargs.get("form")
+
+        if form is None:
+            form = self.get_form()
+
+        # Preparar el listado usando su propio queryset y filtros.
         list_view = self.list_view_class()
         list_view.setup(
             self.request,
@@ -345,16 +308,17 @@ class ModalFormPageMixin:
         )
 
         list_view.object_list = list_view.get_queryset()
+
         list_context = list_view.get_context_data(
             object_list=list_view.object_list
         )
 
+        # Incorporar datos de búsqueda, filtros y paginación.
         context.update(list_context)
 
-        # El contexto de listado no debe reemplazar el formulario ni sus errores.
-        if form is not None:
-            context["form"] = form
-
+        # Restaurar los datos del formulario después de actualizar
+        # el contexto, para no perder los errores de validación.
+        context["form"] = form
         context["view"] = self
         context["modo"] = "lista"
         context["open_modal"] = True
@@ -363,5 +327,9 @@ class ModalFormPageMixin:
             "titulo",
             "Formulario",
         )
+
+        # Dejar disponible el objeto en las vistas de edición.
+        if getattr(self, "object", None) is not None:
+            context["objeto_edicion"] = self.object
 
         return context
