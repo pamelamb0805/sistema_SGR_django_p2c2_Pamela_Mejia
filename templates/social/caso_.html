@@ -1,4 +1,728 @@
+
 {% extends "base.html" %}
-{% block title %}Atención ciudadana · SGR{% endblock %}{% block page_title %}{{ titulo|default:"Ingreso de atención ciudadana" }}{% endblock %}
-{% block page_actions %}{% if modo == "lista" or not modo %}<a class="btn btn-primary" href="{% url 'social:caso_create' %}">Registrar atención</a>{% endif %}{% endblock %}
-{% block content %}{% if modo == "form" %}<div class="alert alert-info">Registre los datos de la persona y la primera gestión. Los campos obligatorios se indican con *.</div><div class="card"><div class="card-body"><form method="post" novalidate>{% csrf_token %}{% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}{% for field in form %}<div class="mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} *{% endif %}</label>{{ field }}{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}{% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}</div>{% endfor %}<button class="btn btn-primary" type="submit">Guardar atención</button> <a class="btn btn-outline-secondary" href="{% url 'social:caso_list' %}">Cancelar</a></form></div></div>{% elif modo == "detalle" %}<div class="card mb-3"><div class="card-body"><h2 class="h5">{{ caso.nombre }}</h2><p><strong>Territorio:</strong> {{ caso.territorio }}</p><p><strong>Estado:</strong> {{ caso.estado_caso }}</p><p><strong>Registrado:</strong> {{ caso.fecha_primer_registro }}</p><a class="btn btn-outline-primary" href="{% url 'social:caso_update' caso.pk %}">Editar datos</a>{% if puede_agregar %} <a class="btn btn-primary" href="{% url 'social:gestion_create' caso.pk %}">Agregar gestión</a>{% endif %}</div></div>{% if estado_form %}<form method="post" action="{% url 'social:caso_estado' caso.pk %}" class="card card-body mb-3">{% csrf_token %}<label class="form-label">Estado del caso</label>{{ estado_form.estado_caso }}<button class="btn btn-outline-primary mt-2 align-self-start">Actualizar estado</button></form>{% endif %}<div class="card"><div class="card-header">Historial de atenciones</div><div class="table-responsive"><table class="table mb-0"><thead><tr><th>Fecha</th><th>Tipo</th><th>Detalle</th><th>Estado</th><th></th></tr></thead><tbody>{% for g in gestiones %}<tr><td>{{ g.fecha }}</td><td>{{ g.get_tipo_atencion_display }}</td><td>{{ g.catalogo.nombre }}<br>{{ g.resultado|default:"—" }}</td><td>{{ g.estado }}</td><td><a class="btn btn-sm btn-outline-secondary" href="{% url 'social:gestion_update' g.pk %}">Corregir</a></td></tr>{% empty %}<tr><td colspan="5">No hay gestiones registradas.</td></tr>{% endfor %}</tbody></table></div></div>{% else %}<form method="get" class="card card-body mb-3"><div class="row g-2"><div class="col-md-3"><label class="form-label">Buscar persona</label><input class="form-control" name="q" value="{{ filtros.q }}"></div><div class="col-md-3"><label class="form-label">Territorio</label><input class="form-control" name="territorio" value="{{ filtros.territorio }}"></div><div class="col-md-2"><label class="form-label">Estado</label><select class="form-select" name="estado_caso"><option value="">Todos</option>{% for v,l in estados %}<option value="{{ v }}" {% if filtros.estado_caso == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div><div class="col-md-2"><label class="form-label">Desde</label><input class="form-control" type="date" name="fecha_desde" value="{{ filtros.fecha_desde }}"></div><div class="col-md-2"><label class="form-label">Hasta</label><input class="form-control" type="date" name="fecha_hasta" value="{{ filtros.fecha_hasta }}"></div></div><div class="mt-2"><button class="btn btn-primary">Filtrar</button> <a class="btn btn-outline-secondary" href="{% url 'social:caso_list' %}">Limpiar</a></div></form><div class="table-responsive card"><table class="table table-hover mb-0"><thead><tr><th>Persona</th><th>Territorio</th><th>Fecha registro</th><th>Estado</th><th>Gestiones</th><th></th></tr></thead><tbody>{% for c in casos %}<tr><td>{{ c.nombre }}</td><td>{{ c.territorio }}</td><td>{{ c.fecha_primer_registro }}</td><td>{{ c.estado_caso }}</td><td>{{ c.total_gestiones }}</td><td><a class="btn btn-sm btn-outline-primary" href="{% url 'social:caso_detail' c.pk %}">Ver detalle</a></td></tr>{% empty %}<tr><td colspan="6" class="text-center py-4">No hay atenciones que coincidan con los filtros.</td></tr>{% endfor %}</tbody></table></div>{% include "partials/_pagination.html" %}{% endif %}{% endblock %}
+
+{% block title %}{{ titulo|default:"Atención social" }} · SGR{% endblock %}
+{% block page_title %}{{ titulo|default:"Atención social" }}{% endblock %}
+
+{% block content %}
+
+{# ============================================================
+   MODO: LISTADO DE CASOS
+   ============================================================ #}
+{% if modo == "lista" %}
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <p class="text-body-secondary mb-0">
+        Consulta y seguimiento de los casos de atención social.
+    </p>
+
+    {% if user.is_authenticated %}
+        <a class="btn btn-primary" href="{% url 'social:caso_create' %}">
+            <i class="bi bi-plus-circle me-1" aria-hidden="true"></i>
+            Registrar caso
+        </a>
+    {% endif %}
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-header">
+        <h2 class="h6 mb-0">Filtros de búsqueda</h2>
+    </div>
+
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-12 col-md-6 col-lg-3">
+                <label class="form-label" for="filtro-q">Nombre de la persona</label>
+                <input
+                    id="filtro-q"
+                    class="form-control"
+                    type="search"
+                    name="q"
+                    value="{{ filtros.q|default:'' }}"
+                    placeholder="Buscar por nombre"
+                >
+            </div>
+
+            <div class="col-12 col-md-6 col-lg-3">
+                <label class="form-label" for="filtro-territorio">Territorio</label>
+                <input
+                    id="filtro-territorio"
+                    class="form-control"
+                    type="text"
+                    name="territorio"
+                    value="{{ filtros.territorio|default:'' }}"
+                    placeholder="Buscar territorio"
+                >
+            </div>
+
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label" for="filtro-estado">Estado del caso</label>
+                <select id="filtro-estado" class="form-select" name="estado_caso">
+                    <option value="">Todos</option>
+                    {% for valor, etiqueta in estados %}
+                        <option
+                            value="{{ valor }}"
+                            {% if filtros.estado_caso == valor %}selected{% endif %}
+                        >{{ etiqueta }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            {% if delegaciones %}
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label" for="filtro-delegacion">Delegación</label>
+                <select id="filtro-delegacion" class="form-select" name="delegacion">
+                    <option value="">Todas</option>
+                    {% for delegacion in delegaciones %}
+                        <option
+                            value="{{ delegacion.pk }}"
+                            {% if filtros.delegacion == delegacion.pk|stringformat:"s" %}selected{% endif %}
+                        >{{ delegacion.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label" for="filtro-desde">Registro desde</label>
+                <input
+                    id="filtro-desde"
+                    class="form-control"
+                    type="date"
+                    name="fecha_desde"
+                    value="{{ filtros.fecha_desde|default:'' }}"
+                >
+            </div>
+
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label" for="filtro-hasta">Registro hasta</label>
+                <input
+                    id="filtro-hasta"
+                    class="form-control"
+                    type="date"
+                    name="fecha_hasta"
+                    value="{{ filtros.fecha_hasta|default:'' }}"
+                >
+            </div>
+
+            <div class="col-12 d-flex flex-wrap gap-2">
+                <button class="btn btn-primary" type="submit">
+                    <i class="bi bi-search me-1" aria-hidden="true"></i>
+                    Buscar
+                </button>
+                <a class="btn btn-outline-secondary" href="{% url 'social:caso_list' %}">
+                    Limpiar filtros
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <h2 class="h6 mb-0">Casos registrados</h2>
+        {% if page_obj %}
+            <span class="badge text-bg-secondary">
+                Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}
+            </span>
+        {% endif %}
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th scope="col">N.º caso</th>
+                    <th scope="col">Persona atendida</th>
+                    <th scope="col">Territorio</th>
+                    <th scope="col">Delegación</th>
+                    <th scope="col">Fecha de registro</th>
+                    <th scope="col">Gestiones</th>
+                    <th scope="col">Estado</th>
+                    <th scope="col" class="text-end">Acciones</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                {% for caso in casos %}
+                <tr>
+                    <td>{{ caso.pk }}</td>
+                    <td class="fw-semibold">{{ caso.nombre }}</td>
+                    <td>{{ caso.territorio }}</td>
+                    <td>{{ caso.delegacion.nombre }}</td>
+                    <td>{{ caso.fecha_primer_registro|date:"d/m/Y" }}</td>
+                    <td>
+                        <span class="badge text-bg-secondary">
+                            {{ caso.total_gestiones|default:0 }} / {{ maximo|default:3 }}
+                        </span>
+                    </td>
+                    <td>
+                        {% if caso.estado_caso == "Abierto" %}
+                            <span class="badge text-bg-success">Abierto</span>
+                        {% elif caso.estado_caso == "En seguimiento" %}
+                            <span class="badge text-bg-warning">En seguimiento</span>
+                        {% else %}
+                            <span class="badge text-bg-secondary">{{ caso.estado_caso }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-end text-nowrap">
+                        <a
+                            class="btn btn-sm btn-outline-primary"
+                            href="{% url 'social:caso_detail' caso.pk %}"
+                            aria-label="Ver caso {{ caso.pk }}"
+                        >
+                            <i class="bi bi-eye me-1" aria-hidden="true"></i>Ver
+                        </a>
+
+                        {% if puede_editar and not caso.cerrado %}
+                            <a
+                                class="btn btn-sm btn-outline-secondary"
+                                href="{% url 'social:caso_update' caso.pk %}"
+                            >Editar</a>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="8" class="text-center py-5">
+                        <i class="bi bi-inbox fs-2 d-block mb-2 text-body-secondary" aria-hidden="true"></i>
+                        <p class="mb-1 fw-semibold">No se encontraron casos.</p>
+                        <p class="text-body-secondary small mb-0">
+                            Prueba con otros filtros o registra un nuevo caso.
+                        </p>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if is_paginated %}
+    <div class="card-footer">
+        <nav aria-label="Paginación de casos">
+            <ul class="pagination justify-content-center flex-wrap mb-0">
+                {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?{% if filtros.urlencode %}{{ filtros.urlencode }}&amp;{% endif %}page=1">
+                        Primera
+                    </a>
+                </li>
+                <li class="page-item">
+                    <a class="page-link" href="?{% if filtros.urlencode %}{{ filtros.urlencode }}&amp;{% endif %}page={{ page_obj.previous_page_number }}">
+                        Anterior
+                    </a>
+                </li>
+                {% else %}
+                <li class="page-item disabled"><span class="page-link">Primera</span></li>
+                <li class="page-item disabled"><span class="page-link">Anterior</span></li>
+                {% endif %}
+
+                <li class="page-item active" aria-current="page">
+                    <span class="page-link">
+                        {{ page_obj.number }} / {{ page_obj.paginator.num_pages }}
+                    </span>
+                </li>
+
+                {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?{% if filtros.urlencode %}{{ filtros.urlencode }}&amp;{% endif %}page={{ page_obj.next_page_number }}">
+                        Siguiente
+                    </a>
+                </li>
+                <li class="page-item">
+                    <a class="page-link" href="?{% if filtros.urlencode %}{{ filtros.urlencode }}&amp;{% endif %}page={{ page_obj.paginator.num_pages }}">
+                        Última
+                    </a>
+                </li>
+                {% else %}
+                <li class="page-item disabled"><span class="page-link">Siguiente</span></li>
+                <li class="page-item disabled"><span class="page-link">Última</span></li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+</div>
+
+
+{# ============================================================
+   MODO: FORMULARIO DE CREACIÓN O EDICIÓN
+   ============================================================ #}
+{% elif modo == "form" %}
+
+<div class="mb-3">
+    <a
+        class="btn btn-sm btn-outline-secondary"
+        href="{% if caso %}{% url 'social:caso_detail' caso.pk %}{% else %}{% url 'social:caso_list' %}{% endif %}"
+    >
+        <i class="bi bi-arrow-left me-1" aria-hidden="true"></i>
+        Volver
+    </a>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-header">
+        <h2 class="h6 mb-0">{{ titulo|default:"Datos del caso" }}</h2>
+    </div>
+
+    <div class="card-body">
+        <p class="text-body-secondary">
+            Los campos marcados con <span class="text-danger">*</span> son obligatorios.
+        </p>
+
+        <form method="post" novalidate>
+            {% csrf_token %}
+
+            {% if form.non_field_errors %}
+                <div class="alert alert-danger" role="alert">
+                    {{ form.non_field_errors }}
+                </div>
+            {% endif %}
+
+            <div class="row g-3">
+                {% for field in form %}
+                <div class="col-12 {% if field.name == 'nombre' or field.name == 'territorio' or field.name == 'tipo_atencion' or field.name == 'subatencion' or field.name == 'fecha' or field.name == 'estado' %}col-md-6{% endif %}">
+                    <label class="form-label" for="{{ field.id_for_label }}">
+                        {{ field.label }}
+                        {% if field.field.required %}
+                            <span class="text-danger">*</span>
+                        {% endif %}
+                    </label>
+
+                    {{ field }}
+
+                    {% if field.help_text %}
+                        <div class="form-text">{{ field.help_text }}</div>
+                    {% endif %}
+
+                    {% for error in field.errors %}
+                        <div class="text-danger small mt-1">{{ error }}</div>
+                    {% endfor %}
+                </div>
+                {% endfor %}
+            </div>
+
+            <div class="d-flex flex-wrap gap-2 mt-4">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-check-circle me-1" aria-hidden="true"></i>
+                    Guardar
+                </button>
+
+                <a
+                    class="btn btn-outline-secondary"
+                    href="{% if caso %}{% url 'social:caso_detail' caso.pk %}{% else %}{% url 'social:caso_list' %}{% endif %}"
+                >Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+
+{# ============================================================
+   MODO: DETALLE DEL CASO E HISTORIAL DE GESTIONES
+   ============================================================ #}
+{% elif modo == "detalle" %}
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <a class="btn btn-outline-secondary" href="{% url 'social:caso_list' %}">
+        <i class="bi bi-arrow-left me-1" aria-hidden="true"></i>
+        Volver a los casos
+    </a>
+
+    <div class="d-flex flex-wrap gap-2">
+        {% if puede_editar %}
+        <a class="btn btn-outline-primary" href="{% url 'social:caso_update' caso.pk %}">
+            <i class="bi bi-pencil me-1" aria-hidden="true"></i>
+            Editar datos
+        </a>
+        {% endif %}
+
+        {% if puede_agregar %}
+        <a class="btn btn-primary" href="{% url 'social:gestion_create' caso.pk %}">
+            <i class="bi bi-plus-circle me-1" aria-hidden="true"></i>
+            Nueva gestión
+        </a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-12 col-lg-8">
+        <div class="card shadow-sm h-100">
+            <div class="card-header">
+                <h2 class="h6 mb-0">Identificación del caso</h2>
+            </div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Número de caso</dt>
+                    <dd class="col-sm-8">{{ caso.pk }}</dd>
+
+                    <dt class="col-sm-4">Persona atendida</dt>
+                    <dd class="col-sm-8">{{ caso.nombre }}</dd>
+
+                    <dt class="col-sm-4">Territorio</dt>
+                    <dd class="col-sm-8">{{ caso.territorio }}</dd>
+
+                    <dt class="col-sm-4">Delegación</dt>
+                    <dd class="col-sm-8">{{ caso.delegacion.nombre }}</dd>
+
+                    <dt class="col-sm-4">Fecha de registro</dt>
+                    <dd class="col-sm-8">{{ caso.fecha_primer_registro|date:"d/m/Y" }}</dd>
+
+                    <dt class="col-sm-4">Estado del caso</dt>
+                    <dd class="col-sm-8">
+                        <span class="badge {% if caso.estado_caso == 'Abierto' %}text-bg-success{% elif caso.estado_caso == 'En seguimiento' %}text-bg-warning{% else %}text-bg-secondary{% endif %}">
+                            {{ caso.estado_caso }}
+                        </span>
+                    </dd>
+
+                    <dt class="col-sm-4">Gestiones registradas</dt>
+                    <dd class="col-sm-8">{{ gestiones|length }} de {{ maximo|default:3 }}</dd>
+
+                    <dt class="col-sm-4">Gestiones restantes</dt>
+                    <dd class="col-sm-8">{{ restantes|default:0 }}</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-lg-4">
+        <div class="card shadow-sm h-100">
+            <div class="card-header">
+                <h2 class="h6 mb-0">Estado y seguimiento</h2>
+            </div>
+            <div class="card-body">
+                {% if estado_form %}
+                <form method="post" action="{% url 'social:caso_estado' caso.pk %}">
+                    {% csrf_token %}
+
+                    {% if estado_form.non_field_errors %}
+                        <div class="alert alert-danger">{{ estado_form.non_field_errors }}</div>
+                    {% endif %}
+
+                    <label class="form-label" for="{{ estado_form.estado_caso.id_for_label }}">
+                        Cambiar estado del caso
+                    </label>
+                    {{ estado_form.estado_caso }}
+
+                    {% for error in estado_form.estado_caso.errors %}
+                        <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+
+                    <button type="submit" class="btn btn-outline-primary mt-3">
+                        Actualizar estado
+                    </button>
+                </form>
+                {% else %}
+                    <p class="text-body-secondary mb-0">
+                        No tienes permisos para cambiar el estado de este caso.
+                    </p>
+                {% endif %}
+
+                {% if caso.cerrado %}
+                    <div class="alert alert-warning mt-3 mb-0">
+                        El caso está cerrado. No se pueden registrar nuevas gestiones.
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <h2 class="h6 mb-0">Historial de gestiones</h2>
+        <span class="badge text-bg-secondary">
+            {{ gestiones|length }} / {{ maximo|default:3 }}
+        </span>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th scope="col">N.º gestión</th>
+                    <th scope="col">Tipo de Atención</th>
+                    <th scope="col">Subatención</th>
+                    <th scope="col">Descripción</th>
+                    <th scope="col">Fecha de gestión</th>
+                    <th scope="col">Fecha de registro</th>
+                    <th scope="col">Responsable</th>
+                    <th scope="col">Delegación</th>
+                    <th scope="col">Resultado</th>
+                    <th scope="col">Estado</th>
+                    {% if puede_editar %}
+                    <th scope="col">Acciones</th>
+                    {% endif %}
+                </tr>
+            </thead>
+
+            <tbody>
+                {% for g in gestiones %}
+                <tr>
+                    <td>{{ g.numero_gestion }}</td>
+                    <td>{{ g.tipo_atencion.nombre|default:g.tipo_atencion }}</td>
+                    <td>{{ g.subatencion.nombre|default:"—" }}</td>
+                    <td>{{ g.descripcion|default:"—" }}</td>
+                    <td>{{ g.fecha|date:"d/m/Y" }}</td>
+                    <td>{{ g.fecha_registro|date:"d/m/Y H:i"|default:"—" }}</td>
+                    <td>{{ g.funcionario.nombre|default:"—" }}</td>
+                    <td>{{ g.delegacion.nombre|default:caso.delegacion.nombre }}</td>
+                    <td>{{ g.resultado|default:"—" }}</td>
+                    <td>
+                        <span class="badge {% if g.estado == 'Realizada' %}text-bg-success{% else %}text-bg-warning{% endif %}">
+                            {{ g.estado }}
+                        </span>
+                    </td>
+                    {% if puede_editar %}
+                    <td>
+                        <a
+                            class="btn btn-sm btn-outline-secondary"
+                            href="{% url 'social:gestion_update' g.pk %}"
+                        >
+                            Corregir
+                        </a>
+                    </td>
+                    {% endif %}
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="11" class="text-center py-5">
+                        Todavía no hay gestiones registradas.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if puede_agregar %}
+    <div class="card-footer">
+        <a class="btn btn-primary" href="{% url 'social:gestion_create' caso.pk %}">
+            <i class="bi bi-plus-circle me-1" aria-hidden="true"></i>
+            Registrar siguiente gestión
+        </a>
+    </div>
+    {% endif %}
+</div>
+
+
+{# ============================================================
+   MODO: ESTADÍSTICAS
+   ============================================================ #}
+{% elif modo == "estadisticas" %}
+
+<div class="card shadow-sm mb-4">
+    <div class="card-header">
+        <h2 class="h6 mb-0">Filtros del informe</h2>
+    </div>
+
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-12 col-md-4">
+                <label class="form-label" for="estadistica-desde">Desde</label>
+                <input
+                    id="estadistica-desde"
+                    class="form-control"
+                    type="date"
+                    name="fecha_desde"
+                    value="{{ filtros.fecha_desde|default:'' }}"
+                >
+            </div>
+
+            <div class="col-12 col-md-4">
+                <label class="form-label" for="estadistica-hasta">Hasta</label>
+                <input
+                    id="estadistica-hasta"
+                    class="form-control"
+                    type="date"
+                    name="fecha_hasta"
+                    value="{{ filtros.fecha_hasta|default:'' }}"
+                >
+            </div>
+
+            {% if delegaciones %}
+            <div class="col-12 col-md-4">
+                <label class="form-label" for="estadistica-delegacion">Delegación</label>
+                <select id="estadistica-delegacion" class="form-select" name="delegacion">
+                    <option value="">Todas</option>
+                    {% for delegacion in delegaciones %}
+                    <option
+                        value="{{ delegacion.pk }}"
+                        {% if filtros.delegacion == delegacion.pk|stringformat:"s" %}selected{% endif %}
+                    >{{ delegacion.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+
+            <div class="col-12 d-flex gap-2">
+                <button class="btn btn-primary" type="submit">
+                    <i class="bi bi-funnel me-1" aria-hidden="true"></i>
+                    Aplicar filtros
+                </button>
+                <a class="btn btn-outline-secondary" href="{% url 'social:estadisticas' %}">
+                    Limpiar
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-12 col-md-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-body-secondary small">Gestiones realizadas</div>
+                <div class="display-6 fw-semibold">
+                    {{ estadisticas.total_gestiones|default:0 }}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-md-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-body-secondary small">Personas atendidas</div>
+                <div class="display-6 fw-semibold">
+                    {{ estadisticas.total_personas|default:0 }}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-12 col-xl-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-header">
+                <h2 class="h6 mb-0">Gestiones por Tipo de Atención</h2>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th scope="col">Tipo de Atención</th>
+                            <th scope="col" class="text-end">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for fila in estadisticas.por_tipo %}
+                        <tr>
+                            <td>{{ fila.tipo_atencion__nombre|default:fila.tipo_atencion }}</td>
+                            <td class="text-end">{{ fila.total }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="2" class="text-center text-body-secondary py-3">Sin datos para mostrar.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-xl-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-header">
+                <h2 class="h6 mb-0">Gestiones por Subatención</h2>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th scope="col">Subatención</th>
+                            <th scope="col" class="text-end">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for fila in estadisticas.por_subatencion %}
+                        <tr>
+                            <td>{{ fila.subatencion__nombre }}</td>
+                            <td class="text-end">{{ fila.total }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="2" class="text-center text-body-secondary py-3">Sin datos para mostrar.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-xl-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-header">
+                <h2 class="h6 mb-0">Gestiones por Delegación</h2>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th scope="col">Delegación</th>
+                            <th scope="col" class="text-end">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for fila in estadisticas.por_delegacion %}
+                        <tr>
+                            <td>{{ fila.delegacion__nombre|default:fila.usuario__delegacion__nombre }}</td>
+                            <td class="text-end">{{ fila.total }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="2" class="text-center text-body-secondary py-3">Sin datos para mostrar.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-xl-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-header">
+                <h2 class="h6 mb-0">Gestiones por mes</h2>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th scope="col">Mes</th>
+                            <th scope="col" class="text-end">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for fila in estadisticas.por_mes %}
+                        <tr>
+                            <td>{{ fila.mes|date:"m/Y" }}</td>
+                            <td class="text-end">{{ fila.total }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="2" class="text-center text-body-secondary py-3">Sin datos para mostrar.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+{# ============================================================
+   MODO NO RECONOCIDO
+   ============================================================ #}
+{% else %}
+
+<div class="alert alert-warning" role="alert">
+    <h2 class="h6">Vista de atención social no reconocida</h2>
+    <p class="mb-0">
+        No se recibió un modo de visualización válido. Vuelve al listado de casos.
+    </p>
+    <a class="btn btn-primary mt-3" href="{% url 'social:caso_list' %}">
+        Volver a atención social
+    </a>
+</div>
+
+{% endif %}
+
+{% endblock %}

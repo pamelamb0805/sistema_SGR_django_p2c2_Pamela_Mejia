@@ -1,53 +1,97 @@
-<div class="modal fade" id="{{ modal_id|default:'crudModal' }}"
-     tabindex="-1" aria-labelledby="crudModalLabel"
-     aria-hidden="true">
-  <div class="modal-dialog modal-lg modal-dialog-scrollable">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="crudModalLabel">
-          {{ titulo_modal|default:"Formulario" }}
-        </h5>
-        <button type="button" class="btn-close"
-                data-bs-dismiss="modal" aria-label="Cerrar"></button>
-      </div>
 
-      <form method="post" action="{{ request.path }}" novalidate>
-        {% csrf_token %}
-        <div class="modal-body">
-          {% if form.non_field_errors %}
-            <div class="alert alert-danger" role="alert">
-              {{ form.non_field_errors }}
+<div
+    class="modal fade"
+    id="{{ modal_id|default:'crudModal' }}"
+    tabindex="-1"
+    aria-labelledby="{{ modal_id|default:'crudModal' }}Label"
+    aria-hidden="true"
+>
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+
+            <div class="modal-header">
+                <h2
+                    class="modal-title h5"
+                    id="{{ modal_id|default:'crudModal' }}Label"
+                >
+                    {{ titulo_modal|default:"Formulario" }}
+                </h2>
+
+                <button
+                    type="button"
+                    class="btn-close"
+                    data-bs-dismiss="modal"
+                    aria-label="Cerrar"
+                ></button>
             </div>
-          {% endif %}
 
-          {% for field in form %}
-            <div class="mb-3">
-              <label class="form-label" for="{{ field.id_for_label }}">
-                {{ field.label }}
-                {% if field.field.required %}<span aria-hidden="true">*</span>{% endif %}
-              </label>
+            <form
+                method="post"
+                action="{{ request.get_full_path }}"
+                novalidate
+            >
+                {% csrf_token %}
 
-              {{ field }}
+                <div class="modal-body">
 
-              {% if field.help_text %}
-                <div class="form-text">{{ field.help_text }}</div>
-              {% endif %}
+                    {% if form.non_field_errors %}
+                        <div class="alert alert-danger" role="alert">
+                            {{ form.non_field_errors }}
+                        </div>
+                    {% endif %}
 
-              {% for error in field.errors %}
-                <div class="invalid-feedback d-block">{{ error }}</div>
-              {% endfor %}
-            </div>
-          {% endfor %}
+                    {% for field in form %}
+                        <div class="mb-3">
+
+                            <label
+                                class="form-label"
+                                for="{{ field.id_for_label }}"
+                            >
+                                {{ field.label }}
+
+                                {% if field.field.required %}
+                                    <span aria-hidden="true">*</span>
+                                {% endif %}
+                            </label>
+
+                            {{ field }}
+
+                            {% if field.help_text %}
+                                <div class="form-text">
+                                    {{ field.help_text }}
+                                </div>
+                            {% endif %}
+
+                            {% for error in field.errors %}
+                                <div class="text-danger small mt-1" role="alert">
+                                    {{ error }}
+                                </div>
+                            {% endfor %}
+
+                        </div>
+                    {% endfor %}
+
+                </div>
+
+                <div class="modal-footer">
+                    <button
+                        type="button"
+                        class="btn btn-outline-secondary"
+                        data-bs-dismiss="modal"
+                    >
+                        Cancelar
+                    </button>
+
+                    <button
+                        type="submit"
+                        class="btn btn-primary"
+                    >
+                        <i class="bi bi-check-lg me-1"></i>
+                        Guardar
+                    </button>
+                </div>
+
+            </form>
         </div>
-
-        <div class="modal-footer">
-          <button type="button" class="btn btn-outline-secondary"
-                  data-bs-dismiss="modal">Cancelar</button>
-          <button type="submit" class="btn btn-primary">
-            <i class="bi bi-check-lg me-1"></i>Guardar
-          </button>
-        </div>
-      </form>
     </div>
-  </div>
 </div>

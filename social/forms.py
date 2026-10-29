@@ -1,3 +1,4 @@
+
 from django import forms
 from django.utils import timezone
 
@@ -5,64 +6,215 @@ from catalogs.models import Catalogo
 from core.forms import BootstrapFormMixin
 
 from .models import AtencionSocial, UsuarioSocial
-from .services import TIPOS_CATALOGO_ATENCION
 
 
-def _catalogo_atencion(area=None, actual=None):
-    qs = Catalogo.objects.disponibles(area=area).filter(tipo_catalogo__in=TIPOS_CATALOGO_ATENCION)
+def _tipos_atencion(area=None):
+    return Catalogo.objects.disponibles(
+        area=area,
+        tipo=Catalogo.TIPO_ATENCION,
+    ).order_by("nombre")
+
+
+def _subatenciones(tipo_id=None, area=None, actual=None):
+    qs = Catalogo.objects.disponibles(
+        area=area,
+        tipo=Catalogo.TIPO_SUBATENCION,
+    )
+
+    if tipo_id:
+        qs = qs.filter(tipo_atencion_padre_id=tipo_id)
+    else:
+        qs = qs.none()
+
+    # En edición se puede conservar un valor antiguo para mostrarlo,
+    # pero la validación del formulario impedirá guardar uno inactivo.
     if actual:
-        qs = Catalogo.objects.filter(pk=actual) | qs
-    return qs
+        qs = (Catalogo.objects.filter(pk=actual) | qs).distinct()
+
+    return qs.order_by("nombre")
 
 
-class NuevoCasoForm(BootstrapFormMixin, forms.Form):
-    """Alta de un caso: identifica a la persona una sola vez y registra su primera gestión."""
-    nombre = forms.CharField(label="Nombre de la persona atendida", max_length=150)
-    territorio = forms.CharField(label="Territorio", max_length=150)
-    tipo_atencion = forms.ChoiceField(label="Tipo de atención", choices=AtencionSocial.TIPOS)
-    catalogo = forms.ModelChoiceField(label="Atención / subatención", queryset=Catalogo.objects.none())
-    fecha = forms.DateField(label="Fecha", initial=timezone.localdate,
-                            widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"))
-    estado = forms.ChoiceField(label="Estado de la gestión", choices=AtencionSocial.ESTADOS,
-                               initial=AtencionSocial.ESTADO_REALIZADA)
-    resultado = forms.CharField(label="Resultado", required=False, widget=forms.Textarea(attrs={"rows": 3}))
+class SeleccionAtencionMixin:
+    """Configura y valida el par Tipo de Atención/Subatención."""
 
-    def __init__(self, *args, area=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields["catalogo"].queryset = _catalogo_atencion(area)
+    def configurar_atencion(self, area=None, datos=None, instancia=None):
+        datos = datos or {}
+        tipo_id = (
+            datos.get("tipo_atencion")
+            or getattr(instancia, "tipo_atencion_id", None)
+        )
+
+        self.fields["tipo_atencion"].queryset = _tipos_atencion(area)
+        self.fields["subatencion"].queryset = _subatenciones(
+            tipo_id=tipo_id,
+            area=area,
+            actual=getattr(instancia, "subatencion_id", None),
+        )
 
     def clean(self):
         datos = super().clean()
-        if datos.get("estado") == AtencionSocial.ESTADO_REALIZADA and not (datos.get("resultado") or "").strip():
-            self.add_error("resultado", "Indique el resultado de la gestión realizada.")
+        tipo = datos.get("tipo_atencion")
+        subatencion = datos.get("subatencion")
+
+        if tipo and tipo.tipo_catalogo != Catalogo.TIPO_ATENCION:
+            self.add_error(
+                "tipo_atencion",
+                "Seleccione un Tipo de Atención válido.",
+            )
+
+        if subatencion:
+            if subatencion.tipo_catalogo != Catalogo.TIPO_SUBATENCION:
+                self.add_error(
+                    "subatencion",
+                    "Seleccione una Subatención válida.",
+                )
+            elif not subatencion.activo:
+                self.add_error(
+                    "subatencion",
+                    "La Subatención seleccionada está inactiva.",
+                )
+            elif tipo and subatencion.tipo_atencion_padre_id != tipo.pk:
+                self.add_error(
+                    "subatencion",
+                    "La Subatención debe pertenecer al Tipo de Atención seleccionado.",
+                )
+
+        if tipo and not tipo.activo:
+            self.add_error(
+                "tipo_atencion",
+                "El Tipo de Atención seleccionado está inactivo.",
+            )
+
+        return datos
+
+
+class NuevoCasoForm(
+    SeleccionAtencionMixin,
+    BootstrapFormMixin,
+    forms.Form,
+):
+    """Registra una persona y su primera gestión."""
+
+    nombre = forms.CharField(
+        label="Nombre de la persona atendida",
+        max_length=150,
+    )
+    territorio = forms.CharField(
+        label="Territorio",
+        max_length=150,
+    )
+    tipo_atencion = forms.ModelChoiceField(
+        label="Tipo de Atención",
+        queryset=Catalogo.objects.none(),
+    )
+    subatencion = forms.ModelChoiceField(
+        label="Subatención",
+        queryset=Catalogo.objects.none(),
+    )
+    descripcion = forms.CharField(
+        label="Descripción de la atención",
+        widget=forms.Textarea(attrs={"rows": 3}),
+    )
+    fecha = forms.DateField(
+        label="Fecha de la gestión",
+        initial=timezone.localdate,
+        widget=forms.DateInput(
+            attrs={"type": "date"},
+            format="%Y-%m-%d",
+        ),
+    )
+    estado = forms.ChoiceField(
+        label="Estado de la gestión",
+        choices=AtencionSocial.ESTADOS,
+        initial=AtencionSocial.ESTADO_REALIZADA,
+    )
+    resultado = forms.CharField(
+        label="Resultado",
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 3}),
+    )
+
+    def __init__(self, *args, area=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.configurar_atencion(
+            area=area,
+            datos=self.data if self.is_bound else None,
+        )
+
+    def clean(self):
+        datos = super().clean()
+
+        if (
+            datos.get("estado") == AtencionSocial.ESTADO_REALIZADA
+            and not (datos.get("resultado") or "").strip()
+        ):
+            self.add_error(
+                "resultado",
+                "Indique el resultado de la gestión realizada.",
+            )
+
         return datos
 
 
 class CasoForm(BootstrapFormMixin, forms.ModelForm):
     """Edición de los datos de identificación del caso."""
+
     class Meta:
         model = UsuarioSocial
         fields = ["nombre", "territorio"]
 
 
-class GestionForm(BootstrapFormMixin, forms.ModelForm):
+class GestionForm(
+    SeleccionAtencionMixin,
+    BootstrapFormMixin,
+    forms.ModelForm,
+):
     class Meta:
         model = AtencionSocial
-        fields = ["tipo_atencion", "catalogo", "fecha", "estado", "resultado"]
+        fields = [
+            "tipo_atencion",
+            "subatencion",
+            "descripcion",
+            "fecha",
+            "estado",
+            "resultado",
+        ]
         widgets = {
-            "fecha": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+            "fecha": forms.DateInput(
+                attrs={"type": "date"},
+                format="%Y-%m-%d",
+            ),
+            "descripcion": forms.Textarea(attrs={"rows": 3}),
             "resultado": forms.Textarea(attrs={"rows": 3}),
         }
 
     def __init__(self, *args, caso=None, area=None, **kwargs):
         super().__init__(*args, **kwargs)
-        usadas = set()
+        self.caso = caso
+
+        self.configurar_atencion(
+            area=area,
+            datos=self.data if self.is_bound else None,
+            instancia=self.instance,
+        )
+
         if caso is not None:
-            usadas = set(caso.gestiones.exclude(pk=self.instance.pk).values_list("tipo_atencion", flat=True))
-        # Solo se ofrecen tipos aún no usados en el caso (tipos diferenciados, RN-012)
-        self.fields["tipo_atencion"].choices = [(v, l) for v, l in AtencionSocial.TIPOS if v not in usadas]
-        self.fields["catalogo"].queryset = _catalogo_atencion(area, self.instance.catalogo_id)
+            usadas = caso.gestiones.exclude(
+                pk=self.instance.pk
+            ).values_list("tipo_atencion_id", flat=True)
+
+            self.fields["tipo_atencion"].queryset = (
+                self.fields["tipo_atencion"].queryset.exclude(
+                    pk__in=usadas
+                )
+                | Catalogo.objects.filter(
+                    pk=self.instance.tipo_atencion_id
+                )
+            ).distinct()
 
 
 class EstadoCasoForm(BootstrapFormMixin, forms.Form):
-    estado_caso = forms.ChoiceField(label="Estado del caso", choices=UsuarioSocial.ESTADOS)
+    estado_caso = forms.ChoiceField(
+        label="Estado del caso",
+        choices=UsuarioSocial.ESTADOS,
+    )

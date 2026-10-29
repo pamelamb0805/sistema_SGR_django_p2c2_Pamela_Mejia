@@ -523,7 +523,6 @@ class UsuarioCreateView(
             self.request.user,
         )
 
-
 class UsuarioUpdateView(
     EscrituraMixin,
     ModalFormPageMixin,
@@ -534,7 +533,10 @@ class UsuarioUpdateView(
     model = Usuario
     form_class = UsuarioAdminForm
     template_name = "organization/usuario_.html"
-    modo, titulo = "Editar usuario"
+
+    # CORRECCIÓN: se asignan dos valores a las dos variables.
+    modo, titulo = "form", "Editar usuario"
+
     success_url_name = "organizations:usuario_list"
     mensaje_exito = "Usuario actualizado correctamente."
     list_view_class = UsuarioListView

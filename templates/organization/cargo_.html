@@ -1,4 +1,308 @@
+
 {% extends "base.html" %}
-{% block title %}Ítems y metas · SGR{% endblock %}{% block page_title %}{{ titulo|default:"Cargos, ítems y metas" }}{% endblock %}
-{% block page_actions %}{% if modo == "lista" or not modo %}<a class="btn btn-primary" href="{% url 'organizations:cargo_create' %}">Nuevo cargo</a>{% endif %}{% endblock %}
-{% block content %}{% if modo == "form" %}<div class="card"><div class="card-body"><form method="post" novalidate>{% csrf_token %}{% for field in form %}<div class="mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} *{% endif %}</label>{{ field }}{% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}</div>{% endfor %}<button class="btn btn-primary">Guardar</button> <a class="btn btn-outline-secondary" href="{% url 'organizations:cargo_list' %}">Cancelar</a></form></div></div>{% elif modo == "detalle" %}<div class="card mb-4"><div class="card-body"><h2 class="h5">{{ cargo.nombre_cargo }}</h2><p>Vigencia: {{ cargo.vigencia_desde }} — {{ cargo.vigencia_hasta|default:"Sin fecha de término" }}</p><a class="btn btn-outline-primary" href="{% url 'organizations:cargo_update' cargo.pk %}">Editar</a> <form class="d-inline" method="post" action="{% url 'organizations:cargo_delete' cargo.pk %}" onsubmit="return confirm('¿Eliminar cargo?')">{% csrf_token %}<button class="btn btn-outline-danger">Eliminar cargo</button></form></div></div><div class="card"><div class="card-header">Ítems asociados</div><div class="card-body"><div class="table-responsive"><table class="table"><thead><tr><th>Ítem</th><th>Tipo</th><th>Vigencia</th><th>Acción</th></tr></thead><tbody>{% for item in items %}<tr><td>{{ item.nombre_item }}</td><td>{{ item.tipo }}</td><td>{% if item.vigencia %}Vigente{% else %}No vigente{% endif %}</td><td><form method="post" action="{% url 'organizations:item_toggle' item.pk %}">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary">Cambiar vigencia</button></form></td></tr>{% empty %}<tr><td colspan="4">No hay ítems asociados.</td></tr>{% endfor %}</tbody></table></div><hr><h3 class="h6">Agregar ítem</h3><form method="post" action="{% url 'organizations:item_create' cargo.pk %}">{% csrf_token %}{% for field in item_form %}<div class="mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}</div>{% endfor %}<button class="btn btn-primary">Agregar ítem</button></form></div></div>{% else %}<form method="get" class="row g-2 mb-3"><div class="col-md-8"><input class="form-control" name="q" value="{{ q }}" placeholder="Buscar cargo"></div><div class="col-md-4"><button class="btn btn-primary">Buscar</button></div></form><div class="table-responsive card"><table class="table table-hover mb-0"><thead><tr><th>Cargo</th><th>Desde</th><th>Hasta</th><th>Acciones</th></tr></thead><tbody>{% for c in cargos %}<tr><td>{{ c.nombre_cargo }}</td><td>{{ c.vigencia_desde }}</td><td>{{ c.vigencia_hasta|default:"Indefinida" }}</td><td><a class="btn btn-sm btn-outline-primary" href="{% url 'organizations:cargo_detail' c.pk %}">Ver ítems</a><a class="btn btn-sm btn-outline-secondary" href="{% url 'organizations:cargo_update' c.pk %}">Editar</a></td></tr>{% empty %}<tr><td colspan="4" class="text-center py-4">No hay cargos registrados.</td></tr>{% endfor %}</tbody></table></div>{% include "partials/_pagination.html" %}{% endif %}{% endblock %}
+
+{% block title %}Cargos, ítems y metas · SGR{% endblock %}
+
+{% block page_title %}
+    {{ titulo|default:"Cargos, ítems y metas" }}
+{% endblock %}
+
+{% block page_actions %}
+    {% if modo == "lista" or not modo %}
+        <a
+            class="btn btn-primary"
+            href="{% url 'organizations:cargo_create' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}"
+        >
+            <i class="bi bi-plus-lg me-1"></i>
+            Nuevo cargo
+        </a>
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+
+    {# DETALLE DEL CARGO #}
+    {% if modo == "detalle" %}
+
+        <div class="card shadow-sm mb-4">
+            <div class="card-body">
+                <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+                    <div>
+                        <h2 class="h5 mb-3">{{ cargo.nombre_cargo }}</h2>
+
+                        <p class="mb-1">
+                            <strong>Vigencia desde:</strong>
+                            {{ cargo.vigencia_desde|default:"No especificada" }}
+                        </p>
+
+                        <p class="mb-0">
+                            <strong>Vigencia hasta:</strong>
+                            {{ cargo.vigencia_hasta|default:"Indefinida" }}
+                        </p>
+                    </div>
+
+                    <div class="d-flex flex-wrap gap-2">
+                        <a
+                            class="btn btn-outline-primary"
+                            href="{% url 'organizations:cargo_update' cargo.pk %}"
+                        >
+                            <i class="bi bi-pencil me-1"></i>
+                            Editar cargo
+                        </a>
+
+                        <a
+                            class="btn btn-outline-secondary"
+                            href="{% url 'organizations:cargo_list' %}"
+                        >
+                            Volver al listado
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {# ÍTEMS ASOCIADOS #}
+        <div class="card shadow-sm">
+            <div class="card-header">
+                <h3 class="h6 mb-0">Ítems asociados</h3>
+            </div>
+
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead>
+                            <tr>
+                                <th>Ítem</th>
+                                <th>Tipo</th>
+                                <th>Vigencia</th>
+                                <th class="text-end">Acciones</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            {% for item in items %}
+                                <tr>
+                                    <td>{{ item.nombre_item }}</td>
+                                    <td>{{ item.tipo }}</td>
+
+                                    <td>
+                                        {% if item.vigencia %}
+                                            <span class="badge text-bg-success">
+                                                Vigente
+                                            </span>
+                                        {% else %}
+                                            <span class="badge text-bg-secondary">
+                                                No vigente
+                                            </span>
+                                        {% endif %}
+                                    </td>
+
+                                    <td class="text-end">
+                                        <form
+                                            method="post"
+                                            action="{% url 'organizations:item_toggle' item.pk %}"
+                                            class="d-inline"
+                                        >
+                                            {% csrf_token %}
+
+                                            <button
+                                                class="btn btn-sm btn-outline-secondary"
+                                                type="submit"
+                                            >
+                                                Cambiar vigencia
+                                            </button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            {% empty %}
+                                <tr>
+                                    <td
+                                        colspan="4"
+                                        class="text-center text-body-secondary py-4"
+                                    >
+                                        No hay ítems asociados a este cargo.
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <hr class="my-4">
+
+                <h3 class="h6 mb-3">Agregar ítem</h3>
+
+                <form
+                    method="post"
+                    action="{% url 'organizations:item_create' cargo.pk %}"
+                    novalidate
+                >
+                    {% csrf_token %}
+
+                    {% if item_form.non_field_errors %}
+                        <div class="alert alert-danger" role="alert">
+                            {{ item_form.non_field_errors }}
+                        </div>
+                    {% endif %}
+
+                    {% for field in item_form %}
+                        <div class="mb-3">
+                            <label
+                                class="form-label"
+                                for="{{ field.id_for_label }}"
+                            >
+                                {{ field.label }}
+                                {% if field.field.required %}*{% endif %}
+                            </label>
+
+                            {{ field }}
+
+                            {% if field.help_text %}
+                                <div class="form-text">
+                                    {{ field.help_text }}
+                                </div>
+                            {% endif %}
+
+                            {% for error in field.errors %}
+                                <div class="text-danger small">
+                                    {{ error }}
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% endfor %}
+
+                    <button class="btn btn-primary" type="submit">
+                        <i class="bi bi-plus-lg me-1"></i>
+                        Agregar ítem
+                    </button>
+                </form>
+            </div>
+        </div>
+
+    {# LISTADO PRINCIPAL #}
+    {% else %}
+
+        <div class="card shadow-sm mb-3">
+            <div class="card-body">
+                <form method="get" class="row g-2">
+                    <div class="col-md-8">
+                        <label for="buscar-cargo" class="form-label">
+                            Buscar cargo
+                        </label>
+
+                        <input
+                            id="buscar-cargo"
+                            class="form-control"
+                            type="search"
+                            name="q"
+                            value="{{ q|default:'' }}"
+                            placeholder="Escribe el nombre del cargo"
+                        >
+                    </div>
+
+                    <div class="col-md-4 d-flex align-items-end gap-2">
+                        <button class="btn btn-primary" type="submit">
+                            <i class="bi bi-search me-1"></i>
+                            Buscar
+                        </button>
+
+                        <a
+                            class="btn btn-outline-secondary"
+                            href="{% url 'organizations:cargo_list' %}"
+                        >
+                            Limpiar
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <h2 class="h6 mb-0">Cargos registrados</h2>
+
+                <span class="text-body-secondary small">
+                    Gestiona los cargos y sus ítems asociados.
+                </span>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Cargo</th>
+                            <th>Vigencia desde</th>
+                            <th>Vigencia hasta</th>
+                            <th class="text-end">Acciones</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        {% for c in cargos %}
+                            <tr>
+                                <td>{{ c.nombre_cargo }}</td>
+                                <td>
+                                    {{ c.vigencia_desde|default:"—" }}
+                                </td>
+                                <td>
+                                    {{ c.vigencia_hasta|default:"Indefinida" }}
+                                </td>
+
+                                <td class="text-end text-nowrap">
+                                    <div class="d-inline-flex flex-wrap gap-1">
+                                        <a
+                                            class="btn btn-sm btn-outline-primary"
+                                            href="{% url 'organizations:cargo_detail' c.pk %}"
+                                        >
+                                            <i class="bi bi-eye me-1"></i>
+                                            Ver ítems
+                                        </a>
+
+                                        <a
+                                            class="btn btn-sm btn-outline-secondary"
+                                            href="{% url 'organizations:cargo_update' c.pk %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}"
+                                        >
+                                            <i class="bi bi-pencil me-1"></i>
+                                            Editar
+                                        </a>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% empty %}
+                            <tr>
+                                <td
+                                    colspan="4"
+                                    class="text-center text-body-secondary py-4"
+                                >
+                                    No hay cargos registrados.
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        {% include "partials/_pagination.html" %}
+
+        {# FORMULARIO MODAL DE CREACIÓN O EDICIÓN #}
+        {% if open_modal %}
+            {% include "partials/_modal_form.html" with modal_id="cargoModal" %}
+
+            <script>
+                document.addEventListener("DOMContentLoaded", function () {
+                    const modalElement = document.getElementById("cargoModal");
+
+                    if (modalElement && window.bootstrap) {
+                        const modal = bootstrap.Modal.getOrCreateInstance(
+                            modalElement
+                        );
+                        modal.show();
+                    }
+                });
+            </script>
+        {% endif %}
+
+    {% endif %}
+
+{% endblock %}

@@ -1,6 +1,342 @@
+
 {% extends "base.html" %}
-{% block title %}Funcionarios · SGR{% endblock %}{% block page_title %}{{ titulo|default:"Funcionarios y usuarios" }}{% endblock %}
-{% block page_actions %}{% if modo != "form" and modo != "detalle" %}<a class="btn btn-primary" href="{% url 'organizations:funcionario_create' %}">Nuevo funcionario</a>{% endif %}{% endblock %}
-{% block content %}{% if modo == "form" %}<div class="card"><div class="card-body"><form method="post" novalidate>{% csrf_token %}{% for field in form %}<div class="mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} *{% endif %}</label>{{ field }}{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}{% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}</div>{% endfor %}<button class="btn btn-primary" type="submit">Guardar</button> <a class="btn btn-outline-secondary" href="{% url 'organizations:funcionario_list' %}">Cancelar</a></form></div></div>
-{% elif modo == "detalle" %}<div class="card mb-3"><div class="card-body"><h2 class="h5">{{ funcionario.nombre }}</h2><dl class="row"><dt class="col-sm-3">Identificador</dt><dd class="col-sm-9">{{ funcionario.identificador_institucional }}</dd><dt class="col-sm-3">Cargo</dt><dd class="col-sm-9">{{ funcionario.cargo }}</dd><dt class="col-sm-3">Delegación</dt><dd class="col-sm-9">{{ funcionario.delegacion }}</dd><dt class="col-sm-3">Estado</dt><dd class="col-sm-9">{{ funcionario.estado }}</dd><dt class="col-sm-3">Roles</dt><dd class="col-sm-9">{% for asignacion in roles_asignados %}{{ asignacion.rol.nombre_rol }}{% if not forloop.last %}, {% endif %}{% empty %}Sin roles{% endfor %}</dd></dl><a class="btn btn-primary" href="{% url 'organizations:funcionario_update' funcionario.pk %}">Editar</a></div></div><div class="card"><div class="card-header">Acceso al sistema</div><div class="card-body">{% if usuario_acceso %}<p>Usuario: <strong>{{ usuario_acceso.username }}</strong></p>{% else %}<p class="text-body-secondary">Este funcionario todavía no tiene credenciales.</p>{% endif %}<form method="post" action="{% url 'organizations:funcionario_acceso' funcionario.pk %}">{% csrf_token %}{% for field in acceso_form %}<div class="mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}</div>{% endfor %}<button class="btn btn-primary" type="submit">{% if usuario_acceso %}Cambiar contraseña{% else %}Crear acceso{% endif %}</button></form></div></div>
-{% else %}<form method="get" class="card card-body mb-3"><div class="row g-2"><div class="col-md-4"><label class="form-label">Buscar</label><input class="form-control" name="q" value="{{ q }}" placeholder="Nombre o identificador"></div><div class="col-md-3"><label class="form-label">Delegación</label><select class="form-select" name="delegacion"><option value="">Todas</option>{% for d in delegaciones %}<option value="{{ d.pk }}" {% if delegacion_sel == d.pk|stringformat:'s' %}selected{% endif %}>{{ d.nombre }}</option>{% endfor %}</select></div><div class="col-md-2"><label class="form-label">Estado</label><select class="form-select" name="estado"><option value="">Todos</option>{% for v,l in estados %}<option value="{{ v }}" {% if estado_sel == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div><div class="col-md-3 align-self-end"><button class="btn btn-primary">Buscar</button> <a class="btn btn-outline-secondary" href="{% url 'organizations:funcionario_list' %}">Limpiar</a></div></div></form><div class="table-responsive card"><table class="table table-hover align-middle mb-0"><thead><tr><th>Nombre</th><th>Identificador</th><th>Cargo</th><th>Delegación</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{% for f in funcionarios %}<tr><td>{{ f.nombre }}</td><td>{{ f.identificador_institucional }}</td><td>{{ f.cargo }}</td><td>{{ f.delegacion }}</td><td>{{ f.estado }}</td><td class="text-nowrap"><a class="btn btn-sm btn-outline-primary" href="{% url 'organizations:funcionario_detail' f.pk %}">Ver</a><a class="btn btn-sm btn-outline-secondary" href="{% url 'organizations:funcionario_update' f.pk %}">Editar</a><form class="d-inline" method="post" action="{% url 'organizations:funcionario_toggle' f.pk %}">{% csrf_token %}<button class="btn btn-sm btn-outline-warning" type="submit">Cambiar estado</button></form></td></tr>{% empty %}<tr><td colspan="6" class="text-center py-4 text-body-secondary">No hay funcionarios para mostrar.</td></tr>{% endfor %}</tbody></table></div>{% include "partials/_pagination.html" %}{% endif %}{% endblock %}
+
+{% block title %}Funcionarios · SGR{% endblock %}
+
+{% block page_title %}
+    {{ titulo|default:"Funcionarios y usuarios" }}
+{% endblock %}
+
+{% block page_actions %}
+    {% if modo == "lista" or not modo %}
+        <a
+            class="btn btn-primary"
+            href="{% url 'organizations:funcionario_create' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}"
+        >
+            <i class="bi bi-person-plus me-1"></i>
+            Nuevo funcionario
+        </a>
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+
+    {# DETALLE DEL FUNCIONARIO #}
+    {% if modo == "detalle" %}
+
+        <div class="card shadow-sm mb-3">
+            <div class="card-header">
+                <h2 class="h6 mb-0">Datos del funcionario</h2>
+            </div>
+
+            <div class="card-body">
+                <h3 class="h5 mb-3">{{ funcionario.nombre }}</h3>
+
+                <dl class="row mb-4">
+                    <dt class="col-sm-3">Identificador</dt>
+                    <dd class="col-sm-9">
+                        {{ funcionario.identificador_institucional|default:"—" }}
+                    </dd>
+
+                    <dt class="col-sm-3">Cargo</dt>
+                    <dd class="col-sm-9">
+                        {{ funcionario.cargo|default:"—" }}
+                    </dd>
+
+                    <dt class="col-sm-3">Delegación</dt>
+                    <dd class="col-sm-9">
+                        {{ funcionario.delegacion|default:"—" }}
+                    </dd>
+
+                    <dt class="col-sm-3">Estado</dt>
+                    <dd class="col-sm-9">
+                        {{ funcionario.estado|default:"—" }}
+                    </dd>
+
+                    <dt class="col-sm-3">Roles asignados</dt>
+                    <dd class="col-sm-9">
+                        {% for asignacion in roles_asignados %}
+                            {{ asignacion.rol.nombre_rol }}{% if not forloop.last %}, {% endif %}
+                        {% empty %}
+                            Sin roles asignados
+                        {% endfor %}
+                    </dd>
+                </dl>
+
+                <div class="d-flex flex-wrap gap-2">
+                    <a
+                        class="btn btn-primary"
+                        href="{% url 'organizations:funcionario_update' funcionario.pk %}"
+                    >
+                        <i class="bi bi-pencil me-1"></i>
+                        Editar funcionario
+                    </a>
+
+                    <a
+                        class="btn btn-outline-secondary"
+                        href="{% url 'organizations:funcionario_list' %}"
+                    >
+                        Volver al listado
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        {# ACCESO AL SISTEMA #}
+        <div class="card shadow-sm">
+            <div class="card-header">
+                <h2 class="h6 mb-0">Acceso al sistema</h2>
+            </div>
+
+            <div class="card-body">
+                {% if usuario_acceso %}
+                    <p>
+                        Usuario asociado:
+                        <strong>{{ usuario_acceso.username }}</strong>
+                    </p>
+                {% else %}
+                    <p class="text-body-secondary">
+                        Este funcionario todavía no tiene credenciales de acceso.
+                    </p>
+                {% endif %}
+
+                {% if acceso_form %}
+                    <form
+                        method="post"
+                        action="{% url 'organizations:funcionario_acceso' funcionario.pk %}"
+                        novalidate
+                    >
+                        {% csrf_token %}
+
+                        {% if acceso_form.non_field_errors %}
+                            <div class="alert alert-danger" role="alert">
+                                {{ acceso_form.non_field_errors }}
+                            </div>
+                        {% endif %}
+
+                        {% for field in acceso_form %}
+                            <div class="mb-3">
+                                <label
+                                    class="form-label"
+                                    for="{{ field.id_for_label }}"
+                                >
+                                    {{ field.label }}
+                                    {% if field.field.required %}*{% endif %}
+                                </label>
+
+                                {{ field }}
+
+                                {% if field.help_text %}
+                                    <div class="form-text">
+                                        {{ field.help_text }}
+                                    </div>
+                                {% endif %}
+
+                                {% for error in field.errors %}
+                                    <div class="text-danger small">
+                                        {{ error }}
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        {% endfor %}
+
+                        <button class="btn btn-primary" type="submit">
+                            {% if usuario_acceso %}
+                                <i class="bi bi-key me-1"></i>
+                                Cambiar contraseña
+                            {% else %}
+                                <i class="bi bi-person-check me-1"></i>
+                                Crear acceso
+                            {% endif %}
+                        </button>
+                    </form>
+                {% endif %}
+            </div>
+        </div>
+
+    {% else %}
+
+        {# BÚSQUEDA Y FILTROS #}
+        <div class="card shadow-sm mb-3">
+            <div class="card-body">
+                <form method="get" class="row g-3">
+                    <div class="col-md-4">
+                        <label for="buscar-funcionario" class="form-label">
+                            Buscar funcionario
+                        </label>
+
+                        <input
+                            id="buscar-funcionario"
+                            class="form-control"
+                            type="search"
+                            name="q"
+                            value="{{ q|default:'' }}"
+                            placeholder="Nombre o identificador"
+                        >
+                    </div>
+
+                    <div class="col-md-3">
+                        <label for="filtro-delegacion" class="form-label">
+                            Delegación
+                        </label>
+
+                        <select
+                            id="filtro-delegacion"
+                            class="form-select"
+                            name="delegacion"
+                        >
+                            <option value="">Todas</option>
+
+                            {% for d in delegaciones %}
+                                <option
+                                    value="{{ d.pk }}"
+                                    {% if delegacion_sel == d.pk|stringformat:'s' %}selected{% endif %}
+                                >
+                                    {{ d.nombre }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="col-md-2">
+                        <label for="filtro-estado" class="form-label">
+                            Estado
+                        </label>
+
+                        <select
+                            id="filtro-estado"
+                            class="form-select"
+                            name="estado"
+                        >
+                            <option value="">Todos</option>
+
+                            {% for valor, etiqueta in estados %}
+                                <option
+                                    value="{{ valor }}"
+                                    {% if estado_sel == valor %}selected{% endif %}
+                                >
+                                    {{ etiqueta }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="col-md-3 d-flex align-items-end gap-2">
+                        <button class="btn btn-primary" type="submit">
+                            <i class="bi bi-search me-1"></i>
+                            Buscar
+                        </button>
+
+                        <a
+                            class="btn btn-outline-secondary"
+                            href="{% url 'organizations:funcionario_list' %}"
+                        >
+                            Limpiar
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        {# LISTADO #}
+        <div class="card shadow-sm">
+            <div class="card-header">
+                <h2 class="h6 mb-0">Funcionarios registrados</h2>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>Identificador</th>
+                            <th>Cargo</th>
+                            <th>Delegación</th>
+                            <th>Estado</th>
+                            <th class="text-end">Acciones</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        {% for f in funcionarios %}
+                            <tr>
+                                <td>{{ f.nombre }}</td>
+                                <td>{{ f.identificador_institucional }}</td>
+                                <td>{{ f.cargo|default:"—" }}</td>
+                                <td>{{ f.delegacion|default:"—" }}</td>
+                                <td>{{ f.estado }}</td>
+
+                                <td class="text-end text-nowrap">
+                                    <div class="d-inline-flex flex-wrap gap-1">
+                                        <a
+                                            class="btn btn-sm btn-outline-primary"
+                                            href="{% url 'organizations:funcionario_detail' f.pk %}"
+                                        >
+                                            <i class="bi bi-eye me-1"></i>
+                                            Ver
+                                        </a>
+
+                                        <a
+                                            class="btn btn-sm btn-outline-secondary"
+                                            href="{% url 'organizations:funcionario_update' f.pk %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}"
+                                        >
+                                            <i class="bi bi-pencil me-1"></i>
+                                            Editar
+                                        </a>
+
+                                        <form
+                                            method="post"
+                                            action="{% url 'organizations:funcionario_toggle' f.pk %}"
+                                            class="d-inline js-confirm-form"
+                                            data-confirm-title="¿Cambiar el estado?"
+                                            data-confirm-text="Se cambiará la vigencia de este funcionario."
+                                            data-confirm-button="Sí, continuar"
+                                            data-confirm-icon="warning"
+                                        >
+                                            {% csrf_token %}
+
+                                            <button
+                                                class="btn btn-sm btn-outline-warning"
+                                                type="submit"
+                                            >
+                                                Cambiar estado
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% empty %}
+                            <tr>
+                                <td
+                                    colspan="6"
+                                    class="text-center text-body-secondary py-4"
+                                >
+                                    No hay funcionarios para mostrar.
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        {% include "partials/_pagination.html" %}
+
+        {# MODAL DE CREACIÓN Y EDICIÓN #}
+        {% if open_modal %}
+            {% include "partials/_modal_form.html" with modal_id="funcionarioModal" %}
+
+            <script>
+                document.addEventListener("DOMContentLoaded", function () {
+                    const modalElement = document.getElementById("funcionarioModal");
+
+                    if (modalElement && window.bootstrap) {
+                        bootstrap.Modal.getOrCreateInstance(modalElement).show();
+                    }
+                });
+            </script>
+        {% endif %}
+
+    {% endif %}
+
+{% endblock %}

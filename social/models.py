@@ -69,44 +69,155 @@ class UsuarioSocial(models.Model):
 # ATENCION_SOCIAL (gestión)
 # ---------------------------------------------------------------------------
 class AtencionSocial(models.Model):
-    TIPOS = [(t, t) for t in (
-        "Orientación", "Visita domiciliaria", "Derivación a red", "Entrega de beneficio",
-        "Seguimiento", "Cierre de caso")]
-
     ESTADO_PROGRAMADA = "Programada"
-    ESTADO_REALIZADA = "Realizada"                   # única que cuenta en las estadísticas
-    ESTADOS = [(ESTADO_PROGRAMADA, "Programada"), (ESTADO_REALIZADA, "Realizada")]
+    ESTADO_REALIZADA = "Realizada"
+    ESTADOS = [
+        (ESTADO_PROGRAMADA, "Programada"),
+        (ESTADO_REALIZADA, "Realizada"),
+    ]
 
     id_atencion_social = models.AutoField(primary_key=True)
+
     numero_gestion = models.PositiveSmallIntegerField(
-        editable=False, validators=[MinValueValidator(1), MaxValueValidator(MAX_GESTIONES)])
-    tipo_atencion = models.CharField(max_length=30, choices=TIPOS)
+        editable=False,
+        validators=[
+            MinValueValidator(1),
+            MaxValueValidator(MAX_GESTIONES),
+        ],
+    )
+
+    # Catálogo de Tipo de Atención.
+    tipo_atencion = models.ForeignKey(
+        Catalogo,
+        on_delete=models.PROTECT,
+        db_column="id_tipo_atencion",
+        related_name="atenciones_como_tipo",
+        limit_choices_to={"tipo_catalogo": Catalogo.TIPO_ATENCION},
+    )
+
+    # Subatención perteneciente al Tipo de Atención seleccionado.
+    subatencion = models.ForeignKey(
+        Catalogo,
+        on_delete=models.PROTECT,
+        db_column="id_subatencion",
+        related_name="atenciones_como_subatencion",
+        limit_choices_to={"tipo_catalogo": Catalogo.TIPO_SUBATENCION},
+    )
+
+    descripcion = models.TextField()
+
+    # Fecha de la gestión.
     fecha = models.DateField(default=timezone.localdate)
+
+    # Momento de registro: se asigna automáticamente desde Django.
+    fecha_registro = models.DateTimeField(
+        default=timezone.now,
+        editable=False,
+    )
+
     resultado = models.TextField(blank=True)
-    estado = models.CharField(max_length=12, choices=ESTADOS, default=ESTADO_REALIZADA)
-    usuario = models.ForeignKey(UsuarioSocial, on_delete=models.PROTECT, db_column="id_usuario",
-                                related_name="gestiones")
-    funcionario = models.ForeignKey(Funcionario, on_delete=models.PROTECT, db_column="id_funcionario",
-                                    related_name="atenciones_sociales")
-    catalogo = models.ForeignKey(Catalogo, on_delete=models.PROTECT, db_column="id_catalogo",
-                                 related_name="atenciones_sociales", verbose_name="atención / subatención")
+
+    estado = models.CharField(
+        max_length=12,
+        choices=ESTADOS,
+        default=ESTADO_REALIZADA,
+    )
+
+    usuario = models.ForeignKey(
+        UsuarioSocial,
+        on_delete=models.PROTECT,
+        db_column="id_usuario",
+        related_name="gestiones",
+    )
+
+    funcionario = models.ForeignKey(
+        Funcionario,
+        on_delete=models.PROTECT,
+        db_column="id_funcionario",
+        related_name="atenciones_sociales",
+    )
+
+    delegacion = models.ForeignKey(
+        Delegacion,
+        on_delete=models.PROTECT,
+        db_column="id_delegacion",
+        related_name="atenciones_sociales",
+    )
 
     class Meta:
         db_table = "atencion_social"
         ordering = ["usuario", "numero_gestion"]
         constraints = [
-            models.UniqueConstraint(fields=["usuario", "numero_gestion"], name="uq_atencion_numero"),
-            models.UniqueConstraint(fields=["usuario", "tipo_atencion"], name="uq_atencion_tipo"),
+            models.UniqueConstraint(
+                fields=["usuario", "numero_gestion"],
+                name="uq_atencion_numero",
+            ),
+            models.UniqueConstraint(
+                fields=["usuario", "tipo_atencion"],
+                name="uq_atencion_tipo",
+            ),
         ]
         verbose_name = "atención social"
         verbose_name_plural = "atenciones sociales"
 
     def __str__(self):
-        return f"Gestión {self.numero_gestion} – {self.tipo_atencion} ({self.fecha:%d/%m/%Y})"
+        return (
+            f"Gestión {self.numero_gestion} – "
+            f"{self.tipo_atencion.nombre} "
+            f"({self.fecha:%d/%m/%Y})"
+        )
 
     def clean(self):
-        if self.estado == self.ESTADO_REALIZADA and self.fecha and self.fecha > timezone.localdate():
-            raise ValidationError({"fecha": "Una gestión realizada no puede tener fecha futura. "
-                                            "Si es una visita agendada, márquela como «Programada»."})
-        if self.estado == self.ESTADO_REALIZADA and not (self.resultado or "").strip():
-            raise ValidationError({"resultado": "Indique el resultado de la gestión realizada."})
+        errores = {}
+
+        if self.tipo_atencion_id and (
+            self.tipo_atencion.tipo_catalogo != Catalogo.TIPO_ATENCION
+        ):
+            errores["tipo_atencion"] = (
+                "Debe seleccionar un elemento del catálogo Tipo de Atención."
+            )
+
+        if self.subatencion_id:
+            if self.subatencion.tipo_catalogo != Catalogo.TIPO_SUBATENCION:
+                errores["subatencion"] = (
+                    "Debe seleccionar una Subatención."
+                )
+            elif (
+                self.tipo_atencion_id
+                and self.subatencion.tipo_atencion_padre_id
+                != self.tipo_atencion_id
+            ):
+                errores["subatencion"] = (
+                    "La Subatención debe pertenecer al Tipo de Atención seleccionado."
+                )
+
+        if self.tipo_atencion_id and not self.tipo_atencion.activo:
+            errores["tipo_atencion"] = (
+                "El Tipo de Atención seleccionado está inactivo."
+            )
+
+        if self.subatencion_id and not self.subatencion.activo:
+            errores["subatencion"] = (
+                "La Subatención seleccionada está inactiva."
+            )
+
+        if (
+            self.estado == self.ESTADO_REALIZADA
+            and self.fecha
+            and self.fecha > timezone.localdate()
+        ):
+            errores["fecha"] = (
+                "Una gestión realizada no puede tener fecha futura. "
+                "Si es una visita agendada, márquela como Programada."
+            )
+
+        if (
+            self.estado == self.ESTADO_REALIZADA
+            and not (self.resultado or "").strip()
+        ):
+            errores["resultado"] = (
+                "Indique el resultado de la gestión realizada."
+            )
+
+        if errores:
+            raise ValidationError(errores)

@@ -26,7 +26,7 @@ from .services import (
     ROLES_SOCIAL, CRUDAtencionSocial, CRUDUsuarioSocial, casos_visibles, estadisticas_atenciones,
     gestiones_visibles, maximo_gestiones, puede_escribir, puede_reabrir,
 )
-
+from django.http import Http404
 
 class SocialMixin(RolRequeridoMixin):
     roles_permitidos = ROLES_SOCIAL
@@ -98,8 +98,12 @@ class CasoDetailView(SocialMixin, ModoMixin, DetailView):
         )
         return contexto
 
-
-class CasoCreateView(EscrituraSocialMixin, ModoMixin, GuardarMixin, FormView):
+class CasoCreateView(
+    EscrituraSocialMixin,
+    ModoMixin,
+    GuardarMixin,
+    FormView,
+):
     form_class = NuevoCasoForm
     template_name = "social/caso_.html"
     modo, titulo = "form", "Nuevo caso de atención social"
@@ -111,15 +115,37 @@ class CasoCreateView(EscrituraSocialMixin, ModoMixin, GuardarMixin, FormView):
         return kwargs
 
     def guardar(self, form):
-        d = form.cleaned_data
-        caso = UsuarioSocial(nombre=d["nombre"], territorio=d["territorio"])
-        gestion = AtencionSocial(tipo_atencion=d["tipo_atencion"], catalogo=d["catalogo"], fecha=d["fecha"],
-                                 estado=d["estado"], resultado=d["resultado"])
-        self.caso = CRUDUsuarioSocial.crear_caso(caso, gestion, self.request.user)
-        self.mensaje_exito = f"Caso N° {self.caso.pk} registrado con su primera gestión."
+        datos = form.cleaned_data
+
+        caso = UsuarioSocial(
+            nombre=datos["nombre"],
+            territorio=datos["territorio"],
+        )
+
+        gestion = AtencionSocial(
+            tipo_atencion=datos["tipo_atencion"],
+            subatencion=datos["subatencion"],
+            descripcion=datos["descripcion"],
+            fecha=datos["fecha"],
+            estado=datos["estado"],
+            resultado=datos["resultado"],
+        )
+
+        self.caso = CRUDUsuarioSocial.crear_caso(
+            caso,
+            gestion,
+            self.request.user,
+        )
+
+        self.mensaje_exito = (
+            f"Caso N° {self.caso.pk} registrado con su primera gestión."
+        )
 
     def get_success_url(self):
-        return reverse("social:caso_detail", args=[self.caso.pk])
+        return reverse(
+            "social:caso_detail",
+            args=[self.caso.pk],
+        )
 
 
 class CasoUpdateView(EscrituraSocialMixin, ModoMixin, GuardarMixin, UpdateView):
@@ -159,7 +185,12 @@ class CasoEstadoView(AccionPostView):
 # ---------------------------------------------------------------------------
 # Gestiones
 # ---------------------------------------------------------------------------
-class GestionCreateView(EscrituraSocialMixin, ModoMixin, GuardarMixin, CreateView):
+class GestionCreateView(
+    EscrituraSocialMixin,
+    ModoMixin,
+    GuardarMixin,
+    CreateView,
+):
     model = AtencionSocial
     form_class = GestionForm
     template_name = "social/gestion_.html"
@@ -171,34 +202,73 @@ class GestionCreateView(EscrituraSocialMixin, ModoMixin, GuardarMixin, CreateVie
         if request.user.is_authenticated:
             if not tiene_rol(request.user, *ROLES_OPERATIVOS):
                 return denegar_acceso(request)
-            self.caso = get_object_or_404(casos_visibles(request.user), pk=kwargs["pk"])
-            if not puede_escribir(request.user, self.caso.delegacion_id):
+
+            self.caso = get_object_or_404(
+                casos_visibles(request.user),
+                pk=kwargs["pk"],
+            )
+
+            if not puede_escribir(
+                request.user,
+                self.caso.delegacion_id,
+            ):
                 return denegar_acceso(request)
-            if self.caso.cerrado or not CRUDAtencionSocial.validar_maximo_tres_gestiones(self.caso.pk):
-                messages.error(request, "El caso está cerrado o ya tiene todas las gestiones permitidas.")
-                return redirect("social:caso_detail", pk=self.caso.pk)
+
+            if (
+                self.caso.cerrado
+                or not CRUDAtencionSocial.validar_maximo_tres_gestiones(
+                    self.caso.pk
+                )
+            ):
+                messages.error(
+                    request,
+                    "El caso está cerrado o ya tiene todas las gestiones permitidas.",
+                )
+                return redirect(
+                    "social:caso_detail",
+                    pk=self.caso.pk,
+                )
+
         return super().dispatch(request, *args, **kwargs)
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
-        kwargs.update(caso=self.caso, area=self.request.GET.get("area") or None,
-                      instance=AtencionSocial(usuario=self.caso))
+        kwargs.update(
+            caso=self.caso,
+            area=self.request.GET.get("area") or None,
+            instance=AtencionSocial(usuario=self.caso),
+        )
         return kwargs
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
-        contexto.update(caso=self.caso, gestiones=CRUDAtencionSocial.mostrar_gestiones_por_caso(self.caso.pk),
-                        maximo=maximo_gestiones())
+        contexto.update(
+            caso=self.caso,
+            gestiones=CRUDAtencionSocial.mostrar_gestiones_por_caso(
+                self.caso.pk
+            ),
+            maximo=maximo_gestiones(),
+        )
         return contexto
 
     def guardar(self, form):
-        self.object = CRUDAtencionSocial.registrar_gestion(form.instance, self.request.user)
+        self.object = CRUDAtencionSocial.registrar_gestion(
+            form.instance,
+            self.request.user,
+        )
 
     def get_success_url(self):
-        return reverse("social:caso_detail", args=[self.caso.pk])
+        return reverse(
+            "social:caso_detail",
+            args=[self.caso.pk],
+        )
 
-
-class GestionUpdateView(EscrituraSocialMixin, ModoMixin, GuardarMixin, UpdateView):
+class GestionUpdateView(
+    EscrituraSocialMixin,
+    ModoMixin,
+    GuardarMixin,
+    UpdateView,
+):
     form_class = GestionForm
     template_name = "social/gestion_.html"
     modo, titulo = "form", "Corregir gestión"
@@ -208,22 +278,52 @@ class GestionUpdateView(EscrituraSocialMixin, ModoMixin, GuardarMixin, UpdateVie
     def get_queryset(self):
         return gestiones_visibles(self.request.user)
 
+    def get_object(self, queryset=None):
+        objeto = super().get_object(queryset)
+
+        if not puede_escribir(
+            self.request.user,
+            objeto.usuario.delegacion_id,
+        ):
+            raise Http404
+
+        if objeto.usuario.cerrado:
+            raise Http404
+
+        return objeto
+
+
+
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
-        kwargs.update(caso=self.object.usuario, area=self.request.GET.get("area") or None)
+        kwargs.update(
+            caso=self.object.usuario,
+            area=self.request.GET.get("area") or None,
+        )
         return kwargs
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
-        contexto.update(caso=self.object.usuario, maximo=maximo_gestiones(),
-                        gestiones=CRUDAtencionSocial.mostrar_gestiones_por_caso(self.object.usuario_id))
+        contexto.update(
+            caso=self.object.usuario,
+            maximo=maximo_gestiones(),
+            gestiones=CRUDAtencionSocial.mostrar_gestiones_por_caso(
+                self.object.usuario_id
+            ),
+        )
         return contexto
 
     def guardar(self, form):
-        self.object = CRUDAtencionSocial.modificar_gestion(form.instance, self.request.user)
+        self.object = CRUDAtencionSocial.modificar_gestion(
+            form.instance,
+            self.request.user,
+        )
 
     def get_success_url(self):
-        return reverse("social:caso_detail", args=[self.object.usuario_id])
+        return reverse(
+            "social:caso_detail",
+            args=[self.object.usuario_id],
+        )
 
 
 # ---------------------------------------------------------------------------
