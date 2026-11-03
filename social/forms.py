@@ -39,17 +39,28 @@ class SeleccionAtencionMixin:
 
     def configurar_atencion(self, area=None, datos=None, instancia=None):
         datos = datos or {}
+
         tipo_id = (
             datos.get("tipo_atencion")
             or getattr(instancia, "tipo_atencion_id", None)
         )
 
         self.fields["tipo_atencion"].queryset = _tipos_atencion(area)
+
         self.fields["subatencion"].queryset = _subatenciones(
             tipo_id=tipo_id,
             area=area,
             actual=getattr(instancia, "subatencion_id", None),
         )
+
+        # Identificadores y URL que utilizará JavaScript.
+        self.fields["tipo_atencion"].widget.attrs.update({
+            "id": "id_tipo_atencion",
+        })
+
+        self.fields["subatencion"].widget.attrs.update({
+            "id": "id_subatencion",
+        })
 
     def clean(self):
         datos = super().clean()

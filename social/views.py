@@ -26,7 +26,7 @@ from .services import (
     ROLES_SOCIAL, CRUDAtencionSocial, CRUDUsuarioSocial, casos_visibles, estadisticas_atenciones,
     gestiones_visibles, maximo_gestiones, puede_escribir, puede_reabrir,
 )
-from django.http import Http404
+from django.http import Http404, JsonResponse
 
 class SocialMixin(RolRequeridoMixin):
     roles_permitidos = ROLES_SOCIAL
@@ -35,7 +35,47 @@ class SocialMixin(RolRequeridoMixin):
 class EscrituraSocialMixin(RolRequeridoMixin):
     roles_permitidos = ROLES_OPERATIVOS
 
+def cargar_subatenciones(request):
+    """
+    Devuelve las subatenciones activas que corresponden
+    al Tipo de Atención seleccionado.
+    """
+    if not request.user.is_authenticated:
+        return JsonResponse(
+            {"error": "Debe iniciar sesión."},
+            status=401,
+        )
 
+    if not tiene_rol(request.user, *ROLES_SOCIAL):
+        return JsonResponse(
+            {"error": "No tiene permiso para consultar las subatenciones."},
+            status=403,
+        )
+
+    tipo_id = request.GET.get("tipo_atencion")
+    area = request.GET.get("area") or None
+
+    if not tipo_id:
+        return JsonResponse({"subatenciones": []})
+
+    from catalogs.models import Catalogo
+
+    subatenciones = Catalogo.objects.disponibles(
+        area=area,
+        tipo=Catalogo.TIPO_SUBATENCION,
+    ).filter(
+        tipo_atencion_padre_id=tipo_id,
+    ).order_by("nombre")
+
+    datos = [
+        {
+            "id": sub.pk,
+            "nombre": sub.nombre,
+        }
+        for sub in subatenciones
+    ]
+
+    return JsonResponse({"subatenciones": datos})
 # ---------------------------------------------------------------------------
 # Casos
 # ---------------------------------------------------------------------------

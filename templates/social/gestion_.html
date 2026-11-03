@@ -1,3 +1,36 @@
-{% extends "base.html" %}
-{% block title %}Gestión de atención · SGR{% endblock %}{% block page_title %}{{ titulo|default:"Gestión de atención" }}{% endblock %}
-{% block content %}<div class="alert alert-info">Caso: <strong>{{ caso.nombre }}</strong>. Verifique tipo, subatención, fecha y resultado antes de guardar.</div><div class="card"><div class="card-body"><form method="post" novalidate>{% csrf_token %}{% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}{% for field in form %}<div class="mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} *{% endif %}</label>{{ field }}{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}{% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}</div>{% endfor %}<button class="btn btn-primary" type="submit">Guardar gestión</button> <a class="btn btn-outline-secondary" href="{% url 'social:caso_detail' caso.pk %}">Cancelar</a></form></div></div>{% endblock %}
+from django.urls import path
+
+from . import views
+
+app_name = "social"
+
+urlpatterns = [
+    # Casos
+    path("", views.CasoListView.as_view(), name="caso_list"),
+    path("nuevo/", views.CasoCreateView.as_view(), name="caso_create"),
+    path("estadisticas/", views.estadisticas, name="estadisticas"),
+
+    # Selector dependiente
+    path(
+        "ajax/subatenciones/",
+        views.cargar_subatenciones,
+        name="cargar_subatenciones",
+    ),
+
+    # Detalle y edición de casos
+    path("<int:pk>/", views.CasoDetailView.as_view(), name="caso_detail"),
+    path("<int:pk>/editar/", views.CasoUpdateView.as_view(), name="caso_update"),
+    path("<int:pk>/estado/", views.CasoEstadoView.as_view(), name="caso_estado"),
+
+    # Gestiones
+    path(
+        "<int:pk>/gestiones/nueva/",
+        views.GestionCreateView.as_view(),
+        name="gestion_create",
+    ),
+    path(
+        "gestiones/<int:pk>/editar/",
+        views.GestionUpdateView.as_view(),
+        name="gestion_update",
+    ),
+]
