@@ -276,8 +276,30 @@ class Seguridad:
     @staticmethod
     def guardar_usuario(form, actor=None):
         usuario = form.instance
+
         es_nuevo = not bool(usuario.pk)
-        anterior = None if es_nuevo else _snapshot(usuario)
+
+        anterior = (
+            None if es_nuevo else _snapshot(usuario)
+        )
+
+        funcionario = form.cleaned_data.get("funcionario")
+
+        delegaciones = form.cleaned_data.get(
+            "delegaciones_autorizadas",
+            [],
+        )
+
+        Seguridad.validar_delegaciones(
+            funcionario,
+            delegaciones,
+        )
+
+        if not funcionario:
+            usuario.activo_acceso = False
+
+        elif not funcionario.activo:
+            usuario.activo_acceso = False
 
         with transaction.atomic():
             usuario = form.save()
@@ -292,7 +314,6 @@ class Seguridad:
             )
 
         return usuario
-
     @staticmethod
     def cambiar_estado_acceso(usuario, actor=None):
         if not usuario.funcionario_id:
@@ -319,5 +340,52 @@ class Seguridad:
         )
 
         return usuario
+
+    @staticmethod
+    def validar_delegaciones(funcionario, delegaciones):
+        """
+        Valida que las delegaciones adicionales correspondan
+        al alcance de los roles del funcionario.
+        """
+
+        delegaciones = list(delegaciones or [])
+
+        if funcionario is None:
+            if delegaciones:
+                raise ReglaNegocioError(
+                    "Una cuenta sin funcionario no puede tener delegaciones autorizadas."
+                )
+            return
+
+        inactivas = [
+            delegacion.nombre
+            for delegacion in delegaciones
+            if not delegacion.activa
+        ]
+
+        if inactivas:
+            raise ReglaNegocioError(
+                "No se pueden autorizar delegaciones inactivas: "
+                + ", ".join(inactivas)
+            )
+
+        alcances = set(
+            funcionario.roles.values_list(
+                "alcance_autorizado",
+                flat=True,
+            )
+        )
+
+        if "global" in alcances:
+            return
+
+        if "multiples" in alcances:
+            return
+
+        if delegaciones:
+            raise ReglaNegocioError(
+                "El funcionario tiene alcance propio y no puede recibir "
+                "delegaciones adicionales."
+            )
 
     
