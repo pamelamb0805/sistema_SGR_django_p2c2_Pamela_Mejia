@@ -1,0 +1,267 @@
+
+{% extends "base.html" %}
+
+{% block title %}{{ titulo|default:"Metas y ponderaciones" }} · SGR{% endblock %}
+
+{% block page_title %}
+  {{ titulo|default:"Metas y ponderaciones" }}
+{% endblock %}
+
+{% block page_actions %}
+  {% if modo == "lista" and puede_editar %}
+    <a class="btn btn-primary" href="{% url 'measurement:meta_create' %}">
+      <i class="bi bi-plus-lg me-1"></i>Nueva meta
+    </a>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+
+{% if modo == "form" %}
+
+  <div class="card shadow-sm">
+    <div class="card-header">
+      <strong>Configuración de la meta</strong>
+    </div>
+
+    <div class="card-body">
+      <div class="alert alert-info">
+        <i class="bi bi-info-circle me-1"></i>
+        Define el objetivo que debe alcanzar el funcionario y el porcentaje
+        de ponderación que tendrá dentro de su evaluación.
+      </div>
+
+      <form method="post" novalidate>
+        {% csrf_token %}
+
+        {% if form.non_field_errors %}
+          <div class="alert alert-danger">
+            {{ form.non_field_errors }}
+          </div>
+        {% endif %}
+
+        <div class="row">
+          {% for field in form %}
+            <div class="col-md-6 mb-3">
+              <label class="form-label" for="{{ field.id_for_label }}">
+                {{ field.label }}
+                {% if field.field.required %}*{% endif %}
+              </label>
+
+              {{ field }}
+
+              {% if field.help_text %}
+                <div class="form-text">{{ field.help_text }}</div>
+              {% endif %}
+
+              {% for error in field.errors %}
+                <div class="text-danger small">{{ error }}</div>
+              {% endfor %}
+            </div>
+          {% endfor %}
+        </div>
+
+        <div class="alert alert-warning">
+          <strong>Importante:</strong>
+          las ponderaciones deben sumar 100 % para completar la configuración
+          de evaluación del funcionario.
+        </div>
+
+        <div class="d-flex flex-wrap gap-2">
+          <button class="btn btn-primary" type="submit">
+            <i class="bi bi-save me-1"></i>Guardar meta
+          </button>
+
+          <a class="btn btn-outline-secondary"
+             href="{% url 'measurement:meta_list' %}">
+            Cancelar
+          </a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+{% else %}
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-header">
+      <strong><i class="bi bi-funnel me-1"></i>Filtros de búsqueda</strong>
+    </div>
+
+    <div class="card-body">
+      <form method="get" class="row g-3 align-items-end">
+
+        <div class="col-md-3">
+          <label class="form-label" for="periodo">Período</label>
+          <select class="form-select" name="periodo" id="periodo">
+            <option value="">Todos los períodos</option>
+            {% for p in periodos %}
+              <option value="{{ p.pk }}"
+                {% if periodo_sel == p.pk|stringformat:"s" %}selected{% endif %}>
+                {{ p }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="col-md-3">
+          <label class="form-label" for="funcionario">Funcionario</label>
+          <select class="form-select" name="funcionario" id="funcionario">
+            <option value="">Todos los funcionarios</option>
+            {% for f in funcionarios %}
+              <option value="{{ f.pk }}"
+                {% if funcionario_sel == f.pk|stringformat:"s" %}selected{% endif %}>
+                {{ f.nombre }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="col-md-3">
+          <label class="form-label" for="cargo">Cargo</label>
+          <select class="form-select" name="cargo" id="cargo">
+            <option value="">Todos los cargos</option>
+            {% for c in cargos %}
+              <option value="{{ c.pk }}"
+                {% if cargo_sel == c.pk|stringformat:"s" %}selected{% endif %}>
+                {{ c }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="col-md-3 d-flex gap-2">
+          <button type="submit" class="btn btn-primary">
+            Filtrar
+          </button>
+
+          <a href="{% url 'measurement:meta_list' %}"
+             class="btn btn-outline-secondary">
+            Limpiar
+          </a>
+        </div>
+
+      </form>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-md-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-body-secondary small">Metas encontradas</div>
+          <div class="fs-3 fw-bold">{{ page_obj.paginator.count }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-body-secondary small">Página actual</div>
+          <div class="fs-3 fw-bold">
+            {{ page_obj.number }} / {{ page_obj.paginator.num_pages|default:1 }}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-body-secondary small">Configuración</div>
+          <div class="fs-6 fw-semibold">Metas por funcionario y período</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <strong>Metas y ponderaciones registradas</strong>
+      <span class="badge text-bg-secondary">
+        {{ page_obj.paginator.count }} registros
+      </span>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Período</th>
+            <th>Funcionario</th>
+            <th>Cargo</th>
+            <th>Ítem medible</th>
+            <th>Objetivo</th>
+            <th>Ponderación</th>
+            <th>Umbral mínimo</th>
+            <th>Máximo computable</th>
+            {% if puede_editar %}
+              <th class="text-end">Acciones</th>
+            {% endif %}
+          </tr>
+        </thead>
+
+        <tbody>
+          {% for meta in metas %}
+            <tr>
+              <td>{{ meta.periodo }}</td>
+              <td>{{ meta.funcionario.nombre }}</td>
+              <td>{{ meta.cargo }}</td>
+              <td>{{ meta.item.nombre_item }}</td>
+              <td>
+                {{ meta.valor_objetivo }} {{ meta.unidad }}
+              </td>
+              <td>
+                <span class="badge text-bg-primary">
+                  {{ meta.ponderador }} %
+                </span>
+              </td>
+              <td>{{ meta.umbral_minimo }} %</td>
+              <td>{{ meta.maximo_computable }} %</td>
+
+              {% if puede_editar %}
+                <td class="text-end">
+                  <div class="d-inline-flex gap-1">
+
+                    <a class="btn btn-sm btn-outline-primary"
+                       href="{% url 'measurement:meta_update' meta.pk %}"
+                       title="Editar meta">
+                      <i class="bi bi-pencil"></i>
+                    </a>
+
+                    <form method="post"
+                          action="{% url 'measurement:meta_delete' meta.pk %}"
+                          onsubmit="return confirm('¿Estás seguro de eliminar esta meta?');">
+                      {% csrf_token %}
+                      <button type="submit"
+                              class="btn btn-sm btn-outline-danger"
+                              title="Eliminar meta">
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    </form>
+
+                  </div>
+                </td>
+              {% endif %}
+            </tr>
+
+          {% empty %}
+            <tr>
+              <td colspan="{% if puede_editar %}9{% else %}8{% endif %}"
+                  class="text-center text-body-secondary py-4">
+                <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+                No existen metas registradas para los filtros seleccionados.
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% include "partials/_pagination.html" %}
+  </div>
+
+{% endif %}
+
+{% endblock %}
