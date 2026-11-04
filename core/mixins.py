@@ -99,30 +99,133 @@ def get_rol_principal(user):
             return rol
     return next(iter(sorted(roles)), None)
 
+def get_alcances(user):
+    """
+    Devuelve los alcances configurados en los roles del funcionario.
+    """
+    funcionario = get_funcionario(user)
+
+    if funcionario is None:
+        return set()
+
+    return set(
+        funcionario.roles.values_list(
+            "alcance_autorizado",
+            flat=True,
+        )
+    )
+
+def get_alcances(user):
+    """
+    Obtiene los alcances autorizados de los roles del funcionario.
+    """
+    funcionario = get_funcionario(user)
+
+    if funcionario is None:
+        return set()
+
+    return set(
+        funcionario.roles.values_list(
+            "alcance_autorizado",
+            flat=True,
+        )
+    )
+
 
 def es_transversal(user):
-    return tiene_rol(user, *ROLES_TRANSVERSALES)
+    """
+    Determina si el usuario puede consultar todas las delegaciones.
+    """
+    if getattr(user, "is_superuser", False):
+        return True
+
+    return "global" in get_alcances(user)
 
 
 def get_delegacion_id(user):
+    """
+    Obtiene la delegación principal del funcionario.
+    """
     funcionario = get_funcionario(user)
     return funcionario.delegacion_id if funcionario else None
 
 
+def get_delegaciones_autorizadas_ids(user):
+    """
+    Obtiene la delegación principal y las delegaciones adicionales.
+    """
+    funcionario = get_funcionario(user)
+
+    if funcionario is None:
+        return []
+
+    ids = {funcionario.delegacion_id}
+
+    if hasattr(user, "delegaciones_autorizadas"):
+        ids.update(
+            user.delegaciones_autorizadas.values_list(
+                "pk",
+                flat=True,
+            )
+        )
+
+    return list(ids)
+
+
 def filtrar_por_ambito(queryset, user, campo="delegacion_id"):
     """
-    Restringe un queryset al ámbito del usuario.
-    - Administrador / Coordinador: ven todo.
-    - Resto: solo registros de su propia delegación.
-    - Sin funcionario asociado: nada.
-    `campo` es la ruta ORM hacia la delegación, p. ej. 'funcionario__delegacion_id'.
+    Filtra los registros según el alcance autorizado del usuario.
+
+    propia:
+        Solo su delegación.
+
+    multiples:
+        Su delegación y las delegaciones adicionales autorizadas.
+
+    global:
+        Todas las delegaciones.
+
+    Superusuario:
+        Acceso transversal.
     """
-    if es_transversal(user):
-        return queryset
-    delegacion_id = get_delegacion_id(user)
-    if delegacion_id is None:
+
+    if not getattr(user, "is_authenticated", False):
         return queryset.none()
-    return queryset.filter(**{campo: delegacion_id})
+
+    if getattr(user, "is_superuser", False):
+        return queryset
+
+    funcionario = get_funcionario(user)
+
+    if funcionario is None or not funcionario.activo:
+        return queryset.none()
+
+    alcances = get_alcances(user)
+
+    if "global" in alcances:
+        return queryset
+
+    delegacion_id = funcionario.delegacion_id
+
+    if not delegacion_id:
+        return queryset.none()
+
+    if "multiples" in alcances:
+        delegaciones_ids = get_delegaciones_autorizadas_ids(user)
+
+        if not delegaciones_ids:
+            return queryset.none()
+
+        return queryset.filter(
+            **{f"{campo}__in": delegaciones_ids}
+        )
+
+    if "propia" in alcances:
+        return queryset.filter(
+            **{campo: delegacion_id}
+        )
+
+    return queryset.none()
 
 
 # ---------------------------------------------------------------------------
