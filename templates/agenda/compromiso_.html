@@ -1,0 +1,581 @@
+
+{% extends "base.html" %}
+{% load ui_extras %}
+
+{% block title %}{{ titulo|default:"Agenda colectiva" }} · SGR{% endblock %}
+{% block page_title %}{{ titulo|default:"Agenda colectiva" }}{% endblock %}
+
+{% block page_actions %}
+  {% if modo == "lista" and puede_editar and sgr_funcionario %}
+    <a class="btn btn-primary" href="{% url 'agenda:compromiso_create' %}">
+      <i class="bi bi-plus-lg me-1"></i>Nuevo compromiso
+    </a>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+
+{% if modo == "form" %}
+
+  <div class="card shadow-sm">
+    <div class="card-header">Datos del compromiso</div>
+    <div class="card-body">
+
+      {% if actividad_origen %}
+        <div class="alert alert-info">
+          Este compromiso se está registrando desde la actividad
+          <strong>{{ actividad_origen.codigo }}</strong>.
+        </div>
+      {% endif %}
+
+      <form method="post" novalidate>
+        {% csrf_token %}
+
+        {% if form.non_field_errors %}
+          <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+        {% endif %}
+
+        {% for field in form %}
+          <div class="mb-3">
+            <label class="form-label" for="{{ field.id_for_label }}">
+              {{ field.label }}{% if field.field.required %} *{% endif %}
+            </label>
+            {{ field }}
+            {% if field.help_text %}
+              <div class="form-text">{{ field.help_text }}</div>
+            {% endif %}
+            {% for error in field.errors %}
+              <div class="text-danger small">{{ error }}</div>
+            {% endfor %}
+          </div>
+        {% endfor %}
+
+        <button type="submit" class="btn btn-primary">Guardar compromiso</button>
+        <a href="{% url 'agenda:compromiso_list' %}" class="btn btn-outline-secondary">Cancelar</a>
+      </form>
+    </div>
+  </div>
+
+{% elif modo == "detalle" %}
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <strong>Compromiso N.º {{ compromiso.pk }}</strong>
+      <span class="badge text-bg-secondary">{{ compromiso.estado }}</span>
+    </div>
+
+    <div class="card-body">
+      <dl class="row mb-0">
+        <dt class="col-md-3">Origen</dt>
+        <dd class="col-md-9">{{ compromiso.origen }}</dd>
+
+        <dt class="col-md-3">Solicitante</dt>
+        <dd class="col-md-9">{{ compromiso.solicitante }}</dd>
+
+        <dt class="col-md-3">Territorio</dt>
+        <dd class="col-md-9">{{ compromiso.territorio }}</dd>
+
+        <dt class="col-md-3">Responsable</dt>
+        <dd class="col-md-9">{{ compromiso.funcionario.nombre }}</dd>
+
+        <dt class="col-md-3">Delegación</dt>
+        <dd class="col-md-9">{{ compromiso.delegacion.nombre }}</dd>
+
+        <dt class="col-md-3">Fecha comprometida</dt>
+        <dd class="col-md-9">{{ compromiso.fecha_comprometida|date:"d/m/Y" }}</dd>
+
+        <dt class="col-md-3">Área de apoyo</dt>
+        <dd class="col-md-9">{{ compromiso.area_apoyo|default:"—" }}</dd>
+
+        <dt class="col-md-3">Ítem medible</dt>
+        <dd class="col-md-9">{{ compromiso.item_medible|default:"—" }}</dd>
+
+        <dt class="col-md-3">Período</dt>
+        <dd class="col-md-9">{{ compromiso.periodo|default:"Sin período asociado" }}</dd>
+
+        <dt class="col-md-3">Situación del plazo</dt>
+        <dd class="col-md-9">{{ compromiso.plazo }}</dd>
+
+        <dt class="col-md-3">Observación</dt>
+        <dd class="col-md-9">{{ compromiso.observacion|default:"—"|linebreaksbr }}</dd>
+      </dl>
+    </div>
+
+    <div class="card-footer d-flex flex-wrap gap-2">
+      {% if puede_editar %}
+        <a class="btn btn-outline-primary" href="{% url 'agenda:compromiso_update' compromiso.pk %}">
+          Editar compromiso
+        </a>
+      {% endif %}
+
+      {% if estado_form %}
+        <button class="btn btn-primary" type="button"
+                data-bs-toggle="collapse" data-bs-target="#formEstado">
+          Cambiar estado
+        </button>
+      {% endif %}
+
+      {% if reasignar_form %}
+        <button class="btn btn-outline-warning" type="button"
+                data-bs-toggle="collapse" data-bs-target="#formReasignar">
+          Reasignar responsable
+        </button>
+      {% endif %}
+
+      <a class="btn btn-outline-secondary" href="{% url 'agenda:compromiso_list' %}">
+        Volver a la agenda
+      </a>
+
+      <a class="btn btn-outline-secondary" href="{% url 'agenda:historial' compromiso.pk %}">
+        Ver historial
+      </a>
+    </div>
+  </div>
+
+  {% if estado_form %}
+    <div class="collapse mb-3" id="formEstado">
+      <div class="card shadow-sm">
+        <div class="card-header">Actualizar estado</div>
+        <div class="card-body">
+          <form method="post" action="{% url 'agenda:compromiso_estado' compromiso.pk %}">
+            {% csrf_token %}
+            {% for field in estado_form %}
+              <div class="mb-3">
+                <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field }}
+                {% for error in field.errors %}
+                  <div class="text-danger small">{{ error }}</div>
+                {% endfor %}
+              </div>
+            {% endfor %}
+            <button class="btn btn-primary" type="submit">Guardar estado</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if reasignar_form %}
+    <div class="collapse mb-3" id="formReasignar">
+      <div class="card shadow-sm">
+        <div class="card-header">Reasignar responsable</div>
+        <div class="card-body">
+          <form method="post" action="{% url 'agenda:compromiso_reasignar' compromiso.pk %}">
+            {% csrf_token %}
+            {% for field in reasignar_form %}
+              <div class="mb-3">
+                <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field }}
+                {% for error in field.errors %}
+                  <div class="text-danger small">{{ error }}</div>
+                {% endfor %}
+              </div>
+            {% endfor %}
+            <button class="btn btn-warning" type="submit">Confirmar reasignación</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="card shadow-sm">
+    <div class="card-header">Historial de transiciones</div>
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Estado anterior</th>
+            <th>Estado nuevo</th>
+            <th>Responsable del cambio</th>
+            <th>Observación</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for h in historial %}
+            <tr>
+              <td>{{ h.fecha|date:"d/m/Y H:i" }}</td>
+              <td>{{ h.estado_anterior|default:"—" }}</td>
+              <td>{{ h.estado_nuevo }}</td>
+              <td>{{ h.funcionario.nombre }}</td>
+              <td>{{ h.observacion|default:"—" }}</td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="5" class="text-center text-body-secondary py-3">
+                No existen transiciones registradas.
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+{% elif modo == "resumen" %}
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-body">
+      <form method="get" class="row g-2 align-items-end">
+        <div class="col-md-4">
+          <label class="form-label" for="periodo">Período</label>
+          <select class="form-select" id="periodo" name="periodo">
+            <option value="">Todos los períodos</option>
+            {% for p in periodos %}
+              <option value="{{ p.pk }}"
+                {% if periodo.pk == p.pk %}selected{% endif %}>
+                {{ p }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        {% if delegaciones %}
+          <div class="col-md-4">
+            <label class="form-label" for="delegacion">Delegación</label>
+            <select class="form-select" id="delegacion" name="delegacion">
+              <option value="">Todas</option>
+              {% for d in delegaciones %}
+                <option value="{{ d.pk }}"
+                  {% if filtros.delegacion == d.pk|stringformat:"s" %}selected{% endif %}>
+                  {{ d.nombre }}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+        {% endif %}
+
+        <div class="col-md-4">
+          <button class="btn btn-primary" type="submit">Aplicar filtros</button>
+          <a class="btn btn-outline-secondary" href="{% url 'agenda:resumen' %}">Limpiar</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-md-3">
+      <div class="card shadow-sm h-100 border-start border-danger border-4">
+        <div class="card-body">
+          <div class="text-body-secondary">Vencidos</div>
+          <div class="fs-3 fw-bold">{{ plazos.vencidos.count }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm h-100 border-start border-warning border-4">
+        <div class="card-body">
+          <div class="text-body-secondary">Por vencer</div>
+          <div class="fs-3 fw-bold">{{ plazos.por_vencer.count }}</div>
+          <small class="text-body-secondary">Próximos {{ plazos.dias_alerta }} días</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-body-secondary">Total de compromisos</div>
+          <div class="fs-3 fw-bold">{{ resumen.total.total }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-body-secondary">Realizados</div>
+          <div class="fs-3 fw-bold">{{ resumen.total.realizados }}</div>
+          <small class="text-body-secondary">{{ resumen.total.pct_realizado }}%</small>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-header">Cumplimiento por responsable</div>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Responsable</th>
+            {% for estado in resumen.estados %}
+              <th>{{ estado }}</th>
+            {% endfor %}
+            <th>Total</th>
+            <th>% realizado</th>
+            <th>% pendiente</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for fila in resumen.filas %}
+            <tr>
+              <td>{{ fila.nombre }}</td>
+              {% for estado in resumen.estados %}
+                <td>{{ fila.por_estado|get_item:estado|default:0 }}</td>
+              {% endfor %}
+              <td>{{ fila.total }}</td>
+              <td>{{ fila.pct_realizado }}%</td>
+              <td>{{ fila.pct_pendiente }}%</td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="8" class="text-center text-body-secondary py-3">
+                No hay compromisos para los filtros seleccionados.
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+        {% if resumen.filas %}
+          <tfoot class="table-light fw-bold">
+            <tr>
+              <td>Total</td>
+              {% for estado in resumen.estados %}
+                <td>{{ resumen.total.por_estado|get_item:estado|default:0 }}</td>
+              {% endfor %}
+              <td>{{ resumen.total.total }}</td>
+              <td>{{ resumen.total.pct_realizado }}%</td>
+              <td>{{ resumen.total.pct_pendiente }}%</td>
+            </tr>
+          </tfoot>
+        {% endif %}
+      </table>
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-header">Control de plazos</div>
+    <div class="card-body">
+      <h2 class="h6 text-danger">Compromisos vencidos</h2>
+      <ul class="list-group mb-3">
+        {% for c in plazos.vencidos %}
+          <li class="list-group-item d-flex justify-content-between align-items-center gap-2">
+            <span>
+              {{ c.solicitante }} · {{ c.funcionario.nombre }}
+              <small class="d-block text-body-secondary">Fecha: {{ c.fecha_comprometida|date:"d/m/Y" }}</small>
+            </span>
+            <a class="btn btn-sm btn-outline-primary" href="{% url 'agenda:compromiso_detail' c.pk %}">Ver</a>
+          </li>
+        {% empty %}
+          <li class="list-group-item text-body-secondary">No hay compromisos vencidos.</li>
+        {% endfor %}
+      </ul>
+
+      <h2 class="h6 text-warning">Compromisos por vencer</h2>
+      <ul class="list-group">
+        {% for c in plazos.por_vencer %}
+          <li class="list-group-item d-flex justify-content-between align-items-center gap-2">
+            <span>
+              {{ c.solicitante }} · {{ c.funcionario.nombre }}
+              <small class="d-block text-body-secondary">Fecha: {{ c.fecha_comprometida|date:"d/m/Y" }}</small>
+            </span>
+            <a class="btn btn-sm btn-outline-primary" href="{% url 'agenda:compromiso_detail' c.pk %}">Ver</a>
+          </li>
+        {% empty %}
+          <li class="list-group-item text-body-secondary">No hay compromisos próximos a vencer.</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+
+{% else %}
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-body">
+      <form method="get" class="row g-2 align-items-end">
+
+        <div class="col-md-3">
+          <label class="form-label" for="q">Buscar</label>
+          <input class="form-control" id="q" name="q" value="{{ filtros.q|default:'' }}"
+                 placeholder="Solicitante u origen">
+        </div>
+
+        <div class="col-md-2">
+          <label class="form-label" for="estado">Estado</label>
+          <select class="form-select" id="estado" name="estado">
+            <option value="">Todos</option>
+            {% for valor, etiqueta in estados %}
+              <option value="{{ valor }}" {% if filtros.estado == valor %}selected{% endif %}>
+                {{ etiqueta }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="col-md-2">
+          <label class="form-label" for="plazo">Plazo</label>
+          <select class="form-select" id="plazo" name="plazo">
+            <option value="">Todos</option>
+            <option value="vencido" {% if filtros.plazo == "vencido" %}selected{% endif %}>Vencidos</option>
+            <option value="por_vencer" {% if filtros.plazo == "por_vencer" %}selected{% endif %}>Por vencer</option>
+            <option value="abiertos" {% if filtros.plazo == "abiertos" %}selected{% endif %}>Abiertos</option>
+          </select>
+        </div>
+
+        <div class="col-md-2">
+          <label class="form-label" for="periodo">Período</label>
+          <select class="form-select" id="periodo" name="periodo">
+            <option value="">Todos</option>
+            {% for p in periodos %}
+              <option value="{{ p.pk }}" {% if filtros.periodo == p.pk|stringformat:"s" %}selected{% endif %}>
+                {{ p }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        {% if delegaciones %}
+          <div class="col-md-3">
+            <label class="form-label" for="delegacion">Delegación</label>
+            <select class="form-select" id="delegacion" name="delegacion">
+              <option value="">Todas</option>
+              {% for d in delegaciones %}
+                <option value="{{ d.pk }}" {% if filtros.delegacion == d.pk|stringformat:"s" %}selected{% endif %}>
+                  {{ d.nombre }}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+        {% endif %}
+
+        <div class="col-md-3">
+          <label class="form-label" for="funcionario">Responsable</label>
+          <select class="form-select" id="funcionario" name="funcionario">
+            <option value="">Todos</option>
+            {% for f in funcionarios %}
+              <option value="{{ f.pk }}" {% if filtros.funcionario == f.pk|stringformat:"s" %}selected{% endif %}>
+                {{ f.nombre }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="col-md-2">
+          <label class="form-label" for="fecha_desde">Desde</label>
+          <input class="form-control" type="date" id="fecha_desde" name="fecha_desde"
+                 value="{{ filtros.fecha_desde|default:'' }}">
+        </div>
+
+        <div class="col-md-2">
+          <label class="form-label" for="fecha_hasta">Hasta</label>
+          <input class="form-control" type="date" id="fecha_hasta" name="fecha_hasta"
+                 value="{{ filtros.fecha_hasta|default:'' }}">
+        </div>
+
+        <div class="col-md-3">
+          <label class="form-label" for="territorio">Territorio</label>
+          <input class="form-control" id="territorio" name="territorio"
+                 value="{{ filtros.territorio|default:'' }}">
+        </div>
+
+        <div class="col-12 d-flex gap-2">
+          <button class="btn btn-primary" type="submit">Filtrar</button>
+          <a class="btn btn-outline-secondary" href="{% url 'agenda:compromiso_list' %}">Limpiar filtros</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-md-4">
+      <div class="card shadow-sm border-start border-danger border-4 h-100">
+        <div class="card-body">
+          <div class="text-body-secondary">Vencidos en el resultado</div>
+          <div class="fs-3 fw-bold">{{ plazos.vencidos.count }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card shadow-sm border-start border-warning border-4 h-100">
+        <div class="card-body">
+          <div class="text-body-secondary">Por vencer en el resultado</div>
+          <div class="fs-3 fw-bold">{{ plazos.por_vencer.count }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-body-secondary">Compromisos encontrados</div>
+          <div class="fs-3 fw-bold">{{ page_obj.paginator.count }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span>Agenda colectiva</span>
+      <a class="btn btn-sm btn-outline-secondary" href="{% url 'agenda:resumen' %}">
+        Ver resumen completo
+      </a>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Fecha comprometida</th>
+            <th>Solicitante</th>
+            <th>Origen</th>
+            <th>Responsable</th>
+            <th>Delegación</th>
+            <th>Estado</th>
+            <th>Plazo</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in compromisos %}
+            <tr>
+              <td>{{ c.fecha_comprometida|date:"d/m/Y" }}</td>
+              <td>{{ c.solicitante }}</td>
+              <td>{{ c.origen }}</td>
+              <td>{{ c.funcionario.nombre }}</td>
+              <td>{{ c.delegacion.nombre }}</td>
+              <td>{{ c.estado }}</td>
+              <td>
+                {% if c.plazo == "Vencido" %}
+                  <span class="badge text-bg-danger">{{ c.plazo }}</span>
+                {% elif c.plazo == "Por vencer" %}
+                  <span class="badge text-bg-warning">{{ c.plazo }}</span>
+                {% else %}
+                  <span class="badge text-bg-secondary">{{ c.plazo }}</span>
+                {% endif %}
+              </td>
+              <td>
+                <a class="btn btn-sm btn-outline-primary"
+                   href="{% url 'agenda:compromiso_detail' c.pk %}">Ver</a>
+              </td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="8" class="text-center text-body-secondary py-4">
+                No hay compromisos registrados para los filtros seleccionados.
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if is_paginated %}
+      <div class="card-footer d-flex justify-content-between align-items-center">
+        <span class="small text-body-secondary">
+          Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}
+          · {{ page_obj.paginator.count }} compromisos
+        </span>
+        <div class="btn-group">
+          {% if page_obj.has_previous %}
+            <a class="btn btn-outline-secondary btn-sm"
+               href="?{{ request.GET.urlencode }}&page={{ page_obj.previous_page_number }}">Anterior</a>
+          {% endif %}
+          {% if page_obj.has_next %}
+            <a class="btn btn-outline-secondary btn-sm"
+               href="?{{ request.GET.urlencode }}&page={{ page_obj.next_page_number }}">Siguiente</a>
+          {% endif %}
+        </div>
+      </div>
+    {% endif %}
+  </div>
+
+{% endif %}
+{% endblock %}

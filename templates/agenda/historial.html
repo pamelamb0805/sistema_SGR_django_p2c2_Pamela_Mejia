@@ -1,0 +1,65 @@
+
+{% extends "base.html" %}
+
+{% block title %}{{ titulo|default:"Historial del compromiso" }} · SGR{% endblock %}
+{% block page_title %}{{ titulo|default:"Historial del compromiso" }}{% endblock %}
+
+{% block content %}
+<div class="card shadow-sm mb-3">
+  <div class="card-body">
+    <dl class="row mb-0">
+      <dt class="col-md-3">Solicitante</dt>
+      <dd class="col-md-9">{{ compromiso.solicitante }}</dd>
+
+      <dt class="col-md-3">Responsable actual</dt>
+      <dd class="col-md-9">{{ compromiso.funcionario.nombre }}</dd>
+
+      <dt class="col-md-3">Fecha comprometida</dt>
+      <dd class="col-md-9">{{ compromiso.fecha_comprometida|date:"d/m/Y" }}</dd>
+
+      <dt class="col-md-3">Estado actual</dt>
+      <dd class="col-md-9">{{ compromiso.estado }}</dd>
+    </dl>
+  </div>
+  <div class="card-footer">
+    <a class="btn btn-outline-secondary"
+       href="{% url 'agenda:compromiso_detail' compromiso.pk %}">
+      Volver al compromiso
+    </a>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-header">Registro cronológico de cambios</div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Fecha y hora</th>
+          <th>Estado anterior</th>
+          <th>Estado nuevo</th>
+          <th>Funcionario que realizó el cambio</th>
+          <th>Observación / motivo</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for h in historial %}
+          <tr>
+            <td>{{ h.fecha|date:"d/m/Y H:i:s" }}</td>
+            <td>{{ h.estado_anterior|default:"—" }}</td>
+            <td><strong>{{ h.estado_nuevo }}</strong></td>
+            <td>{{ h.funcionario.nombre }}</td>
+            <td>{{ h.observacion|default:"—"|linebreaksbr }}</td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="5" class="text-center text-body-secondary py-4">
+              No hay movimientos registrados para este compromiso.
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
