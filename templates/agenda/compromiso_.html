@@ -566,24 +566,7 @@
       </table>
     </div>
 
-    {% if is_paginated %}
-      <div class="card-footer d-flex justify-content-between align-items-center">
-        <span class="small text-body-secondary">
-          Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}
-          · {{ page_obj.paginator.count }} compromisos
-        </span>
-        <div class="btn-group">
-          {% if page_obj.has_previous %}
-            <a class="btn btn-outline-secondary btn-sm"
-               href="?{{ request.GET.urlencode }}&page={{ page_obj.previous_page_number }}">Anterior</a>
-          {% endif %}
-          {% if page_obj.has_next %}
-            <a class="btn btn-outline-secondary btn-sm"
-               href="?{{ request.GET.urlencode }}&page={{ page_obj.next_page_number }}">Siguiente</a>
-          {% endif %}
-        </div>
-      </div>
-    {% endif %}
+    {% include "partials/_pagination.html" %}
   </div>
 
 {% endif %}

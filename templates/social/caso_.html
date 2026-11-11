@@ -349,58 +349,7 @@
             </table>
         </div>
 
-        {% if is_paginated %}
-        <div class="card-footer bg-white py-3">
-            <nav aria-label="Paginación de casos">
-                <ul class="pagination justify-content-center flex-wrap mb-0">
-                    {% if page_obj.has_previous %}
-                        <li class="page-item">
-                            <a class="page-link" href="?{% if filtros.urlencode %}{{ filtros.urlencode }}&amp;{% endif %}page=1">
-                                Primera
-                            </a>
-                        </li>
-                        <li class="page-item">
-                            <a class="page-link" href="?{% if filtros.urlencode %}{{ filtros.urlencode }}&amp;{% endif %}page={{ page_obj.previous_page_number }}">
-                                Anterior
-                            </a>
-                        </li>
-                    {% else %}
-                        <li class="page-item disabled">
-                            <span class="page-link">Primera</span>
-                        </li>
-                        <li class="page-item disabled">
-                            <span class="page-link">Anterior</span>
-                        </li>
-                    {% endif %}
-
-                    <li class="page-item active" aria-current="page">
-                        <span class="page-link">
-                            {{ page_obj.number }} / {{ page_obj.paginator.num_pages }}
-                        </span>
-                    </li>
-
-                    {% if page_obj.has_next %}
-                        <li class="page-item">
-                            <a class="page-link" href="?{% if filtros.urlencode %}{{ filtros.urlencode }}&amp;{% endif %}page={{ page_obj.next_page_number }}">
-                                Siguiente
-                            </a>
-                        </li>
-                        <li class="page-item">
-                            <a class="page-link" href="?{% if filtros.urlencode %}{{ filtros.urlencode }}&amp;{% endif %}page={{ page_obj.paginator.num_pages }}">
-                                Última
-                            </a>
-                        </li>
-                    {% else %}
-                        <li class="page-item disabled">
-                            <span class="page-link">Siguiente</span>
-                        </li>
-                        <li class="page-item disabled">
-                            <span class="page-link">Última</span>
-                        </li>
-                    {% endif %}
-                </ul>
-            </nav>
-        </div>
+        {% include "partials/_pagination.html" %}
         {% endif %}
     </div>
 
