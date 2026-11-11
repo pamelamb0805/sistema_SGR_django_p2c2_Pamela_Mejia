@@ -21,6 +21,10 @@
             }
 
             const url = formulario.dataset.subatencionesUrl;
+            const area = new URLSearchParams(
+                window.location.search
+            ).get("area") || "";
+
             let solicitudActual = null;
 
             async function cargarSubatenciones(conservarSeleccion = false) {
@@ -51,6 +55,10 @@
                 const parametros = new URLSearchParams({
                     tipo_atencion: tipo.value
                 });
+
+                if (area) {
+                    parametros.set("area", area);
+                }
 
                 try {
                     const respuesta = await fetch(
@@ -106,6 +114,7 @@
 
                         opcionInicial.textContent =
                             "No se pudieron cargar las subatenciones";
+
                         subatencion.disabled = true;
                     }
                 }
