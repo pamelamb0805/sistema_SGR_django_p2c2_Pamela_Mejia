@@ -29,6 +29,9 @@ from .services import (
 from django.http import Http404, JsonResponse
 from core.pagination import PageSizeMixin
 
+from django.http import Http404, JsonResponse, HttpResponse
+from openpyxl import Workbook
+
 class SocialMixin(RolRequeridoMixin):
     roles_permitidos = ROLES_SOCIAL
 
@@ -138,6 +141,144 @@ class CasoListView(PageSizeMixin, SocialMixin, ModoMixin, ListView):
         )
 
         return contexto
+
+
+def exportar_casos_excel(request):
+    """Exporta los casos sociales y sus gestiones respetando filtros y permisos."""
+
+    if not request.user.is_authenticated:
+        return redirect("login")
+
+    if not tiene_rol(request.user, *ROLES_SOCIAL):
+        return denegar_acceso(request)
+
+    # Se replica el queryset del listado para conservar sus filtros.
+    casos = (
+        casos_visibles(request.user)
+        .annotate(total_gestiones=Count("gestiones"))
+        .select_related("delegacion")
+        .order_by("-fecha_primer_registro", "nombre")
+    )
+
+    filtros = request.GET
+
+    q = filtros.get("q", "").strip()
+    if q:
+        casos = casos.filter(nombre__icontains=q)
+
+    territorio = filtros.get("territorio", "").strip()
+    if territorio:
+        casos = casos.filter(territorio__icontains=territorio)
+
+    for campo, filtro in (
+        ("estado_caso", "estado_caso"),
+        ("delegacion", "delegacion_id"),
+        ("fecha_desde", "fecha_primer_registro__gte"),
+        ("fecha_hasta", "fecha_primer_registro__lte"),
+    ):
+        valor = filtros.get(campo, "").strip()
+        if valor:
+            casos = casos.filter(**{filtro: valor})
+
+    libro = Workbook()
+
+    # Hoja 1: casos.
+    hoja_casos = libro.active
+    hoja_casos.title = "Casos"
+
+    hoja_casos.append([
+        "N.º de caso",
+        "Persona atendida",
+        "Territorio",
+        "Delegación",
+        "Fecha de primer registro",
+        "Estado del caso",
+        "Total de gestiones",
+    ])
+
+    for caso in casos:
+        hoja_casos.append([
+            caso.pk,
+            caso.nombre,
+            caso.territorio,
+            caso.delegacion.nombre,
+            caso.fecha_primer_registro,
+            caso.estado_caso,
+            caso.total_gestiones,
+        ])
+
+    # Hoja 2: gestiones de los casos incluidos en el listado filtrado.
+    hoja_gestiones = libro.create_sheet("Gestiones")
+
+    hoja_gestiones.append([
+        "N.º de caso",
+        "Persona atendida",
+        "N.º de gestión",
+        "Tipo de atención",
+        "Subatención",
+        "Descripción",
+        "Fecha de atención",
+        "Fecha de registro",
+        "Funcionario responsable",
+        "Delegación",
+        "Estado",
+        "Resultado",
+    ])
+
+    gestiones = (
+        gestiones_visibles(request.user)
+        .filter(usuario_id__in=casos.values("pk"))
+        .order_by("usuario_id", "numero_gestion")
+    )
+
+    for gestion in gestiones:
+        hoja_gestiones.append([
+            gestion.usuario_id,
+            gestion.usuario.nombre,
+            gestion.numero_gestion,
+            gestion.tipo_atencion.nombre,
+            gestion.subatencion.nombre,
+            gestion.descripcion,
+            gestion.fecha,
+            gestion.fecha_registro.replace(tzinfo=None)
+            if gestion.fecha_registro else None,
+            gestion.funcionario.nombre,
+            gestion.delegacion.nombre,
+            gestion.estado,
+            gestion.resultado,
+        ])
+
+    # Formato general de las hojas.
+    for hoja in libro.worksheets:
+        hoja.freeze_panes = "A2"
+        hoja.auto_filter.ref = hoja.dimensions
+
+        for columna in hoja.columns:
+            ancho = max(
+                len(str(celda.value or ""))
+                for celda in columna
+            )
+            hoja.column_dimensions[
+                columna[0].column_letter
+            ].width = min(ancho + 3, 45)
+
+        for celda in hoja[1]:
+            celda.font = celda.font.copy(bold=True)
+
+    respuesta = HttpResponse(
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        )
+    )
+
+    respuesta["Content-Disposition"] = (
+        'attachment; filename="atencion_social.xlsx"'
+    )
+    respuesta["Cache-Control"] = "private, no-store"
+
+    libro.save(respuesta)
+    return respuesta
 
 class CasoDetailView(SocialMixin, ModoMixin, DetailView):
     """Secuencia completa de gestiones desde un único caso (CA-04)."""

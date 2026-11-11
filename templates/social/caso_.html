@@ -1,3 +1,4 @@
+
 {% extends "base.html" %}
 
 {% block title %}{{ titulo|default:"Atención social" }} · SGR{% endblock %}
@@ -146,12 +147,22 @@
             </p>
         </div>
 
-        {% if puede_editar %}
-            <a class="btn btn-primary" href="{% url 'social:caso_create' %}">
-                <i class="bi bi-plus-circle me-1" aria-hidden="true"></i>
-                Registrar caso
+        <div class="d-flex flex-wrap gap-2">
+            <a
+                class="btn btn-outline-success"
+                href="{% url 'social:caso_exportar_excel' %}?{{ request.GET.urlencode }}"
+            >
+                <i class="bi bi-file-earmark-excel me-1" aria-hidden="true"></i>
+                Exportar Excel
             </a>
-        {% endif %}
+
+            {% if puede_editar %}
+                <a class="btn btn-primary" href="{% url 'social:caso_create' %}">
+                    <i class="bi bi-plus-circle me-1" aria-hidden="true"></i>
+                    Registrar caso
+                </a>
+            {% endif %}
+        </div>
     </div>
 
     <div class="card shadow-sm mb-4">

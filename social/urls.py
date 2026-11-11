@@ -10,6 +10,12 @@ urlpatterns = [
     path("nuevo/", views.CasoCreateView.as_view(), name="caso_create"),
     path("estadisticas/", views.estadisticas, name="estadisticas"),
 
+    path(
+    "exportar-excel/",
+    views.exportar_casos_excel,
+    name="caso_exportar_excel",
+    ),
+
     # Selector dependiente
     path(
         "ajax/subatenciones/",
