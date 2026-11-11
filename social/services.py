@@ -15,9 +15,6 @@ from django.utils import timezone
 
 from catalogs.models import Catalogo
 from core.exceptions import ReglaNegocioError
-from core.mixins import (
-    ROL_DELEGADO, ROLES_OPERATIVOS, ROLES_TRANSVERSALES, auditar, es_transversal, get_funcionario, tiene_rol,
-)
 from core.services import guardar, snapshot
 
 from .models import AtencionSocial, UsuarioSocial
@@ -78,7 +75,6 @@ def gestiones_visibles(user):
         )
     )
 
-
 def puede_escribir(user, caso_delegacion_id):
     """
     Permite escribir a funcionarios y delegados dentro de sus
@@ -90,12 +86,6 @@ def puede_escribir(user, caso_delegacion_id):
     delegaciones_ids = get_delegaciones_autorizadas_ids(user)
 
     return caso_delegacion_id in delegaciones_ids
-    """Registrar y modificar: Funcionario o Delegado de la misma delegación."""
-    if not tiene_rol(user, *ROLES_OPERATIVOS):
-        return False
-    f = get_funcionario(user)
-    return f is not None and f.delegacion_id == caso_delegacion_id
-
 
 def puede_reabrir(user, caso_delegacion_id):
     if es_transversal(user):
