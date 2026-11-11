@@ -256,13 +256,14 @@
                     </table>
                 </div>
 
-                {% include "partials/_pagination.html" %}
-
             {% else %}
                 <div class="alert alert-info mb-0">
                     No hay ajustes que coincidan con los filtros seleccionados.
                 </div>
             {% endif %}
+
+            {% include "partials/_pagination.html" %}
+
         </div>
     </div>
 

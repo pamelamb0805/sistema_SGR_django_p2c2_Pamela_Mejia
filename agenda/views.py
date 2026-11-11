@@ -30,7 +30,8 @@ from .services import (
 
 from django.http import HttpResponse
 from openpyxl import Workbook
-from core.pagination import PageSizeMixin
+from django.core.paginator import Paginator
+from core.pagination import PageSizeMixin, PAGE_SIZE_OPTIONS, get_page_size
 
 def _filtrar(qs, g):
     """Filtros de la agenda (HU-12, RF-032): responsable, estado, territorio, fechas, período, plazo."""
@@ -238,6 +239,53 @@ class CompromisoHistorialView(RolRequeridoMixin, DetailView):
 
 @login_required
 def resumen_colectivo(request):
+    """Resumen colectivo y control de plazos (RF-019, RF-021, HU-14, HU-18)."""
+    g = request.GET
+    visibles = compromisos_visibles(request.user)
+
+    periodo = None
+    if g.get("periodo", "").isdigit():
+        periodo = Periodo.objects.filter(pk=g["periodo"]).first()
+    elif "periodo" not in g:
+        periodo = Periodo.objects.vigente()
+
+    filtros = g.copy()
+    if periodo:
+        filtros["periodo"] = str(periodo.pk)
+
+    qs = _filtrar(visibles.prefetch_related("historial"), filtros)
+
+    resumen = CRUDCompromiso.resumen_colectivo(qs)
+
+    page_size = get_page_size(
+        request,
+        "agenda_resumen_page_size",
+    )
+
+    paginator = Paginator(resumen["filas"], page_size)
+    page_obj = paginator.get_page(request.GET.get("page"))
+
+    resumen["filas"] = page_obj.object_list
+
+    return render(request, "agenda/compromiso_.html", {
+        "modo": "resumen",
+        "titulo": "Resumen de la agenda colectiva",
+        "periodo": periodo,
+        "filtros": g,
+        "periodos": Periodo.objects.all(),
+        "delegaciones": (
+            Delegacion.objects.all()
+            if es_transversal(request.user)
+            else []
+        ),
+        "resumen": resumen,
+        "plazos": CRUDCompromiso.controlar_plazos(queryset=qs),
+        "hoy": timezone.localdate(),
+        "page_obj": page_obj,
+        "page_size": page_size,
+        "page_size_options": PAGE_SIZE_OPTIONS,
+    })
+
     """Resumen colectivo y control de plazos (RF-019, RF-021, HU-14, HU-18)."""
     g = request.GET
     visibles = compromisos_visibles(request.user)

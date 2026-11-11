@@ -318,14 +318,13 @@
                         </tbody>
                     </table>
                 </div>
-
-                {% include "partials/_pagination.html" %}
-
             {% else %}
                 <div class="alert alert-info mb-0">
                     No hay períodos que coincidan con los filtros seleccionados.
                 </div>
             {% endif %}
+
+            {% include "partials/_pagination.html" %}
         </div>
     </div>
 

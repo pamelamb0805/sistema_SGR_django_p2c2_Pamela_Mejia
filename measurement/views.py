@@ -33,7 +33,8 @@ from .services import CalculoIndicadores, CRUDAjuste, CRUDMeta, CRUDPeriodo
 from django.db.models import Q
 from django.http import HttpResponse
 from openpyxl import Workbook
-from core.pagination import PageSizeMixin
+from django.core.paginator import Paginator
+from core.pagination import PageSizeMixin, PAGE_SIZE_OPTIONS, get_page_size
 
 class LecturaMixin(RolRequeridoMixin):
     roles_permitidos = ROLES_SUPERVISION
@@ -470,24 +471,62 @@ def desempeno_funcionario(request, pk):
     return render(request, "measurement/indicador_.html",
                   _contexto_panel(request, funcionario, "funcionario", f"Desempeño: {funcionario.nombre}"))
 
-
 @login_required
 def semaforo(request):
     """Tablero de delegación (RF-029, HU-08, HU-18, HU-21)."""
     if not tiene_rol(request.user, *ROLES_SUPERVISION):
         return denegar_acceso(request)
+
     periodo = _periodo_seleccionado(request)
+
     funcionarios = filtrar_por_ambito(
-        Funcionario.objects.filter(estado=Funcionario.ESTADO_ACTIVO).select_related("cargo", "delegacion"),
-        request.user, "delegacion_id")
+        Funcionario.objects.filter(
+            estado=Funcionario.ESTADO_ACTIVO
+        ).select_related("cargo", "delegacion"),
+        request.user,
+        "delegacion_id",
+    )
+
     delegacion_sel = request.GET.get("delegacion", "")
+
     if delegacion_sel and es_transversal(request.user):
-        funcionarios = funcionarios.filter(delegacion_id=delegacion_sel)
-    resumen = CalculoIndicadores.resumen_delegacion(funcionarios, periodo) if periodo else None
+        funcionarios = funcionarios.filter(
+            delegacion_id=delegacion_sel
+        )
+
+    resumen = (
+        CalculoIndicadores.resumen_delegacion(funcionarios, periodo)
+        if periodo
+        else None
+    )
+
+    page_size = get_page_size(
+        request,
+        "semaforo_page_size",
+    )
+
+    page_obj = None
+
+    if resumen:
+        paginator = Paginator(resumen["filas"], page_size)
+        page_obj = paginator.get_page(request.GET.get("page"))
+        resumen["filas"] = page_obj.object_list
+
     return render(request, "measurement/semaforo.html", {
-        "titulo": "Semáforo de delegación", "periodo": periodo, "periodos": Periodo.objects.all(),
-        "resumen": resumen, "delegaciones": Delegacion.objects.all() if es_transversal(request.user) else [],
-        "delegacion_sel": delegacion_sel, "hoy": timezone.localdate(),
+        "titulo": "Semáforo de delegación",
+        "periodo": periodo,
+        "periodos": Periodo.objects.all(),
+        "resumen": resumen,
+        "delegaciones": (
+            Delegacion.objects.all()
+            if es_transversal(request.user)
+            else []
+        ),
+        "delegacion_sel": delegacion_sel,
+        "hoy": timezone.localdate(),
+        "page_obj": page_obj,
+        "page_size": page_size,
+        "page_size_options": PAGE_SIZE_OPTIONS,
     })
 
 @login_required

@@ -1,5 +1,6 @@
 
 {% extends "base.html" %}
+{% load ui_extras %}
 
 {% block title %}Semáforo de delegación · SGR{% endblock %}
 
@@ -213,5 +214,7 @@
     No hay períodos de medición registrados. Debes crear un período antes de consultar el semáforo.
   </div>
 {% endif %}
+
+{% include "partials/_pagination.html" %}
 
 {% endblock %}
