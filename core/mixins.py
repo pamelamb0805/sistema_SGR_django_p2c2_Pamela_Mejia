@@ -366,6 +366,19 @@ class RolRequeridoMixin(LoginRequiredMixin):
             return denegar_acceso(request)
         return super().dispatch(request, *args, **kwargs)
 
+    def get_paginate_by(self, queryset):
+        valores_permitidos = (10, 15, 20)
+
+        try:
+            cantidad = int(self.request.GET.get("page_size", self.paginate_by))
+        except (TypeError, ValueError):
+            cantidad = self.paginate_by
+
+        if cantidad not in valores_permitidos:
+            cantidad = self.paginate_by
+
+        return cantidad
+
 
 class AmbitoDelegacionMixin:
     """
