@@ -9,6 +9,14 @@
 
 {% block page_actions %}
     {% if modo == "lista" or not modo %}
+        <a
+            class="btn btn-outline-success"
+            href="{% url 'organizations:rol_exportar_excel' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}"
+        >
+            <i class="bi bi-file-earmark-excel me-1"></i>
+            Exportar Excel
+        </a>
+
         {% if puede_editar %}
             <a
                 class="btn btn-primary"

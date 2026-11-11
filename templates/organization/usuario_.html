@@ -1,9 +1,15 @@
+
 {% extends "base.html" %}
 
 {% block title %}Usuarios · SGR{% endblock %}
 {% block page_title %}Administración de usuarios{% endblock %}
 
 {% block page_actions %}
+  <a class="btn btn-outline-success"
+     href="{% url 'organizations:usuario_exportar_excel' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}">
+    <i class="bi bi-file-earmark-excel me-1"></i>Exportar Excel
+  </a>
+
   <a class="btn btn-primary"
      href="{% url 'organizations:usuario_create' %}">
     <i class="bi bi-person-plus me-1"></i>Nuevo usuario
