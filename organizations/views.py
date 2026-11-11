@@ -229,11 +229,47 @@ class ItemToggleView(AccionPostView):
 # ---------------------------------------------------------------------------
 # Roles
 # ---------------------------------------------------------------------------
+
 class RolListView(LecturaMixin, ModoMixin, ListView):
     model = Rol
     template_name = "organization/rol_.html"
     context_object_name = "roles"
-    titulo = "Roles"
+    paginate_by = 10
+    titulo = "Roles y permisos"
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+
+        q = self.request.GET.get("q", "").strip()
+        alcance = self.request.GET.get("alcance", "").strip()
+
+        if q:
+            qs = qs.filter(
+                Q(nombre_rol__icontains=q)
+                | Q(descripcion__icontains=q)
+            )
+
+        if alcance:
+            qs = qs.filter(
+                alcance_autorizado=alcance
+            )
+
+        return qs.order_by("nombre_rol")
+
+    def get_context_data(self, **kwargs):
+        contexto = super().get_context_data(**kwargs)
+
+        contexto.update({
+            "q": self.request.GET.get("q", ""),
+            "alcance_sel": self.request.GET.get("alcance", ""),
+            "alcances": Rol._meta.get_field(
+                "alcance_autorizado"
+            ).choices,
+            "total_resultados": self.get_queryset().count(),
+        })
+
+        return contexto
+
 
 
 class RolCreateView(EscrituraMixin,ModalFormPageMixin, ModoMixin, GuardarMixin, CreateView):

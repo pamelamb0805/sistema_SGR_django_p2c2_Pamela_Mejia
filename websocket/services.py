@@ -1,7 +1,4 @@
 
-"""
-Servicio de publicación de eventos CRUD del SGR.
-"""
 import logging
 
 from asgiref.sync import async_to_sync
@@ -13,10 +10,6 @@ logger = logging.getLogger(__name__)
 
 
 def obtener_delegacion_id(objeto, profundidad=0):
-    """
-    Resuelve la delegación de un registro a través de sus relaciones.
-    Evita depender de una estructura de organización ajena al SGR.
-    """
     if objeto is None or profundidad > 5:
         return None
 
@@ -30,7 +23,6 @@ def obtener_delegacion_id(objeto, profundidad=0):
     if delegacion_id:
         return delegacion_id
 
-    # Relaciones necesarias para recorrer las entidades del SGR.
     relaciones = (
         "funcionario",
         "usuario",
@@ -55,23 +47,17 @@ def obtener_delegacion_id(objeto, profundidad=0):
     return None
 
 
-def publish_crud_event(
-    module,
-    action,
-    actor,
-    objeto,
-):
-    """
-    Publica un evento CRUD a la delegación correspondiente.
+def modelo_es_delegacion(objeto):
+    return objeto._meta.model_name == "delegacion"
 
-    Las entidades globales se notifican mediante sgr_global.
-    Las entidades vinculadas a una delegación se notifican
-    exclusivamente al grupo de esa delegación.
-    """
+
+def publish_crud_event(module, action, actor, objeto):
     channel_layer = get_channel_layer()
 
     if channel_layer is None:
-        logger.warning("No hay una capa de canales configurada.")
+        logger.warning(
+            "No hay una capa de canales configurada."
+        )
         return
 
     if objeto is None:
@@ -93,12 +79,14 @@ def publish_crud_event(
     grupos = []
 
     if delegacion_id:
-        grupos.append(f"sgr_delegacion_{delegacion_id}")
+        grupos.append(
+            f"sgr_delegacion_{delegacion_id}"
+        )
 
         if modelo_es_delegacion(objeto):
             grupos.append("sgr_global")
     else:
-        grupos.append("sgr_global")
+        grupos.append("sgr_usuarios_activos")
 
     try:
         for grupo in set(grupos):
@@ -116,8 +104,3 @@ def publish_crud_event(
             "No se pudo publicar el evento CRUD del módulo %s.",
             module,
         )
-
-
-def modelo_es_delegacion(objeto):
-    """Identifica si el registro corresponde a una delegación."""
-    return objeto._meta.model_name == "delegacion"

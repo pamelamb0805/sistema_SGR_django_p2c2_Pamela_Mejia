@@ -6,14 +6,10 @@ from core.mixins import (
     es_transversal,
     get_delegaciones_autorizadas_ids,
 )
+from organizations.models import Delegacion
 
 
 class SGRConsumer(AsyncJsonWebsocketConsumer):
-    """
-    Conexión WebSocket del SGR.
-    Restringe las notificaciones de cada delegación al ámbito
-    autorizado del usuario y permite recibir eventos globales.
-    """
 
     async def connect(self):
         usuario = self.scope.get("user")
@@ -30,14 +26,19 @@ class SGRConsumer(AsyncJsonWebsocketConsumer):
             await self.close(code=4403)
             return
 
-        self.grupos = [
-            "sgr_global",
-        ]
+        self.grupos = ["sgr_usuarios_activos"]
 
-        self.grupos.extend(
-            f"sgr_delegacion_{delegacion_id}"
-            for delegacion_id in delegaciones
-        )
+        if transversal:
+            self.grupos.append("sgr_global")
+            self.grupos.extend(
+                f"sgr_delegacion_{delegacion_id}"
+                for delegacion_id in delegaciones
+            )
+        else:
+            self.grupos.extend(
+                f"sgr_delegacion_{delegacion_id}"
+                for delegacion_id in delegaciones
+            )
 
         for grupo in set(self.grupos):
             await self.channel_layer.group_add(
@@ -55,10 +56,6 @@ class SGRConsumer(AsyncJsonWebsocketConsumer):
             )
 
     async def crud_event(self, event):
-        """
-        Recibe el evento publicado por websocket.services
-        y entrega al navegador el payload esperado.
-        """
         await self.send_json(event["payload"])
 
     @database_sync_to_async
@@ -70,10 +67,20 @@ class SGRConsumer(AsyncJsonWebsocketConsumer):
 
         transversal = es_transversal(usuario)
 
-        delegaciones = [
-            delegacion_id
-            for delegacion_id in get_delegaciones_autorizadas_ids(usuario)
-            if delegacion_id is not None
-        ]
+        if transversal:
+            delegaciones = list(
+                Delegacion.objects.values_list(
+                    "pk",
+                    flat=True,
+                )
+            )
+        else:
+            delegaciones = [
+                delegacion_id
+                for delegacion_id in get_delegaciones_autorizadas_ids(
+                    usuario
+                )
+                if delegacion_id is not None
+            ]
 
         return activo, transversal, delegaciones
