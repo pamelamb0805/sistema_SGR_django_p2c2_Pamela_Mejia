@@ -21,6 +21,16 @@ from core.mixins import (
 from core.services import guardar, snapshot
 
 from .models import AtencionSocial, UsuarioSocial
+from core.mixins import (
+    ROL_DELEGADO,
+    ROLES_OPERATIVOS,
+    ROLES_TRANSVERSALES,
+    auditar,
+    es_transversal,
+    get_funcionario,
+    get_delegaciones_autorizadas_ids,
+    tiene_rol,
+)
 
 # Acceso al módulo: datos personales de usuarios atendidos => solo quienes los necesitan (RNF-009)
 ROLES_SOCIAL = ROLES_OPERATIVOS + ROLES_TRANSVERSALES
@@ -35,15 +45,24 @@ def maximo_gestiones():
 # Visibilidad y permisos
 # ---------------------------------------------------------------------------
 def casos_visibles(user):
+    """
+    Devuelve los casos correspondientes a las delegaciones autorizadas
+    del usuario. Los usuarios transversales pueden consultar todas.
+    """
     qs = UsuarioSocial.objects.select_related("delegacion")
+
     if not tiene_rol(user, *ROLES_SOCIAL):
         return qs.none()
+
     if es_transversal(user):
         return qs
-    f = get_funcionario(user)
-    return qs.filter(delegacion_id=f.delegacion_id) if f else qs.none()
 
+    delegaciones_ids = get_delegaciones_autorizadas_ids(user)
 
+    if not delegaciones_ids:
+        return qs.none()
+
+    return qs.filter(delegacion_id__in=delegaciones_ids)
 
 def gestiones_visibles(user):
     return (
@@ -61,6 +80,16 @@ def gestiones_visibles(user):
 
 
 def puede_escribir(user, caso_delegacion_id):
+    """
+    Permite escribir a funcionarios y delegados dentro de sus
+    delegaciones autorizadas.
+    """
+    if not tiene_rol(user, *ROLES_OPERATIVOS):
+        return False
+
+    delegaciones_ids = get_delegaciones_autorizadas_ids(user)
+
+    return caso_delegacion_id in delegaciones_ids
     """Registrar y modificar: Funcionario o Delegado de la misma delegación."""
     if not tiene_rol(user, *ROLES_OPERATIVOS):
         return False

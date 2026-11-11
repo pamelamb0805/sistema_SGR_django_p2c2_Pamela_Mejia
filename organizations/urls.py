@@ -140,4 +140,21 @@ urlpatterns = [
         views.UsuarioToggleView.as_view(),
         name="usuario_toggle",
     ),
+
+        # Exportaciones Excel
+    path(
+        "delegaciones/exportar-excel/",
+        views.exportar_delegaciones_excel,
+        name="delegacion_exportar_excel",
+    ),
+    path(
+        "roles/exportar-excel/",
+        views.exportar_roles_excel,
+        name="rol_exportar_excel",
+    ),
+    path(
+        "usuarios/exportar-excel/",
+        views.exportar_usuarios_excel,
+        name="usuario_exportar_excel",
+    ),
 ]

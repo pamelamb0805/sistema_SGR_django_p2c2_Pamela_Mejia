@@ -24,6 +24,15 @@ from .models import Cargo, Delegacion, Funcionario, ItemMedible, Rol, Usuario
 from .services import CRUDCargo, CRUDDelegacion, CRUDFuncionario, CRUDRol, Seguridad
 from django.db import transaction
 
+from django.contrib.auth.decorators import login_required
+from django.http import HttpResponse
+from openpyxl import Workbook
+
+from core.mixins import (
+    filtrar_por_ambito,
+    tiene_rol,
+)
+
 # ---------------------------------------------------------------------------
 # Bloques reutilizables
 # ---------------------------------------------------------------------------
@@ -621,3 +630,183 @@ class UsuarioToggleView(EscrituraMixin, AccionPostView):
             f"Acceso de {objeto.username} "
             f"{'habilitado' if objeto.activo_acceso else 'deshabilitado'}."
         )
+
+# ---------------------------------------------------------------------------
+# Exportaciones Excel de mantenedores
+# ---------------------------------------------------------------------------
+
+def _respuesta_excel(nombre_archivo, nombre_hoja, encabezados, filas):
+    libro = Workbook()
+    hoja = libro.active
+    hoja.title = nombre_hoja
+    hoja.append(encabezados)
+
+    for fila in filas:
+        hoja.append(fila)
+
+    respuesta = HttpResponse(
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        )
+    )
+    respuesta["Content-Disposition"] = (
+        f'attachment; filename="{nombre_archivo}"'
+    )
+
+    libro.save(respuesta)
+    return respuesta
+
+
+@login_required
+def exportar_delegaciones_excel(request):
+    if not tiene_rol(request.user, *ROLES_SUPERVISION):
+        return HttpResponse("No autorizado", status=403)
+
+    queryset = filtrar_por_ambito(
+        Delegacion.objects.all(),
+        request.user,
+        "id_delegacion",
+    )
+
+    q = request.GET.get("q", "").strip()
+    estado = request.GET.get("estado", "")
+
+    if q:
+        queryset = queryset.filter(
+            Q(codigo__icontains=q)
+            | Q(nombre__icontains=q)
+            | Q(direccion__icontains=q)
+            | Q(comuna__icontains=q)
+            | Q(ambito__icontains=q)
+        )
+
+    if estado:
+        queryset = queryset.filter(estado=estado)
+
+    filas = [
+        [
+            d.codigo,
+            d.nombre,
+            d.direccion,
+            d.comuna,
+            d.ambito,
+            d.estado,
+        ]
+        for d in queryset.order_by("nombre")
+    ]
+
+    return _respuesta_excel(
+        "delegaciones_filtradas.xlsx",
+        "Delegaciones",
+        ["Código", "Nombre", "Dirección", "Comuna", "Ámbito", "Estado"],
+        filas,
+    )
+
+
+@login_required
+def exportar_roles_excel(request):
+    if not tiene_rol(request.user, *ROLES_SUPERVISION):
+        return HttpResponse("No autorizado", status=403)
+
+    queryset = Rol.objects.all()
+
+    q = request.GET.get("q", "").strip()
+    alcance = request.GET.get("alcance", "").strip()
+
+    if q:
+        queryset = queryset.filter(
+            Q(nombre_rol__icontains=q)
+            | Q(descripcion__icontains=q)
+        )
+
+    if alcance:
+        queryset = queryset.filter(alcance_autorizado=alcance)
+
+    filas = [
+        [
+            rol.nombre_rol,
+            rol.descripcion,
+            ", ".join(map(str, rol.permisos or [])),
+            rol.get_alcance_autorizado_display(),
+        ]
+        for rol in queryset.order_by("nombre_rol")
+    ]
+
+    return _respuesta_excel(
+        "roles_filtrados.xlsx",
+        "Roles",
+        ["Nombre", "Descripción", "Permisos", "Alcance autorizado"],
+        filas,
+    )
+
+
+@login_required
+def exportar_usuarios_excel(request):
+    if not tiene_rol(request.user, *ROLES_CONFIGURACION):
+        return HttpResponse("No autorizado", status=403)
+
+    queryset = (
+        Usuario.objects
+        .select_related("funcionario", "funcionario__delegacion")
+        .prefetch_related("delegaciones_autorizadas")
+        .order_by("username")
+    )
+
+    q = request.GET.get("q", "").strip()
+    estado = request.GET.get("estado", "").strip()
+
+    if q:
+        queryset = queryset.filter(
+            Q(username__icontains=q)
+            | Q(email__icontains=q)
+            | Q(funcionario__nombre__icontains=q)
+        )
+
+    if estado == "ACTIVO":
+        queryset = queryset.filter(
+            activo_acceso=True,
+            funcionario__activo=True,
+        )
+    elif estado == "INACTIVO":
+        queryset = queryset.filter(
+            Q(activo_acceso=False)
+            | Q(funcionario__activo=False)
+            | Q(funcionario__isnull=True)
+        )
+
+    filas = []
+
+    for usuario in queryset:
+        delegaciones = []
+
+        if usuario.funcionario and usuario.funcionario.delegacion:
+            delegaciones.append(usuario.funcionario.delegacion.nombre)
+
+        delegaciones.extend(
+            usuario.delegaciones_autorizadas.values_list(
+                "nombre",
+                flat=True,
+            )
+        )
+
+        filas.append([
+            usuario.username,
+            usuario.email or "",
+            usuario.funcionario.nombre if usuario.funcionario else "",
+            ", ".join(dict.fromkeys(delegaciones)),
+            "Activo" if usuario.is_active else "Inactivo",
+        ])
+
+    return _respuesta_excel(
+        "usuarios_filtrados.xlsx",
+        "Usuarios",
+        [
+            "Usuario",
+            "Correo",
+            "Funcionario",
+            "Delegaciones autorizadas",
+            "Estado de acceso",
+        ],
+        filas,
+    )
