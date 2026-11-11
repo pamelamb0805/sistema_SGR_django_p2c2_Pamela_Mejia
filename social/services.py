@@ -300,32 +300,7 @@ class CRUDAtencionSocial:
             guardar(gestion, actor, "atencion_social")
 
         return gestion
-
-
-    @staticmethod
-    def modificar_gestion(gestion, actor=None):
-        """Corrige tipo, fecha, resultado, estado o catálogo de una gestión (queda auditado)."""
-        with transaction.atomic():
-            original = AtencionSocial.objects.select_for_update().get(pk=gestion.pk)
-            caso = UsuarioSocial.objects.select_for_update().get(pk=original.usuario_id)
-            _exigir_escritura(actor, caso)
-            if caso.cerrado:
-                raise ReglaNegocioError("El caso está cerrado: reábralo para modificar sus gestiones.")
-            if gestion.usuario_id != original.usuario_id or gestion.numero_gestion != original.numero_gestion:
-                raise ReglaNegocioError("No se puede cambiar el caso ni el número de la gestión.")
-            otras = caso.gestiones.exclude(pk=gestion.pk)
-            if otras.filter(tipo_atencion=gestion.tipo_atencion).exists():
-                raise ReglaNegocioError("Cada gestión del caso debe tener un tipo de atención diferente.")
-            if gestion.catalogo_id != original.catalogo_id:
-                _validar_catalogo(gestion.catalogo)
-            CRUDAtencionSocial._validar_fecha_y_estado(
-                gestion,
-                anterior=otras.filter(numero_gestion__lt=gestion.numero_gestion).order_by("-numero_gestion").first(),
-                siguiente=otras.filter(numero_gestion__gt=gestion.numero_gestion).order_by("numero_gestion").first())
-            guardar(gestion, actor, "atencion_social")
-        return gestion
-
-
+    
 # ---------------------------------------------------------------------------
 # CRUDUsuarioSocial (RF-015, HU-03)
 # ---------------------------------------------------------------------------

@@ -1,0 +1,264 @@
+
+{% extends "base.html" %}
+
+{% block title %}{{ titulo|default:"Auditoría del sistema" }}{% endblock %}
+
+{% block page_title %}{{ titulo|default:"Auditoría del sistema" }}{% endblock %}
+
+{% block page_actions %}
+    {% if modo == "detalle" %}
+        <a href="{% url 'audit:auditoria_list' %}" class="btn btn-outline-secondary">
+            Volver a auditoría
+        </a>
+    {% elif modo == "historial" %}
+        <a href="{% url 'audit:auditoria_list' %}" class="btn btn-outline-secondary">
+            Auditoría general
+        </a>
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+
+{% if modo == "detalle" %}
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Detalle del evento #{{ evento.pk }}</h5>
+            <span class="badge bg-secondary">{{ evento.evento }}</span>
+        </div>
+
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <div class="text-muted small">Fecha y hora</div>
+                    <strong>{{ evento.fecha|date:"d/m/Y H:i:s" }}</strong>
+                </div>
+
+                <div class="col-md-6 mb-3">
+                    <div class="text-muted small">Usuario responsable</div>
+                    <strong>
+                        {% if evento.funcionario %}
+                            {{ evento.funcionario.nombre }}
+                        {% else %}
+                            Sistema / técnico
+                        {% endif %}
+                    </strong>
+                </div>
+
+                <div class="col-md-6 mb-3">
+                    <div class="text-muted small">Evento</div>
+                    <strong>{{ evento.evento }}</strong>
+                </div>
+
+                <div class="col-md-6 mb-3">
+                    <div class="text-muted small">Entidad afectada</div>
+                    <strong>{{ evento.entidad_afectada|default:"—" }}</strong>
+                </div>
+
+                <div class="col-md-6 mb-3">
+                    <div class="text-muted small">ID de entidad</div>
+                    <strong>{{ evento.id_entidad_afectada }}</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Comparación de valores</h5>
+        </div>
+
+        <div class="card-body">
+            {% if diferencias %}
+                <div class="table-responsive">
+                    <table class="table table-bordered align-middle">
+                        <thead>
+                            <tr>
+                                <th>Campo</th>
+                                <th>Valor anterior</th>
+                                <th>Valor nuevo</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            {% for diferencia in diferencias %}
+                                <tr>
+                                    <td><strong>{{ diferencia.campo }}</strong></td>
+                                    <td>
+                                        <pre class="mb-0 text-wrap">{{ diferencia.anterior }}</pre>
+                                    </td>
+                                    <td>
+                                        <pre class="mb-0 text-wrap">{{ diferencia.nuevo }}</pre>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="alert alert-info mb-0">
+                    Este evento no contiene dos estructuras de datos comparables.
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-header">
+            <h5 class="mb-0">Datos originales del registro de auditoría</h5>
+        </div>
+
+        <div class="card-body">
+            <h6>Valor anterior</h6>
+            <pre class="bg-body-tertiary p-3 rounded text-wrap">{{ evento.valor_anterior|default:"Sin valor anterior" }}</pre>
+
+            <h6 class="mt-3">Valor nuevo</h6>
+            <pre class="bg-body-tertiary p-3 rounded text-wrap">{{ evento.valor_nuevo|default:"Sin valor nuevo" }}</pre>
+        </div>
+    </div>
+
+{% else %}
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Filtros de consulta</h5>
+        </div>
+
+        <div class="card-body">
+            <form method="get" action="{{ request.path }}" class="row g-3">
+
+                {% for field in filtro_form %}
+                    <div class="col-md-4">
+                        <label for="{{ field.id_for_label }}" class="form-label">
+                            {{ field.label }}
+                        </label>
+
+                        {{ field }}
+
+                        {% if field.help_text %}
+                            <div class="form-text">{{ field.help_text }}</div>
+                        {% endif %}
+
+                        {% for error in field.errors %}
+                            <div class="text-danger small">{{ error }}</div>
+                        {% endfor %}
+                    </div>
+                {% endfor %}
+
+                <div class="col-12 d-flex flex-wrap gap-2">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-search"></i> Aplicar filtros
+                    </button>
+
+                    <button type="submit"
+                            class="btn btn-outline-success"
+                            formaction="{% url 'audit:auditoria_exportar' %}">
+                        <i class="bi bi-file-earmark-spreadsheet"></i> Exportar CSV
+                    </button>
+
+                    {% if modo == "historial" %}
+                        <a href="{% url 'audit:entidad_historial' entidad id_entidad %}"
+                           class="btn btn-outline-secondary">
+                            Limpiar filtros
+                        </a>
+                    {% else %}
+                        <a href="{% url 'audit:auditoria_list' %}"
+                           class="btn btn-outline-secondary">
+                            Limpiar filtros
+                        </a>
+                    {% endif %}
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {% if filtros_aplicados %}
+        <div class="alert alert-info">
+            <strong>Filtros aplicados:</strong>
+            {% for filtro in filtros_aplicados %}
+                <span class="d-inline-block me-2">{{ filtro }}</span>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    <div class="card shadow-sm">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">
+                {% if modo == "historial" %}
+                    Historial de eventos de esta entidad
+                {% else %}
+                    Registro de eventos del sistema
+                {% endif %}
+            </h5>
+
+            <span class="text-muted small">
+                Total: {{ page_obj.paginator.count|default:eventos.count }}
+            </span>
+        </div>
+
+        <div class="card-body">
+            {% if eventos %}
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Fecha y hora</th>
+                                <th>Usuario</th>
+                                <th>Evento</th>
+                                <th>Entidad</th>
+                                <th>ID entidad</th>
+                                <th>Detalle</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            {% for evento in eventos %}
+                                <tr>
+                                    <td>{{ evento.pk }}</td>
+
+                                    <td>{{ evento.fecha|date:"d/m/Y H:i:s" }}</td>
+
+                                    <td>
+                                        {% if evento.funcionario %}
+                                            {{ evento.funcionario.nombre }}
+                                        {% else %}
+                                            <span class="text-muted">Sistema / técnico</span>
+                                        {% endif %}
+                                    </td>
+
+                                    <td>
+                                        <span class="badge bg-secondary">
+                                            {{ evento.evento }}
+                                        </span>
+                                    </td>
+
+                                    <td>{{ evento.entidad_afectada|default:"—" }}</td>
+
+                                    <td>{{ evento.id_entidad_afectada }}</td>
+
+                                    <td>
+                                        <a href="{% url 'audit:auditoria_detail' evento.pk %}"
+                                           class="btn btn-sm btn-outline-primary">
+                                            Ver detalle
+                                        </a>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                {% include "partials/_pagination.html" %}
+
+            {% else %}
+                <div class="alert alert-info mb-0">
+                    No existen eventos de auditoría para los filtros seleccionados.
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+{% endif %}
+
+{% endblock %}

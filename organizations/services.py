@@ -220,18 +220,39 @@ class Seguridad:
         delegaciones=None,
     ):
         username = (username or "").strip()
+        email = (email or "").strip().lower()
+        delegaciones = list(delegaciones or [])
+
+        if funcionario is None:
+            raise ReglaNegocioError(
+                "Debes asociar la cuenta a un funcionario."
+            )
+
         if not username:
-            raise ReglaNegocioError("El nombre de usuario es obligatorio.")
-            
+            raise ReglaNegocioError(
+                "El nombre de usuario es obligatorio."
+            )
+
         if Usuario.objects.filter(funcionario=funcionario).exists():
-            raise ReglaNegocioError("El funcionario ya tiene un acceso creado.")
-            
+            raise ReglaNegocioError(
+                "El funcionario ya tiene un acceso creado."
+            )
+
         if Usuario.objects.filter(username__iexact=username).exists():
-            raise ReglaNegocioError("Ese nombre de usuario ya está en uso.")
-            
-        # Validación de duplicidad de correo (agregada de tu nuevo bloque)
+            raise ReglaNegocioError(
+                "Ese nombre de usuario ya está en uso."
+            )
+
         if email and Usuario.objects.filter(email__iexact=email).exists():
-            raise ReglaNegocioError("Ese correo ya está asociado a otra cuenta.")
+            raise ReglaNegocioError(
+                "Ese correo ya está asociado a otra cuenta."
+            )
+
+        # Validar el alcance autorizado del funcionario.
+        Seguridad.validar_delegaciones(
+            funcionario,
+            delegaciones,
+        )
 
         try:
             validate_password(password)
@@ -239,17 +260,15 @@ class Seguridad:
             raise ReglaNegocioError(" ".join(exc.messages))
 
         with transaction.atomic():
-            # Creamos el usuario incluyendo el correo y asegurando el estado activo de acceso
             usuario = Usuario.objects.create_user(
                 username=username,
                 email=email,
                 password=password,
                 funcionario=funcionario,
-                activo_acceso=True,
+                activo_acceso=funcionario.activo,
             )
 
-            # Asignamos las delegaciones autorizadas (si se proporcionan)
-            usuario.delegaciones_autorizadas.set(delegaciones or [])
+            usuario.delegaciones_autorizadas.set(delegaciones)
 
             auditar(
                 actor,
@@ -259,7 +278,7 @@ class Seguridad:
                 None,
                 _snapshot(usuario),
             )
-            
+
         return usuario
 
     @staticmethod
@@ -276,8 +295,30 @@ class Seguridad:
     @staticmethod
     def guardar_usuario(form, actor=None):
         usuario = form.instance
+
         es_nuevo = not bool(usuario.pk)
-        anterior = None if es_nuevo else _snapshot(usuario)
+
+        anterior = (
+            None if es_nuevo else _snapshot(usuario)
+        )
+
+        funcionario = form.cleaned_data.get("funcionario")
+
+        delegaciones = form.cleaned_data.get(
+            "delegaciones_autorizadas",
+            [],
+        )
+
+        Seguridad.validar_delegaciones(
+            funcionario,
+            delegaciones,
+        )
+
+        if not funcionario:
+            usuario.activo_acceso = False
+
+        elif not funcionario.activo:
+            usuario.activo_acceso = False
 
         with transaction.atomic():
             usuario = form.save()
@@ -292,7 +333,6 @@ class Seguridad:
             )
 
         return usuario
-
     @staticmethod
     def cambiar_estado_acceso(usuario, actor=None):
         if not usuario.funcionario_id:
@@ -319,5 +359,52 @@ class Seguridad:
         )
 
         return usuario
+
+    @staticmethod
+    def validar_delegaciones(funcionario, delegaciones):
+        """
+        Valida que las delegaciones adicionales correspondan
+        al alcance de los roles del funcionario.
+        """
+
+        delegaciones = list(delegaciones or [])
+
+        if funcionario is None:
+            if delegaciones:
+                raise ReglaNegocioError(
+                    "Una cuenta sin funcionario no puede tener delegaciones autorizadas."
+                )
+            return
+
+        inactivas = [
+            delegacion.nombre
+            for delegacion in delegaciones
+            if not delegacion.activa
+        ]
+
+        if inactivas:
+            raise ReglaNegocioError(
+                "No se pueden autorizar delegaciones inactivas: "
+                + ", ".join(inactivas)
+            )
+
+        alcances = set(
+            funcionario.roles.values_list(
+                "alcance_autorizado",
+                flat=True,
+            )
+        )
+
+        if "global" in alcances:
+            return
+
+        if "multiples" in alcances:
+            return
+
+        if delegaciones:
+            raise ReglaNegocioError(
+                "El funcionario tiene alcance propio y no puede recibir "
+                "delegaciones adicionales."
+            )
 
     

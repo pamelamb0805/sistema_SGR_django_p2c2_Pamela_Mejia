@@ -1,0 +1,208 @@
+
+{% extends "base.html" %}
+
+{% block title %}Actividades · SGR{% endblock %}
+
+{% block page_title %}
+  {{ titulo|default:"Actividades" }}
+{% endblock %}
+
+{% block page_actions %}
+  {% if modo == "lista" and puede_editar %}
+    <a class="btn btn-primary" href="{% url 'activities:actividad_create' %}">
+      <i class="bi bi-plus-lg me-1"></i>Registrar actividad
+    </a>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+
+{% if modo == "form" %}
+  <div class="card shadow-sm">
+    <div class="card-header">Datos de la actividad</div>
+    <div class="card-body">
+      <form method="post" novalidate>
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+          <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+        {% endif %}
+
+        {% for field in form %}
+          <div class="mb-3">
+            <label class="form-label" for="{{ field.id_for_label }}">
+              {{ field.label }}{% if field.field.required %} *{% endif %}
+            </label>
+            {{ field }}
+            {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+            {% for error in field.errors %}
+              <div class="text-danger small">{{ error }}</div>
+            {% endfor %}
+          </div>
+        {% endfor %}
+
+        <button class="btn btn-primary" type="submit">Guardar actividad</button>
+        <a class="btn btn-outline-secondary" href="{% url 'activities:actividad_list' %}">Cancelar</a>
+      </form>
+    </div>
+  </div>
+
+{% elif modo == "detalle" %}
+  <div class="card shadow-sm mb-3">
+    <div class="card-header d-flex justify-content-between">
+      <strong>{{ actividad.codigo }}</strong>
+      <span class="badge text-bg-secondary">{{ actividad.estado }}</span>
+    </div>
+    <div class="card-body">
+      <dl class="row">
+        <dt class="col-sm-3">Fecha</dt><dd class="col-sm-9">{{ actividad.fecha|date:"d/m/Y" }}</dd>
+        <dt class="col-sm-3">Tipo</dt><dd class="col-sm-9">{{ actividad.get_tipo_registro_display }}</dd>
+        <dt class="col-sm-3">Funcionario</dt><dd class="col-sm-9">{{ actividad.funcionario }}</dd>
+        <dt class="col-sm-3">Delegación</dt><dd class="col-sm-9">{{ actividad.funcionario.delegacion }}</dd>
+        <dt class="col-sm-3">Cargo / ítem</dt><dd class="col-sm-9">{{ actividad.item.nombre_item }}</dd>
+        <dt class="col-sm-3">Catálogo</dt><dd class="col-sm-9">{{ actividad.catalogo }}</dd>
+        <dt class="col-sm-3">Período</dt><dd class="col-sm-9">{{ actividad.periodo }}</dd>
+        <dt class="col-sm-3">Acción ejecutada</dt><dd class="col-sm-9">{{ actividad.accion|linebreaksbr }}</dd>
+        <dt class="col-sm-3">Contacto</dt><dd class="col-sm-9">{{ actividad.contacto|default:"—" }}</dd>
+        <dt class="col-sm-3">Teléfono</dt><dd class="col-sm-9">{{ actividad.telefono|default:"—" }}</dd>
+      </dl>
+
+      <div class="d-flex flex-wrap gap-2">
+        {% if puede_editar %}
+          <a class="btn btn-outline-primary" href="{% url 'activities:actividad_update' actividad.pk %}">Editar</a>
+        {% endif %}
+        {% if puede_adjuntar %}
+          <a class="btn btn-primary" href="{% url 'activities:evidencia_create' actividad.pk %}">Adjuntar evidencia</a>
+        {% endif %}
+        {% if puede_validar %}
+          {% for evidencia in evidencias %}
+            {% if evidencia.estado_revision == "Pendiente" %}
+              <a class="btn btn-outline-success" href="{% url 'activities:validacion_create' evidencia.pk %}">
+                Revisar {{ evidencia.codigo_evidencia }}
+              </a>
+            {% endif %}
+          {% endfor %}
+        {% endif %}
+        <a class="btn btn-outline-secondary" href="{% url 'activities:actividad_list' %}">Volver</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-header">Evidencias adjuntas</div>
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead><tr><th>Código</th><th>Fecha de carga</th><th>Estado</th><th>Archivo</th></tr></thead>
+        <tbody>
+          {% for e in evidencias %}
+            <tr>
+              <td>{{ e.codigo_evidencia }}</td>
+              <td>{{ e.fecha_carga|date:"d/m/Y H:i" }}</td>
+              <td>{{ e.estado_revision }}</td>
+              <td>
+                <a href="{% url 'activities:evidencia_archivo' e.pk %}" target="_blank">Ver archivo</a>
+                <a href="{% url 'activities:evidencia_archivo' e.pk %}?descargar=1">Descargar</a>
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="4" class="text-center text-body-secondary py-3">Todavía no hay evidencias adjuntas.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {% if puede_anular %}
+    <div class="card border-danger">
+      <div class="card-body">
+        <h2 class="h6">Anular actividad</h2>
+        <form method="post" action="{% url 'activities:actividad_anular' actividad.pk %}">
+          {% csrf_token %}
+          {{ anular_form.motivo.label_tag }}
+          {{ anular_form.motivo }}
+          {% for error in anular_form.motivo.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+          <button class="btn btn-outline-danger mt-2" type="submit">Anular actividad</button>
+        </form>
+      </div>
+    </div>
+  {% endif %}
+
+{% else %}
+  <div class="card shadow-sm mb-3">
+    <div class="card-body">
+      <form method="get" class="row g-2 align-items-end">
+        <div class="col-lg-3">
+          <label class="form-label" for="q">Buscar</label>
+          <input class="form-control" id="q" name="q" value="{{ filtros.q|default:'' }}" placeholder="Acción o contacto">
+        </div>
+        <div class="col-lg-2">
+          <label class="form-label" for="estado">Estado</label>
+          <select class="form-select" id="estado" name="estado">
+            <option value="">Todos</option>
+            {% for valor, etiqueta in estados %}
+              <option value="{{ valor }}" {% if filtros.estado == valor %}selected{% endif %}>{{ etiqueta }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-lg-2">
+          <label class="form-label" for="tipo_registro">Tipo</label>
+          <select class="form-select" id="tipo_registro" name="tipo_registro">
+            <option value="">Todos</option>
+            {% for valor, etiqueta in tipos %}
+              <option value="{{ valor }}" {% if filtros.tipo_registro == valor %}selected{% endif %}>{{ etiqueta }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-lg-2">
+          <label class="form-label" for="periodo">Período</label>
+          <select class="form-select" id="periodo" name="periodo">
+            <option value="">Todos</option>
+            {% for p in periodos %}
+              <option value="{{ p.pk }}" {% if filtros.periodo == p.pk|stringformat:"s" %}selected{% endif %}>{{ p }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-lg-3 d-flex gap-2">
+          <button class="btn btn-primary" type="submit">Filtrar</button>
+          <a class="btn btn-outline-secondary" href="{% url 'activities:actividad_list' %}">Limpiar</a>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label" for="fecha_desde">Desde</label>
+          <input class="form-control" type="date" id="fecha_desde" name="fecha_desde" value="{{ filtros.fecha_desde|default:'' }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label" for="fecha_hasta">Hasta</label>
+          <input class="form-control" type="date" id="fecha_hasta" name="fecha_hasta" value="{{ filtros.fecha_hasta|default:'' }}">
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-header">Historial de actividades</div>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead>
+          <tr><th>Código</th><th>Fecha</th><th>Funcionario</th><th>Ítem</th><th>Acción</th><th>Estado</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for a in actividades %}
+            <tr>
+              <td>{{ a.codigo }}</td>
+              <td>{{ a.fecha|date:"d/m/Y" }}</td>
+              <td>{{ a.funcionario }}</td>
+              <td>{{ a.item.nombre_item }}</td>
+              <td>{{ a.accion|truncatechars:65 }}</td>
+              <td>{{ a.estado }}</td>
+              <td><a class="btn btn-sm btn-outline-primary" href="{% url 'activities:actividad_detail' a.pk %}">Ver</a></td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="7" class="text-center text-body-secondary py-4">No hay actividades para mostrar.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include "partials/_pagination.html" %}
+  </div>
+{% endif %}
+
+{% endblock %}

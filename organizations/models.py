@@ -269,16 +269,17 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
 
     @property
     def is_active(self):
+        # ROOT puede existir sin funcionario, pero debe poder deshabilitarse.
+        if not self.activo_acceso:
+            return False
+
+        # Las cuentas normales necesitan un funcionario activo.
         if self.is_superuser:
             return True
 
         funcionario = getattr(self, "funcionario", None)
 
-        return bool(
-            self.activo_acceso
-            and funcionario
-            and funcionario.activo
-        )
+        return bool(funcionario and funcionario.activo)
 
     @property
     def is_staff(self):

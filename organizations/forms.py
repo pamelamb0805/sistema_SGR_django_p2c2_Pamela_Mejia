@@ -244,13 +244,17 @@ class UsuarioAdminForm(BootstrapFormMixin, forms.ModelForm):
 
     def clean(self):
         datos = super().clean()
+
         password1 = datos.get("password1")
         password2 = datos.get("password2")
+        funcionario = datos.get("funcionario")
+        delegaciones = datos.get("delegaciones_autorizadas")
 
-        es_nuevo = not bool(
-            self.instance and self.instance.pk
-        )
+        es_nuevo = not bool(self.instance and self.instance.pk)
 
+        # --------------------------------------------------
+        # 1. Validación de contraseña
+        # --------------------------------------------------
         if es_nuevo and not password1:
             self.add_error(
                 "password1",
@@ -269,11 +273,88 @@ class UsuarioAdminForm(BootstrapFormMixin, forms.ModelForm):
                 except ValidationError as exc:
                     self.add_error("password1", exc)
 
-        funcionario = datos.get("funcionario")
+        # --------------------------------------------------
+        # 2. Validación de funcionario
+        # --------------------------------------------------
+        if funcionario:
+            duplicados = Usuario.objects.filter(
+                funcionario=funcionario
+            )
 
-        # Una cuenta sin funcionario asociado no puede quedar habilitada.
+            if self.instance and self.instance.pk:
+                duplicados = duplicados.exclude(pk=self.instance.pk)
+
+            if duplicados.exists():
+                self.add_error(
+                    "funcionario",
+                    "Este funcionario ya tiene una cuenta de acceso.",
+                )
+
+        # --------------------------------------------------
+        # 3. Cuenta sin funcionario
+        # --------------------------------------------------
         if not funcionario:
             datos["activo_acceso"] = False
+
+            if delegaciones and delegaciones.exists():
+                self.add_error(
+                    "delegaciones_autorizadas",
+                    "Una cuenta sin funcionario no puede tener delegaciones autorizadas.",
+                )
+
+            return datos
+
+        # --------------------------------------------------
+        # 4. Funcionario inactivo
+        # --------------------------------------------------
+        if not funcionario.activo:
+            datos["activo_acceso"] = False
+
+        # --------------------------------------------------
+        # 5. Validar delegaciones seleccionadas
+        # --------------------------------------------------
+        if delegaciones is None:
+            return datos
+
+        delegaciones = list(delegaciones)
+
+        inactivas = [
+            delegacion.nombre
+            for delegacion in delegaciones
+            if not delegacion.activa
+        ]
+
+        if inactivas:
+            self.add_error(
+                "delegaciones_autorizadas",
+                "No puedes autorizar delegaciones inactivas: "
+                + ", ".join(inactivas),
+            )
+
+        # --------------------------------------------------
+        # 6. Revisar alcance de los roles del funcionario
+        # --------------------------------------------------
+        alcances = set(
+            funcionario.roles.values_list(
+                "alcance_autorizado",
+                flat=True,
+            )
+        )
+
+        if "global" in alcances:
+            alcance = "global"
+        elif "multiples" in alcances:
+            alcance = "multiples"
+        else:
+            alcance = "propia"
+
+        # Con alcance propia no se permiten delegaciones adicionales.
+        if alcance == "propia" and delegaciones:
+            self.add_error(
+                "delegaciones_autorizadas",
+                "El funcionario tiene alcance propio. "
+                "No corresponde asignarle delegaciones adicionales.",
+            )
 
         return datos
 

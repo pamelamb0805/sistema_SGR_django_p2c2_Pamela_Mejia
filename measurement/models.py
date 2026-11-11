@@ -117,12 +117,53 @@ class Meta(models.Model):
 
     def clean(self):
         errores = {}
-        if self.ponderador is not None and self.ponderador > 100:
-            errores["ponderador"] = "El ponderador no puede superar 100 %."
-        if self.umbral_minimo is not None and not (0 <= self.umbral_minimo <= 100):
-            errores["umbral_minimo"] = "El umbral mínimo debe estar entre 0 y 100 %."
-        if self.funcionario_id and self.item_id and self.item.cargo_id != self.funcionario.cargo_id:
-            errores["item"] = "El ítem no pertenece al cargo del funcionario."
+
+        # El ponderador representa un porcentaje.
+        if self.ponderador is not None and not (
+            0 < self.ponderador <= 100
+        ):
+            errores["ponderador"] = (
+                "El ponderador debe ser mayor que 0 y no puede superar 100 %."
+            )
+
+        # El umbral mínimo debe estar entre 0 y 100.
+        if self.umbral_minimo is not None and not (
+            0 <= self.umbral_minimo <= 100
+        ):
+            errores["umbral_minimo"] = (
+                "El umbral mínimo debe estar entre 0 y 100 %."
+            )
+
+        # El ítem debe pertenecer al cargo del funcionario.
+        if (
+            self.funcionario_id
+            and self.item_id
+            and self.item.cargo_id != self.funcionario.cargo_id
+        ):
+            errores["item"] = (
+                "El ítem medible no pertenece al cargo del funcionario."
+            )
+
+        # El cargo registrado en la meta debe coincidir con el funcionario.
+        if (
+            self.funcionario_id
+            and self.cargo_id
+            and self.cargo_id != self.funcionario.cargo_id
+        ):
+            errores["cargo"] = (
+                "El cargo de la meta debe coincidir con el cargo del funcionario."
+            )
+
+        # El cargo registrado en la meta debe coincidir con el ítem.
+        if (
+            self.item_id
+            and self.cargo_id
+            and self.cargo_id != self.item.cargo_id
+        ):
+            errores["cargo"] = (
+                "El cargo de la meta debe coincidir con el cargo del ítem medible."
+            )
+
         if errores:
             raise ValidationError(errores)
 

@@ -22,7 +22,7 @@ from core.mixins import ModalFormPageMixin
 from .forms import AccesoForm, CargoForm, DelegacionForm, FuncionarioForm, ItemMedibleForm, RolForm, UsuarioAdminForm
 from .models import Cargo, Delegacion, Funcionario, ItemMedible, Rol, Usuario
 from .services import CRUDCargo, CRUDDelegacion, CRUDFuncionario, CRUDRol, Seguridad
-
+from django.db import transaction
 
 # ---------------------------------------------------------------------------
 # Bloques reutilizables
@@ -374,26 +374,38 @@ class FuncionarioToggleView(AccionPostView):
         CRUDFuncionario.cambiar_estado(objeto, request.user)
         return f"Funcionario «{objeto.nombre}» {'activado' if objeto.activo else 'desactivado'}."
 
-
-
 class FuncionarioAccesoView(EscrituraMixin, View):
     """Crea el acceso de un funcionario o actualiza sus credenciales."""
+
     http_method_names = ["post"]
 
     def post(self, request, pk):
-        funcionario = get_object_or_404(Funcionario, pk=pk)
+        funcionario = get_object_or_404(
+            Funcionario,
+            pk=pk,
+        )
+
         usuario = getattr(funcionario, "usuario", None)
 
-        form = AccesoForm(request.POST, usuario=usuario)
+        form = AccesoForm(
+            request.POST,
+            usuario=usuario,
+        )
 
         if form.is_valid():
             try:
+                email = form.cleaned_data["email"].strip().lower()
+
+                delegaciones = form.cleaned_data[
+                    "delegaciones_autorizadas"
+                ]
+
                 if usuario:
-                    # Actualizar el correo y las delegaciones autorizadas.
-                    email = form.cleaned_data["email"].strip().lower()
-                    delegaciones = form.cleaned_data[
-                        "delegaciones_autorizadas"
-                    ]
+                    # Validar el alcance antes de modificar la cuenta.
+                    Seguridad.validar_delegaciones(
+                        funcionario,
+                        delegaciones,
+                    )
 
                     if Usuario.objects.filter(
                         email__iexact=email
@@ -402,18 +414,31 @@ class FuncionarioAccesoView(EscrituraMixin, View):
                             "Ese correo electrónico ya está registrado."
                         )
 
-                    usuario.email = email
-                    usuario.delegaciones_autorizadas.set(delegaciones)
-                    usuario.save(update_fields=["email"])
+                    with transaction.atomic():
+                        usuario.email = email
 
-                    # Cambiar la contraseña solo si se ingresó una.
-                    password = form.cleaned_data.get("password1")
-                    if password:
-                        Seguridad.cambiar_contrasenia(
-                            usuario,
-                            password,
-                            request.user,
+                        if not funcionario.activo:
+                            usuario.activo_acceso = False
+
+                        usuario.save(
+                            update_fields=[
+                                "email",
+                                "activo_acceso",
+                            ]
                         )
+
+                        usuario.delegaciones_autorizadas.set(
+                            delegaciones
+                        )
+
+                        password = form.cleaned_data.get("password1")
+
+                        if password:
+                            Seguridad.cambiar_contrasenia(
+                                usuario,
+                                password,
+                                request.user,
+                            )
 
                     messages.success(
                         request,
@@ -421,16 +446,13 @@ class FuncionarioAccesoView(EscrituraMixin, View):
                     )
 
                 else:
-                    # Crear el acceso del funcionario.
-                    usuario = Seguridad.crear_usuario(
-                        funcionario,
-                        form.cleaned_data["username"],
-                        form.cleaned_data["password1"],
-                        request.user,
-                        email=form.cleaned_data["email"],
-                        delegaciones=form.cleaned_data[
-                            "delegaciones_autorizadas"
-                        ],
+                    Seguridad.crear_usuario(
+                        funcionario=funcionario,
+                        username=form.cleaned_data["username"],
+                        password=form.cleaned_data["password1"],
+                        actor=request.user,
+                        email=email,
+                        delegaciones=delegaciones,
                     )
 
                     messages.success(
@@ -442,13 +464,15 @@ class FuncionarioAccesoView(EscrituraMixin, View):
                 messages.error(request, str(exc))
 
         else:
-            messages.error(request, _errores(form))
+            messages.error(
+                request,
+                _errores(form),
+            )
 
         return redirect(
             "organizations:funcionario_detail",
             pk=funcionario.pk,
         )
-
 
 class UsuarioListView(EscrituraMixin, ListView):
     model = Usuario

@@ -610,7 +610,7 @@
                     <tbody>
                         {% for fila in estadisticas.por_tipo %}
                         <tr>
-                            <td>{{ fila.tipo_atencion__nombre|default:fila.tipo_atencion }}</td>
+                            <td>{{ fila.tipo_atencion__nombre }}</td>
                             <td class="text-end">{{ fila.total }}</td>
                         </tr>
                         {% empty %}
@@ -666,7 +666,7 @@
                     <tbody>
                         {% for fila in estadisticas.por_delegacion %}
                         <tr>
-                            <td>{{ fila.delegacion__nombre|default:fila.usuario__delegacion__nombre }}</td>
+                            <td>{{ fila.delegacion__nombre }}</td>
                             <td class="text-end">{{ fila.total }}</td>
                         </tr>
                         {% empty %}

@@ -1,0 +1,127 @@
+
+{% extends "base.html" %}
+
+{% block title %}Validación de evidencias · SGR{% endblock %}
+{% block page_title %}{{ titulo|default:"Validación de evidencias" }}{% endblock %}
+
+{% block content %}
+
+{% if modo == "form" %}
+  <div class="card shadow-sm mb-3">
+    <div class="card-header">Revisar {{ evidencia.codigo_evidencia }}</div>
+    <div class="card-body">
+      <dl class="row">
+        <dt class="col-sm-3">Actividad</dt><dd class="col-sm-9">{{ actividad.codigo }}</dd>
+        <dt class="col-sm-3">Funcionario</dt><dd class="col-sm-9">{{ actividad.funcionario }}</dd>
+        <dt class="col-sm-3">Fecha</dt><dd class="col-sm-9">{{ actividad.fecha|date:"d/m/Y" }}</dd>
+        <dt class="col-sm-3">Acción ejecutada</dt><dd class="col-sm-9">{{ actividad.accion|linebreaksbr }}</dd>
+        <dt class="col-sm-3">Estado de evidencia</dt><dd class="col-sm-9">{{ evidencia.estado_revision }}</dd>
+        <dt class="col-sm-3">Archivo</dt>
+        <dd class="col-sm-9"><a href="{% url 'activities:evidencia_archivo' evidencia.pk %}" target="_blank">Abrir evidencia</a></dd>
+      </dl>
+
+      {% if es_propia %}
+        <div class="alert alert-warning">No puedes validar una evidencia de una actividad propia.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-header">Decisión del verificador</div>
+    <div class="card-body">
+      <form method="post" novalidate>
+        {% csrf_token %}
+        {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+
+        {% for field in form %}
+          <div class="mb-3">
+            <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+          </div>
+        {% endfor %}
+
+        <button class="btn btn-success" type="submit" {% if es_propia %}disabled{% endif %}>Registrar decisión</button>
+        <a class="btn btn-outline-secondary" href="{% url 'activities:validacion_bandeja' %}">Volver a pendientes</a>
+      </form>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mt-3">
+    <div class="card-header">Historial de revisiones</div>
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead><tr><th>Versión</th><th>Fecha</th><th>Verificador</th><th>Decisión</th><th>Observación</th></tr></thead>
+        <tbody>
+          {% for h in historial %}
+            <tr>
+              <td>{{ h.version }}</td>
+              <td>{{ h.fecha|date:"d/m/Y H:i" }}</td>
+              <td>{{ h.funcionario }}</td>
+              <td>{{ h.decision }}</td>
+              <td>{{ h.observacion|default:"—" }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="5" class="text-center text-body-secondary py-3">No hay revisiones anteriores.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+{% else %}
+  <div class="card shadow-sm mb-3">
+    <div class="card-body">
+      <form method="get" class="row g-2 align-items-end">
+        <div class="col-md-4">
+          <label class="form-label" for="funcionario">Funcionario</label>
+          <select class="form-select" name="funcionario" id="funcionario">
+            <option value="">Todos</option>
+            {% for f in funcionarios %}
+              <option value="{{ f.pk }}" {% if filtros.funcionario == f.pk|stringformat:"s" %}selected{% endif %}>{{ f.nombre }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label" for="item">Ítem medible</label>
+          <select class="form-select" name="item" id="item">
+            <option value="">Todos</option>
+            {% for i in items %}
+              <option value="{{ i.pk }}" {% if filtros.item == i.pk|stringformat:"s" %}selected{% endif %}>{{ i.nombre_item }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4 d-flex gap-2">
+          <button class="btn btn-primary" type="submit">Filtrar</button>
+          <a class="btn btn-outline-secondary" href="{% url 'activities:validacion_bandeja' %}">Limpiar</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-header">Evidencias pendientes de revisión</div>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead><tr><th>Código</th><th>Actividad</th><th>Funcionario</th><th>Ítem</th><th>Fecha de carga</th><th></th></tr></thead>
+        <tbody>
+          {% for e in evidencias %}
+            <tr>
+              <td>{{ e.codigo_evidencia }}</td>
+              <td>{{ e.actividad.codigo }}</td>
+              <td>{{ e.actividad.funcionario }}</td>
+              <td>{{ e.actividad.item.nombre_item }}</td>
+              <td>{{ e.fecha_carga|date:"d/m/Y H:i" }}</td>
+              <td><a class="btn btn-sm btn-primary" href="{% url 'activities:validacion_create' e.pk %}">Revisar</a></td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="6" class="text-center text-body-secondary py-4">No hay evidencias pendientes de revisión en tu ámbito.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include "partials/_pagination.html" %}
+  </div>
+{% endif %}
+
+{% endblock %}
