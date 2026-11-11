@@ -53,6 +53,7 @@ def _periodo_seleccionado(request):
 # ---------------------------------------------------------------------------
 # Períodos
 # ---------------------------------------------------------------------------
+
 class PeriodoListView(LecturaMixin, ModoMixin, ListView):
     model = Periodo
     template_name = "measurement/periodo_.html"
@@ -61,11 +62,61 @@ class PeriodoListView(LecturaMixin, ModoMixin, ListView):
     titulo = "Períodos de medición"
     roles_edicion = ROLES_MEDICION
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        filtros = self.request.GET
+
+        estado = filtros.get("estado", "").strip()
+        if estado in dict(Periodo.ESTADOS):
+            qs = qs.filter(estado=estado)
+
+        fecha_desde = filtros.get("fecha_desde", "").strip()
+        if fecha_desde:
+            qs = qs.filter(fecha_termino__gte=fecha_desde)
+
+        fecha_hasta = filtros.get("fecha_hasta", "").strip()
+        if fecha_hasta:
+            qs = qs.filter(fecha_inicio__lte=fecha_hasta)
+
+        q = filtros.get("q", "").strip()
+        if q:
+            from datetime import datetime
+
+            fecha_busqueda = None
+            for formato in ("%d/%m/%Y", "%Y-%m-%d"):
+                try:
+                    fecha_busqueda = datetime.strptime(q, formato).date()
+                    break
+                except ValueError:
+                    continue
+
+            if fecha_busqueda:
+                qs = qs.filter(
+                    Q(fecha_inicio=fecha_busqueda)
+                    | Q(fecha_termino=fecha_busqueda)
+                )
+            else:
+                qs = qs.none()
+
+        return qs.order_by("-fecha_inicio")
+
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
-        contexto["puede_reabrir"] = tiene_rol(self.request.user, *ROLES_CONFIGURACION)
-        contexto["reabrir_form"] = ReabrirPeriodoForm()
+        filtros = self.request.GET
+
+        contexto.update(
+            puede_reabrir=tiene_rol(
+                self.request.user, *ROLES_CONFIGURACION
+            ),
+            reabrir_form=ReabrirPeriodoForm(),
+            q=filtros.get("q", ""),
+            estado_sel=filtros.get("estado", ""),
+            fecha_desde=filtros.get("fecha_desde", ""),
+            fecha_hasta=filtros.get("fecha_hasta", ""),
+            total_resultados=self.get_queryset().count(),
+        )
         return contexto
+
 
 
 class PeriodoDetailView(LecturaMixin, ModoMixin, DetailView):
@@ -272,6 +323,7 @@ class MetaDeleteView(AccionPostView):
 # ---------------------------------------------------------------------------
 # Ajustes (incentivos y penalizaciones)
 # ---------------------------------------------------------------------------
+
 class AjusteListView(LecturaMixin, AmbitoDelegacionMixin, ModoMixin, ListView):
     model = Ajuste
     template_name = "measurement/ajuste_.html"
@@ -282,13 +334,48 @@ class AjusteListView(LecturaMixin, AmbitoDelegacionMixin, ModoMixin, ListView):
     roles_edicion = ROLES_MEDICION
 
     def get_queryset(self):
-        qs = super().get_queryset().select_related("periodo", "funcionario", "meta")
-        periodo = self.request.GET.get("periodo")
-        return qs.filter(periodo_id=periodo) if periodo else qs
+        qs = super().get_queryset().select_related(
+            "periodo", "funcionario", "meta", "meta__item"
+        )
+        filtros = self.request.GET
+
+        periodo = filtros.get("periodo", "").strip()
+        if periodo:
+            qs = qs.filter(periodo_id=periodo)
+
+        funcionario = filtros.get("funcionario", "").strip()
+        if funcionario:
+            qs = qs.filter(funcionario_id=funcionario)
+
+        efecto = filtros.get("efecto", "").strip()
+        if efecto in dict(Ajuste.EFECTOS):
+            qs = qs.filter(efecto=efecto)
+
+        q = filtros.get("q", "").strip()
+        if q:
+            qs = qs.filter(
+                Q(motivo__icontains=q)
+                | Q(funcionario__nombre__icontains=q)
+                | Q(meta__item__nombre_item__icontains=q)
+            )
+
+        return qs.order_by("-id_ajuste")
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
-        contexto.update(periodos=Periodo.objects.all(), periodo_sel=self.request.GET.get("periodo", ""))
+        filtros = self.request.GET
+
+        contexto.update(
+            periodos=Periodo.objects.all(),
+            funcionarios=Funcionario.objects.filter(
+                pk__in=super().get_queryset().values("funcionario_id")
+            ).distinct().order_by("nombre"),
+            periodo_sel=filtros.get("periodo", ""),
+            funcionario_sel=filtros.get("funcionario", ""),
+            efecto_sel=filtros.get("efecto", ""),
+            q=filtros.get("q", ""),
+            total_resultados=self.get_queryset().count(),
+        )
         return contexto
 
 

@@ -2,7 +2,6 @@
 {% extends "base.html" %}
 
 {% block title %}{{ titulo|default:"Incentivos y penalizaciones" }}{% endblock %}
-
 {% block page_title %}{{ titulo|default:"Incentivos y penalizaciones" }}{% endblock %}
 
 {% block page_actions %}
@@ -37,9 +36,7 @@
                 {% csrf_token %}
 
                 {% if form.non_field_errors %}
-                    <div class="alert alert-danger">
-                        {{ form.non_field_errors }}
-                    </div>
+                    <div class="alert alert-danger">{{ form.non_field_errors }}</div>
                 {% endif %}
 
                 <div class="row">
@@ -48,7 +45,6 @@
                             <label for="{{ field.id_for_label }}" class="form-label">
                                 {{ field.label }}
                             </label>
-
                             {{ field }}
 
                             {% if field.help_text %}
@@ -62,10 +58,7 @@
                     {% endfor %}
                 </div>
 
-                <button type="submit" class="btn btn-primary">
-                    Guardar ajuste
-                </button>
-
+                <button type="submit" class="btn btn-primary">Guardar ajuste</button>
                 <a href="{% url 'measurement:ajuste_list' %}" class="btn btn-outline-secondary">
                     Cancelar
                 </a>
@@ -75,19 +68,25 @@
 
 {% else %}
 
-    <div class="card shadow-sm mb-4">
+    <div class="card shadow-sm mb-3">
         <div class="card-header">
-            <h5 class="mb-0">Filtrar ajustes</h5>
+            <h5 class="mb-0">Buscar y filtrar ajustes</h5>
         </div>
 
         <div class="card-body">
-            <form method="get" class="row align-items-end">
-                <div class="col-md-6 mb-3">
-                    <label for="periodo" class="form-label">Período</label>
+            <form method="get" class="row g-3 align-items-end">
 
+                <div class="col-md-4">
+                    <label for="q" class="form-label">Buscar</label>
+                    <input type="text" name="q" id="q" class="form-control"
+                           value="{{ q }}"
+                           placeholder="Motivo, funcionario o ítem">
+                </div>
+
+                <div class="col-md-3">
+                    <label for="periodo" class="form-label">Período</label>
                     <select name="periodo" id="periodo" class="form-select">
                         <option value="">Todos los períodos</option>
-
                         {% for periodo in periodos %}
                             <option value="{{ periodo.pk }}"
                                 {% if periodo_sel|stringformat:"s" == periodo.pk|stringformat:"s" %}
@@ -102,14 +101,41 @@
                     </select>
                 </div>
 
-                <div class="col-md-6 mb-3 d-flex gap-2">
-                    <button type="submit" class="btn btn-primary">
-                        <i class="bi bi-search"></i> Filtrar
-                    </button>
+                <div class="col-md-3">
+                    <label for="funcionario" class="form-label">Funcionario</label>
+                    <select name="funcionario" id="funcionario" class="form-select">
+                        <option value="">Todos</option>
+                        {% for funcionario in funcionarios %}
+                            <option value="{{ funcionario.pk }}"
+                                {% if funcionario_sel|stringformat:"s" == funcionario.pk|stringformat:"s" %}
+                                    selected
+                                {% endif %}>
+                                {{ funcionario.nombre }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
 
+                <div class="col-md-2">
+                    <label for="efecto" class="form-label">Tipo de ajuste</label>
+                    <select name="efecto" id="efecto" class="form-select">
+                        <option value="">Todos</option>
+                        <option value="Positivo" {% if efecto_sel == "Positivo" %}selected{% endif %}>
+                            Incentivo
+                        </option>
+                        <option value="Negativo" {% if efecto_sel == "Negativo" %}selected{% endif %}>
+                            Penalización
+                        </option>
+                    </select>
+                </div>
+
+                <div class="col-12 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-search"></i> Buscar y filtrar
+                    </button>
                     <a href="{% url 'measurement:ajuste_list' %}"
                        class="btn btn-outline-secondary">
-                        Limpiar
+                        Limpiar filtros
                     </a>
                 </div>
             </form>
@@ -119,10 +145,7 @@
     <div class="card shadow-sm">
         <div class="card-header d-flex justify-content-between align-items-center">
             <h5 class="mb-0">Ajustes registrados</h5>
-
-            <span class="text-muted small">
-                Total: {{ page_obj.paginator.count|default:ajustes.count }}
-            </span>
+            <span class="text-muted small">Resultados: {{ total_resultados }}</span>
         </div>
 
         <div class="card-body">
@@ -188,7 +211,6 @@
                                                   action="{% url 'measurement:ajuste_delete' ajuste.pk %}"
                                                   class="d-inline">
                                                 {% csrf_token %}
-
                                                 <button type="submit"
                                                         class="btn btn-sm btn-outline-danger"
                                                         onclick="return confirm('¿Estás segura de eliminar este ajuste?');">
@@ -196,9 +218,7 @@
                                                 </button>
                                             </form>
                                         {% else %}
-                                            <span class="text-muted small">
-                                                No disponible
-                                            </span>
+                                            <span class="text-muted small">No disponible</span>
                                         {% endif %}
                                     </td>
                                 </tr>
@@ -211,10 +231,7 @@
 
             {% else %}
                 <div class="alert alert-info mb-0">
-                    No hay ajustes registrados
-                    {% if periodo_sel %}
-                        para el período seleccionado
-                    {% endif %}.
+                    No hay ajustes que coincidan con los filtros seleccionados.
                 </div>
             {% endif %}
         </div>

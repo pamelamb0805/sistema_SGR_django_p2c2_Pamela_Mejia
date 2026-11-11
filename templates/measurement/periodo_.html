@@ -2,7 +2,6 @@
 {% extends "base.html" %}
 
 {% block title %}{{ titulo|default:"Períodos de medición" }}{% endblock %}
-
 {% block page_title %}{{ titulo|default:"Períodos de medición" }}{% endblock %}
 
 {% block page_actions %}
@@ -34,15 +33,12 @@
         <div class="card-header">
             <h5 class="mb-0">{{ titulo }}</h5>
         </div>
-
         <div class="card-body">
             <form method="post" novalidate>
                 {% csrf_token %}
 
                 {% if form.non_field_errors %}
-                    <div class="alert alert-danger">
-                        {{ form.non_field_errors }}
-                    </div>
+                    <div class="alert alert-danger">{{ form.non_field_errors }}</div>
                 {% endif %}
 
                 <div class="row">
@@ -51,13 +47,10 @@
                             <label for="{{ field.id_for_label }}" class="form-label">
                                 {{ field.label }}
                             </label>
-
                             {{ field }}
-
                             {% if field.help_text %}
                                 <div class="form-text">{{ field.help_text }}</div>
                             {% endif %}
-
                             {% for error in field.errors %}
                                 <div class="text-danger small">{{ error }}</div>
                             {% endfor %}
@@ -71,10 +64,7 @@
                     No se permite crear períodos que se superpongan con otros existentes.
                 </div>
 
-                <button type="submit" class="btn btn-primary">
-                    Guardar período
-                </button>
-
+                <button type="submit" class="btn btn-primary">Guardar período</button>
                 <a href="{% url 'measurement:periodo_list' %}" class="btn btn-outline-secondary">
                     Cancelar
                 </a>
@@ -87,7 +77,6 @@
     <div class="card shadow-sm mb-4">
         <div class="card-header d-flex justify-content-between align-items-center">
             <h5 class="mb-0">Información del período</h5>
-
             {% if periodo.abierto %}
                 <span class="badge bg-success">Abierto</span>
             {% else %}
@@ -101,22 +90,18 @@
                     <div class="text-muted small">Fecha de inicio</div>
                     <strong>{{ periodo.fecha_inicio|date:"d/m/Y" }}</strong>
                 </div>
-
                 <div class="col-md-4 mb-3">
                     <div class="text-muted small">Fecha de término</div>
                     <strong>{{ periodo.fecha_termino|date:"d/m/Y" }}</strong>
                 </div>
-
                 <div class="col-md-4 mb-3">
                     <div class="text-muted small">Días computables</div>
                     <strong>{{ periodo.dias_computables }}</strong>
                 </div>
-
                 <div class="col-md-4 mb-3">
                     <div class="text-muted small">Versión de parámetros</div>
                     <strong>{{ periodo.version_parametros }}</strong>
                 </div>
-
                 <div class="col-md-4 mb-3">
                     <div class="text-muted small">Total de metas asociadas</div>
                     <strong>{{ total_metas }}</strong>
@@ -129,7 +114,6 @@
         <div class="card-header">
             <h5 class="mb-0">Configuración de metas por funcionario</h5>
         </div>
-
         <div class="card-body">
             {% if configuracion %}
                 <div class="table-responsive">
@@ -144,7 +128,6 @@
                                 <th>Configuración</th>
                             </tr>
                         </thead>
-
                         <tbody>
                             {% for fila in configuracion %}
                                 <tr>
@@ -177,7 +160,6 @@
         <div class="card-header">
             <h5 class="mb-0">Acciones del período</h5>
         </div>
-
         <div class="card-body d-flex flex-wrap gap-2">
             {% if periodo.abierto and puede_editar %}
                 <form method="post" action="{% url 'measurement:periodo_cerrar' periodo.pk %}">
@@ -187,7 +169,6 @@
                         Cerrar período
                     </button>
                 </form>
-
                 <form method="post" action="{% url 'measurement:periodo_recalcular' periodo.pk %}">
                     {% csrf_token %}
                     <button type="submit" class="btn btn-outline-primary">
@@ -200,17 +181,11 @@
                 <form method="post" action="{% url 'measurement:periodo_reabrir' periodo.pk %}"
                       class="w-100 mt-3">
                     {% csrf_token %}
-
-                    <label for="motivo-reapertura" class="form-label">
-                        Motivo de la reapertura
-                    </label>
-
+                    <label for="motivo-reapertura" class="form-label">Motivo de la reapertura</label>
                     {{ reabrir_form.motivo }}
-
                     {% for error in reabrir_form.motivo.errors %}
                         <div class="text-danger small">{{ error }}</div>
                     {% endfor %}
-
                     <button type="submit" class="btn btn-warning mt-2"
                             onclick="return confirm('¿Confirmas la reapertura de este período?');">
                         Reabrir período
@@ -222,12 +197,59 @@
 
 {% else %}
 
+    <div class="card shadow-sm mb-3">
+        <div class="card-header">
+            <h5 class="mb-0">Buscar y filtrar períodos</h5>
+        </div>
+        <div class="card-body">
+            <form method="get" class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <label for="q" class="form-label">Buscar fecha</label>
+                    <input type="text" name="q" id="q" class="form-control"
+                           value="{{ q }}" placeholder="dd/mm/aaaa o aaaa-mm-dd">
+                </div>
+
+                <div class="col-md-3">
+                    <label for="estado" class="form-label">Estado</label>
+                    <select name="estado" id="estado" class="form-select">
+                        <option value="">Todos</option>
+                        <option value="Abierto" {% if estado_sel == "Abierto" %}selected{% endif %}>Abierto</option>
+                        <option value="Cerrado" {% if estado_sel == "Cerrado" %}selected{% endif %}>Cerrado</option>
+                    </select>
+                </div>
+
+                <div class="col-md-2">
+                    <label for="fecha_desde" class="form-label">Desde</label>
+                    <input type="date" name="fecha_desde" id="fecha_desde"
+                           class="form-control" value="{{ fecha_desde }}">
+                </div>
+
+                <div class="col-md-2">
+                    <label for="fecha_hasta" class="form-label">Hasta</label>
+                    <input type="date" name="fecha_hasta" id="fecha_hasta"
+                           class="form-control" value="{{ fecha_hasta }}">
+                </div>
+
+                <div class="col-md-1 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary" title="Buscar">
+                        <i class="bi bi-search"></i>
+                    </button>
+                </div>
+
+                <div class="col-12">
+                    <a href="{% url 'measurement:periodo_list' %}"
+                       class="btn btn-outline-secondary btn-sm">
+                        Limpiar filtros
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <div class="card shadow-sm">
         <div class="card-header d-flex justify-content-between align-items-center">
             <h5 class="mb-0">Períodos registrados</h5>
-            <span class="text-muted small">
-                Total: {{ page_obj.paginator.count|default:periodos.count }}
-            </span>
+            <span class="text-muted small">Resultados: {{ total_resultados }}</span>
         </div>
 
         <div class="card-body">
@@ -244,7 +266,6 @@
                                 <th class="text-end">Acciones</th>
                             </tr>
                         </thead>
-
                         <tbody>
                             {% for periodo in periodos %}
                                 <tr>
@@ -259,19 +280,13 @@
                                         {% endif %}
                                     </td>
                                     <td>{{ periodo.version_parametros }}</td>
-
                                     <td class="text-end">
                                         <a href="{% url 'measurement:periodo_detail' periodo.pk %}"
-                                           class="btn btn-sm btn-outline-info">
-                                            Ver detalle
-                                        </a>
+                                           class="btn btn-sm btn-outline-info">Ver detalle</a>
 
                                         {% if puede_editar and periodo.abierto %}
                                             <a href="{% url 'measurement:periodo_update' periodo.pk %}"
-                                               class="btn btn-sm btn-outline-primary">
-                                                Editar
-                                            </a>
-
+                                               class="btn btn-sm btn-outline-primary">Editar</a>
                                             <form method="post"
                                                   action="{% url 'measurement:periodo_cerrar' periodo.pk %}"
                                                   class="d-inline">
@@ -308,10 +323,7 @@
 
             {% else %}
                 <div class="alert alert-info mb-0">
-                    No hay períodos de medición registrados.
-                    {% if puede_editar %}
-                        Puedes crear uno utilizando el botón «Nuevo período».
-                    {% endif %}
+                    No hay períodos que coincidan con los filtros seleccionados.
                 </div>
             {% endif %}
         </div>

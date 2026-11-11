@@ -253,7 +253,7 @@ def evidencia_archivo(request, pk):
 # Validación (verificador)
 # ---------------------------------------------------------------------------
 class ValidacionBandejaView(VerificadorMixin, ModoMixin, ListView):
-    """Evidencias pendientes de revisión dentro del ámbito del verificador (sin las propias)."""
+    """Bandeja filtrable de evidencias pendientes dentro del ámbito autorizado."""
     template_name = "activities/validacion_.html"
     context_object_name = "evidencias"
     paginate_by = 15
@@ -262,22 +262,84 @@ class ValidacionBandejaView(VerificadorMixin, ModoMixin, ListView):
 
     def get_queryset(self):
         funcionario = get_funcionario(self.request.user)
-        qs = evidencias_visibles(self.request.user).filter(estado_revision=Evidencia.ESTADO_PENDIENTE) \
-            .exclude(actividad__funcionario=funcionario).order_by("fecha_carga")
-        g = self.request.GET
-        if g.get("funcionario"):
-            qs = qs.filter(actividad__funcionario_id=g["funcionario"])
-        if g.get("item"):
-            qs = qs.filter(actividad__item_id=g["item"])
-        return qs
+
+        qs = evidencias_visibles(self.request.user).filter(
+            estado_revision=Evidencia.ESTADO_PENDIENTE
+        )
+
+        if funcionario is not None:
+            qs = qs.exclude(actividad__funcionario=funcionario)
+        else:
+            qs = qs.none()
+
+        filtros = self.request.GET
+
+        if filtros.get("funcionario"):
+            qs = qs.filter(
+                actividad__funcionario_id=filtros["funcionario"]
+            )
+
+        if filtros.get("item"):
+            qs = qs.filter(
+                actividad__item_id=filtros["item"]
+            )
+
+        if filtros.get("fecha_desde"):
+            qs = qs.filter(
+                fecha_carga__date__gte=filtros["fecha_desde"]
+            )
+
+        if filtros.get("fecha_hasta"):
+            qs = qs.filter(
+                fecha_carga__date__lte=filtros["fecha_hasta"]
+            )
+
+        q = filtros.get("q", "").strip()
+        if q:
+            qs = qs.filter(
+                Q(codigo_evidencia__icontains=q)
+                | Q(actividad__accion__icontains=q)
+                | Q(actividad__funcionario__nombre__icontains=q)
+                | Q(actividad__item__nombre_item__icontains=q)
+            )
+
+        return qs.select_related(
+            "actividad",
+            "actividad__funcionario",
+            "actividad__item",
+        ).order_by("fecha_carga")
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
+
+        funcionario = get_funcionario(self.request.user)
+        visibles = evidencias_visibles(self.request.user).filter(
+            estado_revision=Evidencia.ESTADO_PENDIENTE
+        )
+
+        if funcionario is not None:
+            visibles = visibles.exclude(actividad__funcionario=funcionario)
+        else:
+            visibles = visibles.none()
+
+        filtros = self.request.GET
+
         contexto.update(
-            items=ItemMedible.objects.select_related("cargo"),
+            items=ItemMedible.objects.filter(
+                pk__in=visibles.values("actividad__item_id")
+            ).distinct().order_by("nombre_item"),
+
             funcionarios=Funcionario.objects.filter(
-                pk__in=evidencias_visibles(self.request.user).values("actividad__funcionario_id")),
-            filtros=self.request.GET)
+                pk__in=visibles.values("actividad__funcionario_id")
+            ).distinct().order_by("nombre"),
+
+            filtros=filtros,
+            q=filtros.get("q", ""),
+            fecha_desde=filtros.get("fecha_desde", ""),
+            fecha_hasta=filtros.get("fecha_hasta", ""),
+            total_resultados=self.get_queryset().count(),
+        )
+
         return contexto
 
 
@@ -290,27 +352,64 @@ class ValidacionCreateView(VerificadorMixin, ModoMixin, GuardarMixin, FormView):
 
     def dispatch(self, request, *args, **kwargs):
         if request.user.is_authenticated:
-            self.evidencia = get_object_or_404(evidencias_visibles(request.user), pk=kwargs["pk"])
+            funcionario = get_funcionario(request.user)
+
+            qs = evidencias_visibles(request.user).filter(
+                estado_revision=Evidencia.ESTADO_PENDIENTE
+            )
+
+            if funcionario is not None:
+                qs = qs.exclude(actividad__funcionario=funcionario)
+            else:
+                qs = qs.none()
+
+            self.evidencia = get_object_or_404(
+                qs.select_related(
+                    "actividad",
+                    "actividad__funcionario",
+                    "actividad__item",
+                ),
+                pk=kwargs["pk"],
+            )
+
         return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
+
         contexto.update(
-            evidencia=self.evidencia, actividad=self.evidencia.actividad,
-            historial=CRUDValidacion.mostrar_historial_validacion(self.evidencia.codigo_evidencia),
-            es_propia=_es_autor(self.request.user, self.evidencia.actividad))
+            evidencia=self.evidencia,
+            actividad=self.evidencia.actividad,
+            historial=CRUDValidacion.mostrar_historial_validacion(
+                self.evidencia.codigo_evidencia
+            ),
+            es_propia=_es_autor(
+                self.request.user,
+                self.evidencia.actividad,
+            ),
+        )
+
         return contexto
 
     def guardar(self, form):
-        decision, obs = form.cleaned_data["decision"], form.cleaned_data["observacion"]
-        accion = {Validacion.DECISION_APROBADA: CRUDValidacion.aprobar_evidencia,
-                  Validacion.DECISION_RECHAZADA: CRUDValidacion.rechazar_evidencia,
-                  Validacion.DECISION_CORRECCION: CRUDValidacion.solicitar_correccion}[decision]
-        accion(self.evidencia, obs, self.request.user)
+        decision = form.cleaned_data["decision"]
+        observacion = form.cleaned_data["observacion"]
+
+        accion = {
+            Validacion.DECISION_APROBADA: CRUDValidacion.aprobar_evidencia,
+            Validacion.DECISION_RECHAZADA: CRUDValidacion.rechazar_evidencia,
+            Validacion.DECISION_CORRECCION: CRUDValidacion.solicitar_correccion,
+        }[decision]
+
+        accion(self.evidencia, observacion, self.request.user)
+
         self.mensaje_exito = {
-            Validacion.DECISION_APROBADA: "Evidencia aprobada: la actividad aporta al avance.",
-            Validacion.DECISION_RECHAZADA: "Evidencia rechazada: la actividad no aporta al avance.",
-            Validacion.DECISION_CORRECCION: "Se solicitó corrección al funcionario.",
+            Validacion.DECISION_APROBADA:
+                "Evidencia aprobada: la actividad aporta al avance.",
+            Validacion.DECISION_RECHAZADA:
+                "Evidencia rechazada: la actividad no aporta al avance.",
+            Validacion.DECISION_CORRECCION:
+                "Se solicitó corrección al funcionario.",
         }[decision]
 
 @login_required
