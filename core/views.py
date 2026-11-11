@@ -1,13 +1,29 @@
-from datetime import timedelta
+import calendar
+import hashlib
+import secrets
+import time
+from datetime import date, timedelta
 
 from django.apps import apps
 from django.conf import settings
 from django.contrib import messages
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView
+from django.core.mail import send_mail
 from django.db.models import Count
-from django.shortcuts import render
+from django.db.models.functions import TruncMonth
+from django.shortcuts import redirect, render
 from django.utils import timezone
+
+from core.mixins import (
+    ROLES_SUPERVISION,
+    es_transversal,
+    filtrar_por_ambito,
+    get_funcionario,
+    tiene_rol,
+)
+from organizations.forms import PerfilUsuarioForm
 
 from .auth_forms import (
     NuevaClaveForm,
@@ -16,25 +32,10 @@ from .auth_forms import (
     SolicitarCodigoForm,
     VerificarCodigoForm,
 )
-
 from .mixins import (
     ROL_VERIFICADOR,
-    ROLES_SUPERVISION,
-    es_transversal,
-    filtrar_por_ambito,
-    get_funcionario,
     registrar_auditoria,
-    tiene_rol,
 )
-
-import hashlib
-import secrets
-import time
-
-from django.contrib.auth import get_user_model
-from django.core.mail import send_mail
-from django.shortcuts import redirect, render
-from organizations.forms import PerfilUsuarioForm
 
 class SGRLoginView(LoginView):
     template_name = "registration/login.html"
@@ -64,24 +65,25 @@ def _modelo(app_label, nombre):
     except LookupError:
         return None
 
+
 @login_required
 def dashboard(request):
     from datetime import timedelta
 
     from django.conf import settings
     from django.db.models import Count
-    from django.shortcuts import render
-    from django.utils import timezone
+    from django.db.models.functions import TruncMonth
 
     user = request.user
     hoy = timezone.localdate()
-    dias_alerta = getattr(settings, "SGR_DIAS_ALERTA_VENCIMIENTO", 7)
-    limite = hoy + timedelta(days=dias_alerta)
+    limite = hoy + timedelta(
+        days=getattr(settings, "SGR_DIAS_ALERTA_VENCIMIENTO", 7)
+    )
 
     funcionario = get_funcionario(user)
+    es_supervision = tiene_rol(user, *ROLES_SUPERVISION)
 
-    # Obtener modelos sin provocar errores si alguna aplicación
-    # todavía no tiene disponible su modelo.
+    # Modelos del sistema
     Funcionario = _modelo("organizations", "Funcionario")
     Delegacion = _modelo("organizations", "Delegacion")
     Actividad = _modelo("activities", "Actividad")
@@ -90,7 +92,7 @@ def dashboard(request):
     Periodo = _modelo("measurement", "Periodo")
     Auditoria = _modelo("audit", "Auditoria")
 
-    # Estructura inicial: evita variables inexistentes en el template.
+    # Contexto inicial
     datos = {
         "periodo": None,
         "resumen_personal": None,
@@ -104,25 +106,16 @@ def dashboard(request):
         "compromisos_por_estado": {},
         "lista_vencidos": [],
         "ultimas_operaciones": [],
-        "grafico_actividades": {
-            "labels": [],
-            "values": [],
-        },
-        "grafico_agenda": {
-            "labels": [],
-            "values": [],
-        },
+        "grafico_personal": {"labels": [], "values": []},
         "grafico_semaforo": {
             "labels": ["Verde", "Ámbar", "Rojo"],
             "values": [0, 0, 0],
         },
-        "grafico_personal": {
-            "labels": [],
-            "values": [],
-        },
+        "grafico_delegaciones": {"labels": [], "values": []},
+        "grafico_agenda": {"labels": [], "values": []},
+        "grafico_evolucion": {"labels": [], "values": []},
+        "grafico_evidencias": {"labels": [], "values": []},
     }
-
-    es_supervision = tiene_rol(user, *ROLES_SUPERVISION)
 
     # ---------------------------------------------------------
     # PERÍODO VIGENTE
@@ -134,32 +127,39 @@ def dashboard(request):
 
     datos["periodo"] = periodo
 
-    # Importación compartida por los dos resúmenes.
     CalculoIndicadores = None
 
     if periodo is not None:
         from measurement.services import CalculoIndicadores
 
     # ---------------------------------------------------------
-    # FUNCIONARIOS Y DELEGACIONES VISIBLES
+    # FUNCIONARIOS Y DELEGACIONES AUTORIZADAS
     # ---------------------------------------------------------
+    funcionarios_visibles = None
+
     if Funcionario is not None:
         funcionarios_visibles = filtrar_por_ambito(
-            Funcionario.objects.all(),
+            Funcionario.objects.filter(
+                estado=Funcionario.ESTADO_ACTIVO
+            ).select_related("cargo", "delegacion"),
             user,
             "delegacion_id",
         )
 
         datos["total_funcionarios"] = funcionarios_visibles.count()
 
-    if Delegacion is not None and es_transversal(user):
-        datos["total_delegaciones"] = Delegacion.objects.count()
-
     # ---------------------------------------------------------
     # ACTIVIDADES
     # ---------------------------------------------------------
+    actividades = None
+
     if Actividad is not None:
-        actividades = Actividad.objects.all()
+        actividades = Actividad.objects.select_related(
+            "funcionario",
+            "funcionario__delegacion",
+            "item",
+            "periodo",
+        ).all()
 
         actividades = filtrar_por_ambito(
             actividades,
@@ -167,10 +167,13 @@ def dashboard(request):
             "funcionario__delegacion_id",
         )
 
-        # Los funcionarios comunes solamente ven sus actividades.
+        # Los funcionarios sin rol de supervisión solo consultan
+        # sus propias actividades.
         if not es_supervision:
             if funcionario is not None:
-                actividades = actividades.filter(funcionario=funcionario)
+                actividades = actividades.filter(
+                    funcionario=funcionario
+                )
             else:
                 actividades = actividades.none()
 
@@ -182,35 +185,57 @@ def dashboard(request):
                 funcionario=funcionario
             ).count()
 
-        conteos_actividades = {
-            fila["estado"]: fila["total"]
-            for fila in actividades.values("estado").annotate(
+        # Evolución mensual: últimos seis meses.
+        primer_dia_mes = hoy.replace(day=1)
+        meses = []
+
+        for desplazamiento in range(5, -1, -1):
+            indice = (
+                primer_dia_mes.year * 12
+                + primer_dia_mes.month - 1
+                - desplazamiento
+            )
+            anio, mes_cero = divmod(indice, 12)
+            mes = mes_cero + 1
+            meses.append(primer_dia_mes.replace(
+                year=anio,
+                month=mes,
+            ))
+
+        conteos_mensuales = {
+            fila["mes"]: fila["total"]
+            for fila in actividades.filter(
+                fecha__gte=meses[0],
+            ).annotate(
+                mes=TruncMonth("fecha")
+            ).values(
+                "mes"
+            ).annotate(
                 total=Count("pk")
             )
         }
 
-        estados_actividad = [
-            valor
-            for valor, etiqueta in Actividad._meta.get_field(
-                "estado"
-            ).choices
-        ]
-
-        datos["grafico_actividades"] = {
-            "labels": estados_actividad,
+        datos["grafico_evolucion"] = {
+            "labels": [
+                fecha.strftime("%b %Y")
+                for fecha in meses
+            ],
             "values": [
-                conteos_actividades.get(estado, 0)
-                for estado in estados_actividad
+                conteos_mensuales.get(fecha, 0)
+                for fecha in meses
             ],
         }
 
     # ---------------------------------------------------------
-    # EVIDENCIAS PENDIENTES DE REVISIÓN
+    # EVIDENCIAS
     # ---------------------------------------------------------
     if Evidencia is not None:
-        evidencias = Evidencia.objects.filter(
-            estado_revision=Evidencia.ESTADO_PENDIENTE
-        )
+        evidencias = Evidencia.objects.select_related(
+            "actividad",
+            "actividad__funcionario",
+            "actividad__funcionario__delegacion",
+            "funcionario",
+        ).all()
 
         evidencias = filtrar_por_ambito(
             evidencias,
@@ -226,13 +251,44 @@ def dashboard(request):
             else:
                 evidencias = evidencias.none()
 
-        datos["evidencias_pendientes"] = evidencias.count()
+        # KPI de evidencias pendientes
+        datos["evidencias_pendientes"] = evidencias.filter(
+            estado_revision=Evidencia.ESTADO_PENDIENTE
+        ).count()
+
+        # Gráfico de estados de revisión
+        conteos_evidencias = {
+            fila["estado_revision"]: fila["total"]
+            for fila in evidencias.values(
+                "estado_revision"
+            ).annotate(
+                total=Count("pk")
+            )
+        }
+
+        estados_evidencia = [
+            valor
+            for valor, etiqueta in Evidencia._meta.get_field(
+                "estado_revision"
+            ).choices
+        ]
+
+        datos["grafico_evidencias"] = {
+            "labels": estados_evidencia,
+            "values": [
+                conteos_evidencias.get(estado, 0)
+                for estado in estados_evidencia
+            ],
+        }
 
     # ---------------------------------------------------------
-    # COMPROMISOS Y AGENDA MUNICIPAL
+    # COMPROMISOS Y AGENDA
     # ---------------------------------------------------------
     if Compromiso is not None:
-        compromisos = Compromiso.objects.all()
+        compromisos = Compromiso.objects.select_related(
+            "funcionario",
+            "delegacion",
+        ).all()
 
         compromisos = filtrar_por_ambito(
             compromisos,
@@ -250,7 +306,9 @@ def dashboard(request):
 
         conteos_compromisos = {
             fila["estado"]: fila["total"]
-            for fila in compromisos.values("estado").annotate(
+            for fila in compromisos.values(
+                "estado"
+            ).annotate(
                 total=Count("pk")
             )
         }
@@ -290,12 +348,11 @@ def dashboard(request):
 
         datos["lista_vencidos"] = (
             vencidos
-            .select_related("funcionario", "delegacion")
             .order_by("fecha_comprometida")[:5]
         )
 
     # ---------------------------------------------------------
-    # DESEMPEÑO DEL FUNCIONARIO
+    # CUMPLIMIENTO PERSONAL POR INDICADOR
     # ---------------------------------------------------------
     if (
         periodo is not None
@@ -324,29 +381,16 @@ def dashboard(request):
         }
 
     # ---------------------------------------------------------
-    # RESUMEN DEL EQUIPO / SEMÁFORO INSTITUCIONAL
+    # SEMÁFORO Y DESEMPEÑO DEL EQUIPO
     # ---------------------------------------------------------
     if (
         periodo is not None
-        and Funcionario is not None
+        and funcionarios_visibles is not None
         and es_supervision
         and CalculoIndicadores is not None
     ):
-        equipo = Funcionario.objects.filter(
-            estado=Funcionario.ESTADO_ACTIVO
-        ).select_related(
-            "cargo",
-            "delegacion",
-        )
-
-        equipo = filtrar_por_ambito(
-            equipo,
-            user,
-            "delegacion_id",
-        )
-
         resumen_equipo = CalculoIndicadores.resumen_delegacion(
-            equipo,
+            funcionarios_visibles,
             periodo,
             hoy,
         )
@@ -364,14 +408,60 @@ def dashboard(request):
             ],
         }
 
+        # Gráfico de cumplimiento por delegación.
+        if Delegacion is not None:
+            ids_delegaciones = (
+                funcionarios_visibles
+                .values_list("delegacion_id", flat=True)
+                .distinct()
+            )
+
+            delegaciones_visibles = Delegacion.objects.filter(
+                pk__in=ids_delegaciones
+            ).order_by("nombre")
+
+            etiquetas_delegaciones = []
+            valores_delegaciones = []
+
+            for delegacion in delegaciones_visibles:
+                equipo_delegacion = funcionarios_visibles.filter(
+                    delegacion=delegacion
+                )
+
+                resumen_delegacion = (
+                    CalculoIndicadores.resumen_delegacion(
+                        equipo_delegacion,
+                        periodo,
+                        hoy,
+                    )
+                )
+
+                etiquetas_delegaciones.append(delegacion.nombre)
+                valores_delegaciones.append(
+                    float(resumen_delegacion.get("promedio") or 0)
+                )
+
+            datos["total_delegaciones"] = len(
+                etiquetas_delegaciones
+            )
+
+            datos["grafico_delegaciones"] = {
+                "labels": etiquetas_delegaciones,
+                "values": valores_delegaciones,
+            }
+
     # ---------------------------------------------------------
-    # ÚLTIMOS 15 REGISTROS REALES DE AUDITORÍA
+    # ÚLTIMAS OPERACIONES DE AUDITORÍA
     # ---------------------------------------------------------
     if Auditoria is not None:
         operaciones = Auditoria.objects.select_related(
-            "funcionario"
+            "funcionario",
+            "funcionario__delegacion",
         ).all()
 
+        # Los registros se filtran por el ámbito del funcionario
+        # que realizó la operación. Los eventos sin funcionario
+        # no se exponen a usuarios de ámbito restringido.
         operaciones = filtrar_por_ambito(
             operaciones,
             user,
@@ -401,7 +491,10 @@ def dashboard(request):
         }
 
         for operacion in operaciones:
-            entidad = (operacion.entidad_afectada or "").strip()
+            entidad = (
+                operacion.entidad_afectada or ""
+            ).strip()
+
             clave = entidad.lower()
 
             operacion.modulo = nombres_modulos.get(
@@ -431,7 +524,6 @@ def dashboard(request):
             "sin_funcionario": funcionario is None,
         },
     )
-
 
 # Recuperación con código de un solo uso.
 CODIGO_VIGENCIA_SEGUNDOS = 120
