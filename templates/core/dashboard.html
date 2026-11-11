@@ -16,11 +16,6 @@
 {% with d=datos %}
 
 <style>
-/* =====================================================
-   SGR - DASHBOARD ULTRACOMPACTO
-   Paleta institucional Municipalidad de La Serena
-===================================================== */
-
 .sgr-executive {
     --sgr-red: #AD0000;
     --sgr-dark: #660000;
@@ -30,8 +25,6 @@
     width: 100%;
     min-width: 0;
 }
-
-/* Cabecera */
 
 .sgr-executive .sgr-welcome {
     display: flex;
@@ -125,7 +118,7 @@
     flex-shrink: 0;
 }
 
-/* Accesos directos */
+/* Accesos */
 
 .sgr-executive .sgr-quick-access {
     display: flex;
@@ -158,7 +151,7 @@
     font-size: .75rem;
 }
 
-/* Título de gráficos */
+/* Gráficos */
 
 .sgr-executive .sgr-section-heading {
     display: flex;
@@ -178,8 +171,6 @@
     font-size: .53rem;
     color: var(--sgr-muted);
 }
-
-/* Cuadrícula: tres columnas y dos filas */
 
 .sgr-executive .sgr-chart-grid {
     display: grid;
@@ -235,6 +226,7 @@
 
 .sgr-executive .sgr-chart-body canvas {
     max-width: 100%;
+    cursor: pointer;
 }
 
 .sgr-executive .sgr-empty {
@@ -265,7 +257,7 @@
     max-width: 190px;
 }
 
-/* Tablas inferiores */
+/* Tablas */
 
 .sgr-executive .sgr-table-card {
     background: #fff;
@@ -311,15 +303,49 @@
     vertical-align: middle;
 }
 
-/* Alertas */
-
 .sgr-executive .alert {
     font-size: .62rem;
     padding: 6px 9px;
     margin-bottom: 6px;
 }
 
-/* Responsividad */
+/* Modal */
+
+.sgr-detail-modal .modal-header {
+    background: #660000;
+    color: #fff;
+}
+
+.sgr-detail-modal .modal-title {
+    font-size: .95rem;
+    font-weight: 800;
+}
+
+.sgr-detail-modal .btn-close {
+    filter: invert(1);
+}
+
+.sgr-detail-modal .table {
+    font-size: .8rem;
+}
+
+.sgr-detail-modal .table thead th {
+    background: #660000;
+    color: #fff;
+    white-space: nowrap;
+}
+
+.sgr-detail-modal .detail-loading {
+    padding: 35px 10px;
+    text-align: center;
+    color: #68717d;
+}
+
+.sgr-detail-modal .detail-empty {
+    padding: 30px 10px;
+    text-align: center;
+    color: #68717d;
+}
 
 @media (max-width: 900px) {
     .sgr-executive .sgr-chart-grid {
@@ -352,8 +378,6 @@
 </style>
 
 <div class="sgr-executive">
-
-    <!-- ALERTAS -->
 
     {% if sin_funcionario %}
     <div class="alert alert-warning d-flex align-items-center gap-2">
@@ -390,8 +414,6 @@
         </a>
     </div>
     {% endif %}
-
-    <!-- CABECERA -->
 
     <section class="sgr-welcome">
         <div>
@@ -507,30 +529,27 @@
 
     </div>
 
-    <!-- SEIS GRÁFICOS -->
+    <!-- GRÁFICOS -->
 
     <div class="sgr-section-heading">
         <h3>
             <i class="bi bi-bar-chart-line me-1"></i>
             Indicadores de gestión
         </h3>
-        <span>Resumen gráfico del sistema</span>
+        <span><i class="bi bi-hand-index-thumb me-1"></i>Selecciona un gráfico para ver sus registros</span>
     </div>
 
     <div class="sgr-chart-grid">
-
-        <!-- 1. CUMPLIMIENTO POR INDICADOR -->
 
         {% if d.grafico_personal.labels or user.is_superuser %}
         <section class="sgr-chart-card">
             <div class="sgr-chart-header">
                 <div>
                     <h3 class="sgr-chart-title">Cumplimiento por indicador</h3>
-                    <div class="sgr-chart-subtitle">Porcentaje de metas</div>
+                    <div class="sgr-chart-subtitle">Porcentaje de metas · Seleccionable</div>
                 </div>
                 <i class="bi bi-bar-chart-line sgr-chart-icon"></i>
             </div>
-
             <div class="sgr-chart-body">
                 {% if d.grafico_personal.labels %}
                     <canvas id="graficoPersonal"></canvas>
@@ -545,18 +564,15 @@
         </section>
         {% endif %}
 
-        <!-- 2. SEMÁFORO -->
-
         {% if sgr_puede_supervisar or user.is_superuser %}
         <section class="sgr-chart-card">
             <div class="sgr-chart-header">
                 <div>
                     <h3 class="sgr-chart-title">Semáforo de desempeño</h3>
-                    <div class="sgr-chart-subtitle">Distribución del equipo</div>
+                    <div class="sgr-chart-subtitle">Distribución del equipo · Seleccionable</div>
                 </div>
                 <i class="bi bi-pie-chart sgr-chart-icon"></i>
             </div>
-
             <div class="sgr-chart-body">
                 {% if d.grafico_semaforo.labels and d.grafico_semaforo.values %}
                     <canvas id="graficoSemaforo"></canvas>
@@ -571,18 +587,15 @@
         </section>
         {% endif %}
 
-        <!-- 3. DELEGACIONES -->
-
         {% if sgr_puede_supervisar or user.is_superuser %}
         <section class="sgr-chart-card">
             <div class="sgr-chart-header">
                 <div>
                     <h3 class="sgr-chart-title">Cumplimiento por delegación</h3>
-                    <div class="sgr-chart-subtitle">Promedio de cumplimiento</div>
+                    <div class="sgr-chart-subtitle">Promedio de cumplimiento · Seleccionable</div>
                 </div>
                 <i class="bi bi-diagram-3 sgr-chart-icon"></i>
             </div>
-
             <div class="sgr-chart-body">
                 {% if d.grafico_delegaciones.labels %}
                     <canvas id="graficoDelegaciones"></canvas>
@@ -597,18 +610,15 @@
         </section>
         {% endif %}
 
-        <!-- 4. COMPROMISOS -->
-
         {% if d.grafico_agenda.labels or user.is_superuser %}
         <section class="sgr-chart-card">
             <div class="sgr-chart-header">
                 <div>
                     <h3 class="sgr-chart-title">Compromisos por estado</h3>
-                    <div class="sgr-chart-subtitle">Distribución de agenda</div>
+                    <div class="sgr-chart-subtitle">Distribución de agenda · Seleccionable</div>
                 </div>
                 <i class="bi bi-calendar2-check sgr-chart-icon"></i>
             </div>
-
             <div class="sgr-chart-body">
                 {% if d.grafico_agenda.labels %}
                     <canvas id="graficoAgenda"></canvas>
@@ -623,18 +633,15 @@
         </section>
         {% endif %}
 
-        <!-- 5. EVOLUCIÓN -->
-
         {% if d.grafico_evolucion.labels or user.is_superuser %}
         <section class="sgr-chart-card">
             <div class="sgr-chart-header">
                 <div>
                     <h3 class="sgr-chart-title">Evolución mensual</h3>
-                    <div class="sgr-chart-subtitle">Actividades registradas</div>
+                    <div class="sgr-chart-subtitle">Actividades registradas · Seleccionable</div>
                 </div>
                 <i class="bi bi-graph-up-arrow sgr-chart-icon"></i>
             </div>
-
             <div class="sgr-chart-body">
                 {% if d.grafico_evolucion.labels %}
                     <canvas id="graficoEvolucion"></canvas>
@@ -649,18 +656,15 @@
         </section>
         {% endif %}
 
-        <!-- 6. EVIDENCIAS -->
-
         {% if sgr_puede_validar or sgr_puede_supervisar or user.is_superuser %}
         <section class="sgr-chart-card">
             <div class="sgr-chart-header">
                 <div>
                     <h3 class="sgr-chart-title">Estado de evidencias</h3>
-                    <div class="sgr-chart-subtitle">Revisión y validación</div>
+                    <div class="sgr-chart-subtitle">Revisión y validación · Seleccionable</div>
                 </div>
                 <i class="bi bi-file-earmark-bar-graph sgr-chart-icon"></i>
             </div>
-
             <div class="sgr-chart-body">
                 {% if d.grafico_evidencias.labels %}
                     <canvas id="graficoEvidencias"></canvas>
@@ -677,7 +681,7 @@
 
     </div>
 
-    <!-- ÚLTIMOS REGISTROS / AUDITORÍA -->
+    <!-- AUDITORÍA -->
 
     {% if d.ultimas_operaciones %}
     <section class="sgr-table-card">
@@ -773,7 +777,88 @@
 
 </div>
 
-<!-- DATOS PARA CHART.JS -->
+<!-- MODAL DE DETALLES -->
+
+<div class="modal fade sgr-detail-modal"
+     id="dashboardDetailModal"
+     tabindex="-1"
+     aria-labelledby="dashboardDetailTitle"
+     aria-hidden="true">
+
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+
+            <div class="modal-header">
+                <div>
+                    <h5 class="modal-title" id="dashboardDetailTitle">
+                        Detalle del indicador
+                    </h5>
+                    <small class="text-white-50">
+                        Registros relacionados con la selección
+                    </small>
+                </div>
+
+                <button type="button"
+                        class="btn-close"
+                        data-bs-dismiss="modal"
+                        aria-label="Cerrar">
+                </button>
+            </div>
+
+            <div class="modal-body">
+
+                <div id="dashboardDetailLoading" class="detail-loading">
+                    <div class="spinner-border text-danger" role="status"></div>
+                    <p class="mt-2 mb-0">Cargando registros...</p>
+                </div>
+
+                <div id="dashboardDetailEmpty"
+                     class="detail-empty d-none">
+                    <i class="bi bi-inbox fs-2"></i>
+                    <p class="mb-0 mt-2">No existen registros para esta selección.</p>
+                </div>
+
+                <div id="dashboardDetailError"
+                     class="alert alert-danger d-none">
+                    No fue posible cargar los registros.
+                </div>
+
+                <div id="dashboardDetailContent"
+                     class="table-responsive d-none">
+
+                    <table class="table table-hover align-middle">
+                        <thead>
+                            <tr>
+                                <th>Registro</th>
+                                <th>Responsable</th>
+                                <th>Fecha</th>
+                                <th>Estado</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="dashboardDetailRows"></tbody>
+                    </table>
+
+                    <small class="text-muted">
+                        Se muestran hasta 100 registros relacionados.
+                    </small>
+                </div>
+
+            </div>
+
+            <div class="modal-footer">
+                <button type="button"
+                        class="btn btn-outline-secondary btn-sm"
+                        data-bs-dismiss="modal">
+                    Cerrar
+                </button>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<!-- DATOS DE LOS GRÁFICOS -->
 
 {{ d.grafico_personal|json_script:"datosPersonal" }}
 {{ d.grafico_semaforo|json_script:"datosSemaforo" }}
@@ -786,6 +871,7 @@
 {% endblock %}
 
 {% block extra_js %}
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 
 <script>
@@ -817,17 +903,17 @@ document.addEventListener("DOMContentLoaded", function () {
         "#DC3545"
     ];
 
+    const URL_DETALLE = "{% url 'dashboard_detalle' %}";
+
     function obtenerDatos(id) {
         const elemento = document.getElementById(id);
 
-        if (!elemento) {
-            return null;
-        }
+        if (!elemento) return null;
 
         try {
             return JSON.parse(elemento.textContent);
         } catch (error) {
-            console.error("Error leyendo datos del gráfico:", id, error);
+            console.error("Error leyendo datos:", id, error);
             return null;
         }
     }
@@ -836,6 +922,10 @@ document.addEventListener("DOMContentLoaded", function () {
         return {
             responsive: true,
             maintainAspectRatio: false,
+            interaction: {
+                mode: "nearest",
+                intersect: true
+            },
             plugins: {
                 legend: {
                     position: "bottom",
@@ -857,7 +947,148 @@ document.addEventListener("DOMContentLoaded", function () {
         };
     }
 
-    function crearBarras(id, datos, horizontal = false) {
+    /* MODAL */
+
+    const modalElemento = document.getElementById("dashboardDetailModal");
+
+    const modalDetalle = modalElemento && window.bootstrap
+        ? new bootstrap.Modal(modalElemento)
+        : null;
+
+    const loading = document.getElementById("dashboardDetailLoading");
+    const empty = document.getElementById("dashboardDetailEmpty");
+    const errorBox = document.getElementById("dashboardDetailError");
+    const contenido = document.getElementById("dashboardDetailContent");
+    const filas = document.getElementById("dashboardDetailRows");
+    const titulo = document.getElementById("dashboardDetailTitle");
+
+    function ocultarEstados() {
+        loading.classList.add("d-none");
+        empty.classList.add("d-none");
+        errorBox.classList.add("d-none");
+        contenido.classList.add("d-none");
+    }
+
+    async function abrirDetalle(tipo, etiqueta, indice = null) {
+
+        if (!modalDetalle) {
+            console.error("Bootstrap Modal no está disponible.");
+            return;
+        }
+
+        titulo.textContent = etiqueta;
+        filas.innerHTML = "";
+
+        ocultarEstados();
+        loading.classList.remove("d-none");
+
+        modalDetalle.show();
+
+        const parametros = new URLSearchParams({
+            tipo: tipo,
+            etiqueta: etiqueta
+        });
+
+        if (indice !== null) {
+            parametros.set("indice", indice);
+        }
+
+        try {
+            const respuesta = await fetch(
+                URL_DETALLE + "?" + parametros.toString(),
+                {
+                    method: "GET",
+                    headers: {
+                        "X-Requested-With": "XMLHttpRequest"
+                    }
+                }
+            );
+
+            const resultado = await respuesta.json();
+
+            if (!respuesta.ok) {
+                throw new Error(
+                    resultado.error || "Error al consultar los registros."
+                );
+            }
+
+            ocultarEstados();
+
+            if (!resultado.filas || resultado.filas.length === 0) {
+                empty.classList.remove("d-none");
+                return;
+            }
+
+            resultado.filas.forEach(function (fila) {
+
+                const tr = document.createElement("tr");
+
+                [
+                    fila.registro,
+                    fila.responsable,
+                    fila.fecha,
+                    fila.estado
+                ].forEach(function (valor) {
+
+                    const td = document.createElement("td");
+                    td.textContent = valor || "—";
+                    tr.appendChild(td);
+
+                });
+
+                const tdAccion = document.createElement("td");
+
+                if (fila.url) {
+                    const enlace = document.createElement("a");
+                    enlace.href = fila.url;
+                    enlace.className = "btn btn-sm btn-outline-danger";
+                    enlace.textContent = "Ver";
+                    tdAccion.appendChild(enlace);
+                }
+
+                tr.appendChild(tdAccion);
+                filas.appendChild(tr);
+
+            });
+
+            contenido.classList.remove("d-none");
+
+        } catch (error) {
+
+            console.error("Error al abrir detalle:", error);
+
+            ocultarEstados();
+            errorBox.textContent = error.message;
+            errorBox.classList.remove("d-none");
+
+        }
+    }
+
+    /* FUNCIÓN PARA SELECCIONAR ELEMENTOS */
+
+    function eventoSeleccion(tipo, indiceMensual = false) {
+
+        return function (evento, elementos, grafico) {
+
+            if (!elementos || elementos.length === 0) {
+                return;
+            }
+
+            const indice = elementos[0].index;
+            const etiqueta = grafico.data.labels[indice];
+
+            abrirDetalle(
+                tipo,
+                etiqueta,
+                indiceMensual ? indice : null
+            );
+        };
+    }
+
+    /* GRÁFICOS DE BARRAS */
+
+    function crearBarras(id, datos, horizontal = false, tipo = "") {
+
         const canvas = document.getElementById(id);
 
         if (!canvas || !datos || !datos.labels || !datos.labels.length) {
@@ -880,6 +1111,9 @@ document.addEventListener("DOMContentLoaded", function () {
             options: {
                 ...opcionesBase(),
                 indexAxis: horizontal ? "y" : "x",
+
+                onClick: eventoSeleccion(tipo),
+
                 plugins: {
                     ...opcionesBase().plugins,
                     legend: { display: false },
@@ -891,6 +1125,7 @@ document.addEventListener("DOMContentLoaded", function () {
                         }
                     }
                 },
+
                 scales: horizontal ? {
                     x: {
                         beginAtZero: true,
@@ -920,7 +1155,10 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
-    function crearDona(id, datos, colores = COLORES) {
+    /* GRÁFICOS DE DONA */
+
+    function crearDona(id, datos, colores = COLORES, tipo = "") {
+
         const canvas = document.getElementById(id);
 
         if (!canvas || !datos || !datos.labels || !datos.labels.length) {
@@ -936,17 +1174,21 @@ document.addEventListener("DOMContentLoaded", function () {
                     backgroundColor: colores,
                     borderColor: "#FFFFFF",
                     borderWidth: 2,
-                    hoverOffset: 3
+                    hoverOffset: 5
                 }]
             },
             options: {
                 ...opcionesBase(),
-                cutout: "65%"
+                cutout: "65%",
+                onClick: eventoSeleccion(tipo)
             }
         });
     }
 
+    /* EVOLUCIÓN MENSUAL */
+
     function crearLinea(id, datos) {
+
         const canvas = document.getElementById(id);
 
         if (!canvas || !datos || !datos.labels || !datos.labels.length) {
@@ -964,8 +1206,8 @@ document.addEventListener("DOMContentLoaded", function () {
                     backgroundColor: "rgba(173,0,0,.10)",
                     fill: true,
                     tension: .35,
-                    pointRadius: 2,
-                    pointHoverRadius: 4,
+                    pointRadius: 4,
+                    pointHoverRadius: 6,
                     pointBackgroundColor: ROJO,
                     pointBorderColor: "#FFFFFF",
                     pointBorderWidth: 1
@@ -973,10 +1215,14 @@ document.addEventListener("DOMContentLoaded", function () {
             },
             options: {
                 ...opcionesBase(),
+
+                onClick: eventoSeleccion("evolucion", true),
+
                 plugins: {
                     ...opcionesBase().plugins,
                     legend: { display: false }
                 },
+
                 scales: {
                     y: {
                         beginAtZero: true,
@@ -995,13 +1241,49 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
-    crearBarras("graficoPersonal", obtenerDatos("datosPersonal"), true);
-    crearDona("graficoSemaforo", obtenerDatos("datosSemaforo"), COLORES_SEMAFORO);
-    crearBarras("graficoDelegaciones", obtenerDatos("datosDelegaciones"), false);
-    crearDona("graficoAgenda", obtenerDatos("datosAgenda"));
-    crearLinea("graficoEvolucion", obtenerDatos("datosEvolucion"));
-    crearDona("graficoEvidencias", obtenerDatos("datosEvidencias"));
+    /* INICIALIZACIÓN DE LOS SEIS GRÁFICOS */
+
+    crearBarras(
+        "graficoPersonal",
+        obtenerDatos("datosPersonal"),
+        true,
+        "personal"
+    );
+
+    crearDona(
+        "graficoSemaforo",
+        obtenerDatos("datosSemaforo"),
+        COLORES_SEMAFORO,
+        "semaforo"
+    );
+
+    crearBarras(
+        "graficoDelegaciones",
+        obtenerDatos("datosDelegaciones"),
+        false,
+        "delegaciones"
+    );
+
+    crearDona(
+        "graficoAgenda",
+        obtenerDatos("datosAgenda"),
+        COLORES,
+        "agenda"
+    );
+
+    crearLinea(
+        "graficoEvolucion",
+        obtenerDatos("datosEvolucion")
+    );
+
+    crearDona(
+        "graficoEvidencias",
+        obtenerDatos("datosEvidencias"),
+        COLORES,
+        "evidencias"
+    );
 
 });
 </script>
+
 {% endblock %}

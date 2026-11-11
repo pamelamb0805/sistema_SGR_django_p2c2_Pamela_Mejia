@@ -1215,3 +1215,203 @@ main#contenido:has(.sgr-executive) > .d-flex h1 {
     background: transparent !important;
     box-shadow: none !important;
 }
+
+
+/* ==========================================================
+   MODAL DE DETALLE INTERACTIVO DEL DASHBOARD
+========================================================== */
+
+.sgr-detail-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(35, 15, 15, .58);
+    backdrop-filter: blur(3px);
+}
+
+.sgr-detail-overlay.is-visible {
+    display: flex;
+}
+
+body.sgr-detail-open {
+    overflow: hidden;
+}
+
+.sgr-detail-modal {
+    width: min(1100px, 100%);
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: #FFFFFF;
+    border-radius: 14px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, .25);
+    animation: sgrDetailIn .2s ease-out;
+}
+
+@keyframes sgrDetailIn {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.sgr-detail-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 15px;
+    padding: 18px 22px;
+    color: #FFFFFF;
+    background: #AD0000;
+    border-left: 5px solid #CC6600;
+}
+
+.sgr-detail-eyebrow {
+    font-size: .68rem;
+    font-weight: 800;
+    letter-spacing: .08em;
+    opacity: .85;
+}
+
+.sgr-detail-header h2 {
+    margin: 4px 0;
+    color: #FFFFFF;
+    font-size: 1.2rem;
+    font-weight: 800;
+}
+
+.sgr-detail-header p {
+    margin: 0;
+    color: #FFFFFF;
+    font-size: .8rem;
+    opacity: .9;
+}
+
+.sgr-detail-close {
+    width: 36px;
+    height: 36px;
+    color: #FFFFFF;
+    background: transparent;
+    border: 1px solid rgba(255,255,255,.5);
+    border-radius: 8px;
+    font-size: 1.6rem;
+    line-height: 1;
+}
+
+.sgr-detail-summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 22px;
+    background: #FFF8F6;
+    border-bottom: 1px solid #EBD9D9;
+}
+
+.sgr-detail-summary strong {
+    display: block;
+    color: #AD0000;
+    font-size: 1.5rem;
+    font-weight: 900;
+}
+
+.sgr-detail-summary span {
+    color: #626262;
+    font-size: .8rem;
+}
+
+.sgr-detail-filter {
+    padding: 7px 10px;
+    color: #660000 !important;
+    background: #F9DCDC;
+    border-radius: 7px;
+    font-weight: 700;
+}
+
+.sgr-detail-content {
+    min-height: 180px;
+    padding: 15px 20px;
+    overflow: auto;
+}
+
+.sgr-detail-message {
+    display: flex;
+    min-height: 150px;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 10px;
+    color: #737373;
+    text-align: center;
+}
+
+.sgr-detail-message i {
+    color: #AD0000;
+    font-size: 2rem;
+}
+
+.sgr-detail-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 20px;
+    background: #FAFAF9;
+    border-top: 1px solid #E7E7E7;
+}
+
+.sgr-detail-footer span {
+    color: #737373;
+    font-size: .75rem;
+}
+
+@media (max-width: 700px) {
+    .sgr-detail-overlay {
+        padding: 8px;
+    }
+
+    .sgr-detail-modal {
+        max-height: 95vh;
+    }
+
+    .sgr-detail-header,
+    .sgr-detail-summary {
+        padding: 13px;
+    }
+
+    .sgr-detail-content {
+        padding: 10px;
+    }
+
+    .sgr-detail-footer {
+        padding: 10px 13px;
+    }
+}
+
+
+/* ==========================================================
+   PANEL DE CONTROL - ENCABEZADO INSTITUCIONAL
+   Fondo rojo municipal y texto blanco
+========================================================== */
+
+main#contenido:has(.sgr-executive) > .d-flex.border-bottom {
+    background: #AD0000 !important;
+    border: none !important;
+    border-left: 5px solid #CC6600 !important;
+    border-radius: 9px !important;
+    box-shadow: 0 3px 9px rgba(0, 0, 0, .10) !important;
+}
+
+main#contenido:has(.sgr-executive) > .d-flex.border-bottom h1,
+main#contenido:has(.sgr-executive) > .d-flex.border-bottom h1 *,
+main#contenido:has(.sgr-executive) > .d-flex.border-bottom .text-body-secondary {
+    color: #FFFFFF !important;
+}
+
+/* Mantener visibles los botones de acciones del encabezado */
+main#contenido:has(.sgr-executive) > .d-flex.border-bottom .btn {
+    color: #FFFFFF;
+}

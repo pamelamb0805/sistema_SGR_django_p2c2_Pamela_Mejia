@@ -3,6 +3,7 @@ from django.contrib.auth.views import LogoutView
 from django.urls import path
 
 from . import views
+from .dashboard_details import dashboard_detalle
 
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
@@ -18,4 +19,9 @@ urlpatterns = [
     # Perfil del usuario autenticado
     path("perfil/", views.perfil, name="perfil"),
     path("perfil/editar/", views.perfil_editar, name="perfil_editar"),
+    path(
+    "dashboard/detalle/",
+    dashboard_detalle,
+    name="dashboard_detalle",
+),
 ]
