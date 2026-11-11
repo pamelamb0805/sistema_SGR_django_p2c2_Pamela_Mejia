@@ -105,14 +105,11 @@
     .social-page .pagination .page-item.active .page-link {
         background-color: var(--sgr-primary);
         border-color: var(--sgr-primary);
+        color: #fff;
     }
 
     .social-page .pagination .page-link {
         color: var(--sgr-primary);
-    }
-
-    .social-page .pagination .page-item.active .page-link {
-        color: #fff;
     }
 
     .social-page .detail-label {
@@ -150,7 +147,7 @@
             </p>
         </div>
 
-        {% if user.is_authenticated %}
+        {% if puede_editar %}
             <a class="btn btn-primary" href="{% url 'social:caso_create' %}">
                 <i class="bi bi-plus-circle me-1" aria-hidden="true"></i>
                 Registrar caso
@@ -705,7 +702,9 @@
                             <div class="empty-state">
                                 <i class="bi bi-journal-text" aria-hidden="true"></i>
                                 <h3 class="h6">Todavía no hay gestiones</h3>
-                                <p class="mb-0">Las gestiones registradas aparecerán en este historial.</p>
+                                <p class="mb-0">
+                                    Las gestiones registradas aparecerán en este historial.
+                                </p>
                             </div>
                         </td>
                     </tr>
