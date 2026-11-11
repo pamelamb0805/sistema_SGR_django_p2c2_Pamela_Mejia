@@ -43,6 +43,31 @@ class LecturaMixin(RolRequeridoMixin):
 class EscrituraMixin(RolRequeridoMixin):
     roles_permitidos = ROLES_CONFIGURACION
 
+    def _filtrar_usuarios_por_estado(queryset, estado):
+        """
+        Aplica el mismo criterio de estado que utiliza Usuario.is_active.
+        """
+        if estado == "ACTIVO":
+            return queryset.filter(
+                activo_acceso=True,
+            ).filter(
+                Q(is_superuser=True)
+                | Q(funcionario__estado=Funcionario.ESTADO_ACTIVO)
+            )
+
+        if estado == "INACTIVO":
+            return queryset.filter(
+                Q(activo_acceso=False)
+                | (
+                    Q(is_superuser=False)
+                    & (
+                        Q(funcionario__estado=Funcionario.ESTADO_INACTIVO)
+                        | Q(funcionario__isnull=True)
+                    )
+                )
+            )
+
+        return queryset
 
 # ---------------------------------------------------------------------------
 # Delegaciones
@@ -542,18 +567,7 @@ class UsuarioListView(EscrituraMixin, ListView):
                 | Q(email__icontains=q)
                 | Q(funcionario__nombre__icontains=q)
             )
-
-        if estado == "ACTIVO":
-            queryset = queryset.filter(
-                activo_acceso=True,
-                funcionario__activo=True,
-            )
-        elif estado == "INACTIVO":
-            queryset = queryset.filter(
-                Q(activo_acceso=False)
-                | Q(funcionario__activo=False)
-                | Q(funcionario__isnull=True)
-            )
+        queryset = _filtrar_usuarios_por_estado(queryset, estado)
 
         return queryset
 
@@ -746,12 +760,8 @@ def exportar_usuarios_excel(request):
     if not tiene_rol(request.user, *ROLES_CONFIGURACION):
         return HttpResponse("No autorizado", status=403)
 
-    queryset = (
-        Usuario.objects
-        .select_related("funcionario", "funcionario__delegacion")
-        .prefetch_related("delegaciones_autorizadas")
-        .order_by("username")
-    )
+    queryset = _filtrar_usuarios_por_estado(queryset, estado)
+    
 
     q = request.GET.get("q", "").strip()
     estado = request.GET.get("estado", "").strip()
