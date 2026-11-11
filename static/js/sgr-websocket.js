@@ -28,6 +28,34 @@
         "sgrNotificationDropdown"
     );
 
+
+    const menuNotificaciones = document.getElementById(
+    "sgrNotificationMenu"
+    );
+
+    if (dropdownNotificaciones && menuNotificaciones) {
+        dropdownNotificaciones.addEventListener("click", (evento) => {
+            evento.preventDefault();
+            evento.stopPropagation();
+
+            const abierto = menuNotificaciones.classList.toggle("show");
+
+            dropdownNotificaciones.setAttribute(
+                "aria-expanded",
+                String(abierto)
+            );
+        });
+
+        document.addEventListener("click", (evento) => {
+            if (
+                !dropdownNotificaciones.closest(".dropdown").contains(evento.target)
+            ) {
+                menuNotificaciones.classList.remove("show");
+                dropdownNotificaciones.setAttribute("aria-expanded", "false");
+            }
+        });
+    }
+    
     let socket = null;
     let reintento = 1000;
     let temporizador = null;
