@@ -25,6 +25,133 @@
     <link rel="stylesheet"
           href="{% static 'css/sgr-redesign.css' %}?v=20261111-4">
 
+    <style>
+        /* NOTIFICACIONES SGR */
+
+        .sgr-notification-menu {
+            width: min(390px, calc(100vw - 24px));
+            max-height: 520px;
+            padding: 0;
+            overflow: hidden;
+            border: 1px solid rgba(0, 0, 0, .08);
+            border-radius: 12px;
+        }
+
+        .sgr-notification-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 14px 16px;
+            border-bottom: 1px solid #e9ecef;
+            background: #fff;
+        }
+
+        .sgr-notification-list {
+            max-height: 410px;
+            overflow-y: auto;
+        }
+
+        .sgr-notification-item {
+            display: block;
+            padding: 12px 16px;
+            color: #212529;
+            text-decoration: none;
+            border-bottom: 1px solid #f0f0f0;
+            white-space: normal;
+        }
+
+        .sgr-notification-item:hover {
+            background-color: #f8f9fa;
+            color: #212529;
+        }
+
+        .sgr-notification-item.sgr-notification-unread {
+            background-color: #eef6f8;
+            border-left: 3px solid #0b6478;
+        }
+
+        .sgr-notification-item .sgr-notification-title {
+            font-size: .88rem;
+            font-weight: 700;
+            line-height: 1.3;
+        }
+
+        .sgr-notification-item .sgr-notification-detail {
+            display: block;
+            margin-top: 4px;
+            color: #6c757d;
+            font-size: .78rem;
+            line-height: 1.4;
+        }
+
+        .sgr-notification-item .sgr-notification-date {
+            display: block;
+            margin-top: 6px;
+            color: #899198;
+            font-size: .72rem;
+        }
+
+        .sgr-notification-empty {
+            padding: 28px 16px;
+            color: #6c757d;
+            text-align: center;
+            font-size: .85rem;
+        }
+
+        .sgr-notification-bell {
+            position: relative;
+            width: 40px;
+            height: 40px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(255, 255, 255, .25);
+            border-radius: 50%;
+            color: #fff;
+            background: transparent;
+        }
+
+        .sgr-notification-bell:hover,
+        .sgr-notification-bell:focus {
+            color: #fff;
+            background: rgba(255, 255, 255, .12);
+        }
+
+        .sgr-notification-badge {
+            position: absolute;
+            top: -4px;
+            right: -5px;
+            min-width: 18px;
+            height: 18px;
+            padding: 0 4px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid #173b4a;
+            border-radius: 20px;
+            background: #dc3545;
+            color: #fff;
+            font-size: .65rem;
+            font-weight: 700;
+        }
+
+        .sgr-notification-badge[hidden] {
+            display: none !important;
+        }
+
+        @media (max-width: 575.98px) {
+            .sgr-notification-menu {
+                position: fixed !important;
+                top: 65px !important;
+                right: 8px !important;
+                left: auto !important;
+                transform: none !important;
+                width: calc(100vw - 16px);
+            }
+        }
+    </style>
+
     {% block extra_css %}{% endblock %}
 </head>
 
@@ -77,9 +204,117 @@
         </a>
     </div>
 
+    <!-- NOTIFICACIONES -->
+
+    <div class="dropdown ms-auto me-2">
+
+        <button
+            id="sgrNotificationDropdown"
+            class="btn sgr-notification-bell"
+            type="button"
+            data-bs-toggle="dropdown"
+            data-bs-auto-close="outside"
+            aria-expanded="false"
+            aria-label="Ver notificaciones"
+            title="Notificaciones">
+
+            <i class="bi bi-bell-fill fs-5"></i>
+
+            <span
+                id="sgrNotificationCount"
+                class="sgr-notification-badge"
+                aria-live="polite"
+                hidden>
+                0
+            </span>
+        </button>
+
+        <div class="dropdown-menu dropdown-menu-end shadow sgr-notification-menu"
+             aria-labelledby="sgrNotificationDropdown">
+
+            <div class="sgr-notification-header">
+
+                <div>
+                    <div class="fw-bold">
+                        <i class="bi bi-bell me-1"></i>
+                        Notificaciones
+                    </div>
+
+                    <small class="text-body-secondary">
+                        Actividad reciente del sistema
+                    </small>
+                </div>
+
+                <button
+                    type="button"
+                    id="sgrMarkNotificationsRead"
+                    class="btn btn-sm btn-outline-secondary">
+                    Marcar leídas
+                </button>
+
+            </div>
+
+            <div id="sgrNotificationList"
+                 class="sgr-notification-list">
+
+                {% for operacion in sgr_notificaciones %}
+
+                <div
+                    class="sgr-notification-item"
+                    data-notification-id="{{ operacion.id_auditoria }}">
+
+                    <div class="d-flex align-items-start gap-2">
+
+                        <i class="bi bi-activity text-primary mt-1"></i>
+
+                        <div class="flex-grow-1">
+
+                            <div class="sgr-notification-title">
+                                {{ operacion.modulo_display }}
+                                ·
+                                {{ operacion.accion_display }}
+                            </div>
+
+                            <span class="sgr-notification-detail">
+                                {{ operacion.object_label }}
+                            </span>
+
+                            <span class="sgr-notification-detail">
+                                <i class="bi bi-person me-1"></i>
+                                {{ operacion.actor_display }}
+                            </span>
+
+                            <span class="sgr-notification-detail">
+                                <i class="bi bi-diagram-3 me-1"></i>
+                                {{ operacion.delegacion_display }}
+                            </span>
+
+                            <span class="sgr-notification-date">
+                                <i class="bi bi-clock me-1"></i>
+                                {{ operacion.fecha|date:"d/m/Y H:i" }}
+                            </span>
+
+                        </div>
+                    </div>
+                </div>
+
+                {% empty %}
+
+                <div id="sgrNotificationEmpty"
+                     class="sgr-notification-empty">
+                    <i class="bi bi-bell-slash fs-3 d-block mb-2"></i>
+                    No hay notificaciones recientes.
+                </div>
+
+                {% endfor %}
+
+            </div>
+        </div>
+    </div>
+
     <!-- PERFIL DE USUARIO -->
 
-    <div class="dropdown ms-auto me-2 me-lg-3">
+    <div class="dropdown me-2 me-lg-3">
 
         <button class="btn btn-sm text-white d-flex align-items-center gap-2"
                 type="button"
@@ -431,8 +666,8 @@
                     {% if request.resolver_match.app_name == "activities" or request.resolver_match.app_name == "agenda" or request.resolver_match.app_name == "social" or request.resolver_match.app_name == "measurement" or request.resolver_match.app_name == "organizations" or request.resolver_match.app_name == "catalogs" or request.resolver_match.app_name == "audit" %}
 
                     <a href="{% url 'dashboard' %}"
-                    class="btn btn-sm fw-semibold text-white shadow-sm"
-                    style="background-color: #b02a37; border: 1px solid #b02a37;">
+                       class="btn btn-sm fw-semibold text-white shadow-sm"
+                       style="background-color: #b02a37; border: 1px solid #b02a37;">
                         <i class="bi bi-arrow-left me-1"></i>
                         Volver al Panel de Control
                     </a>
@@ -475,7 +710,7 @@
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.10.8/dist/sweetalert2.all.min.js"></script>
 
 <script src="{% static 'js/alerts.js' %}"></script>
-<script src="{% static 'js/sgr-websocket.js' %}?v=20261111-2"></script>
+<script src="{% static 'js/sgr-websocket.js' %}?v=20261111-3"></script>
 
 {% block extra_js %}{% endblock %}
 
