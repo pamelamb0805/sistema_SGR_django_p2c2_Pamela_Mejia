@@ -1,36 +1,227 @@
-from django.urls import path
 
-from . import views
+{% extends "base.html" %}
+{% load static %}
 
-app_name = "social"
+{% block title %}{{ titulo|default:"Gestión social" }} · SGR{% endblock %}
 
-urlpatterns = [
-    # Casos
-    path("", views.CasoListView.as_view(), name="caso_list"),
-    path("nuevo/", views.CasoCreateView.as_view(), name="caso_create"),
-    path("estadisticas/", views.estadisticas, name="estadisticas"),
+{% block page_title %}
+    {{ titulo|default:"Gestión social" }}
+{% endblock %}
 
-    # Selector dependiente
-    path(
-        "ajax/subatenciones/",
-        views.cargar_subatenciones,
-        name="cargar_subatenciones",
-    ),
+{% block content %}
 
-    # Detalle y edición de casos
-    path("<int:pk>/", views.CasoDetailView.as_view(), name="caso_detail"),
-    path("<int:pk>/editar/", views.CasoUpdateView.as_view(), name="caso_update"),
-    path("<int:pk>/estado/", views.CasoEstadoView.as_view(), name="caso_estado"),
+<div class="mb-3">
+    <a
+        class="btn btn-sm btn-outline-secondary"
+        href="{% url 'social:caso_detail' caso.pk %}"
+    >
+        <i class="bi bi-arrow-left me-1"></i>
+        Volver al caso
+    </a>
+</div>
 
-    # Gestiones
-    path(
-        "<int:pk>/gestiones/nueva/",
-        views.GestionCreateView.as_view(),
-        name="gestion_create",
-    ),
-    path(
-        "gestiones/<int:pk>/editar/",
-        views.GestionUpdateView.as_view(),
-        name="gestion_update",
-    ),
-]
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white py-3">
+        <h2 class="h6 mb-0">
+            <i class="bi bi-person-vcard me-2"></i>
+            Información del caso
+        </h2>
+    </div>
+
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-12 col-md-4">
+                <span class="small text-body-secondary">Número de caso</span>
+                <div class="fw-semibold">{{ caso.pk }}</div>
+            </div>
+
+            <div class="col-12 col-md-4">
+                <span class="small text-body-secondary">Persona atendida</span>
+                <div class="fw-semibold">{{ caso.nombre }}</div>
+            </div>
+
+            <div class="col-12 col-md-4">
+                <span class="small text-body-secondary">Territorio</span>
+                <div class="fw-semibold">{{ caso.territorio }}</div>
+            </div>
+
+            <div class="col-12 col-md-4">
+                <span class="small text-body-secondary">Delegación</span>
+                <div class="fw-semibold">{{ caso.delegacion.nombre }}</div>
+            </div>
+
+            <div class="col-12 col-md-4">
+                <span class="small text-body-secondary">Gestiones registradas</span>
+                <div class="fw-semibold">
+                    {{ gestiones|length }} de {{ maximo|default:3 }}
+                </div>
+            </div>
+
+            <div class="col-12 col-md-4">
+                <span class="small text-body-secondary">Estado del caso</span>
+                <div>
+                    <span class="badge {% if caso.estado_caso == 'Abierto' %}text-bg-success{% elif caso.estado_caso == 'En seguimiento' %}text-bg-warning{% else %}text-bg-secondary{% endif %}">
+                        {{ caso.estado_caso }}
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white py-3">
+        <h2 class="h6 mb-0">
+            <i class="bi bi-clipboard2-pulse me-2"></i>
+            {{ titulo|default:"Datos de la gestión" }}
+        </h2>
+    </div>
+
+    <div class="card-body">
+
+        <p class="text-body-secondary small">
+            Los campos marcados con <span class="text-danger">*</span> son obligatorios.
+            La delegación, el responsable y la fecha de registro se asignan automáticamente.
+        </p>
+
+        <form
+            method="post"
+            novalidate
+            data-subatenciones-url="{% url 'social:cargar_subatenciones' %}"
+        >
+            {% csrf_token %}
+
+            {% if form.non_field_errors %}
+                <div class="alert alert-danger" role="alert">
+                    {{ form.non_field_errors }}
+                </div>
+            {% endif %}
+
+            <div class="row g-3">
+
+                {% for field in form %}
+                    <div class="col-12 {% if field.name == 'tipo_atencion' or field.name == 'subatencion' or field.name == 'fecha' or field.name == 'estado' %}col-md-6{% endif %}">
+
+                        <label
+                            class="form-label"
+                            for="{{ field.id_for_label }}"
+                        >
+                            {{ field.label }}
+
+                            {% if field.field.required %}
+                                <span class="text-danger">*</span>
+                            {% endif %}
+                        </label>
+
+                        {{ field }}
+
+                        {% if field.help_text %}
+                            <div class="form-text">
+                                {{ field.help_text }}
+                            </div>
+                        {% endif %}
+
+                        {% for error in field.errors %}
+                            <div class="text-danger small mt-1">
+                                {{ error }}
+                            </div>
+                        {% endfor %}
+
+                    </div>
+                {% endfor %}
+
+            </div>
+
+            <div class="d-flex flex-wrap gap-2 mt-4">
+
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-check-circle me-1"></i>
+                    Guardar gestión
+                </button>
+
+                <a
+                    class="btn btn-outline-secondary"
+                    href="{% url 'social:caso_detail' caso.pk %}"
+                >
+                    Cancelar
+                </a>
+
+            </div>
+        </form>
+
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+
+    <div class="card-header bg-white py-3">
+        <h2 class="h6 mb-0">
+            <i class="bi bi-clock-history me-2"></i>
+            Historial de gestiones
+        </h2>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+
+            <thead class="table-light">
+                <tr>
+                    <th>N.º gestión</th>
+                    <th>Tipo de atención</th>
+                    <th>Subatención</th>
+                    <th>Fecha</th>
+                    <th>Estado</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                {% for gestion in gestiones %}
+                    <tr>
+                        <td class="fw-semibold">
+                            {{ gestion.numero_gestion }}
+                        </td>
+
+                        <td>
+                            {{ gestion.tipo_atencion.nombre }}
+                        </td>
+
+                        <td>
+                            {{ gestion.subatencion.nombre }}
+                        </td>
+
+                        <td>
+                            {{ gestion.fecha|date:"d/m/Y" }}
+                        </td>
+
+                        <td>
+                            {% if gestion.estado == "Realizada" %}
+                                <span class="badge text-bg-success">
+                                    Realizada
+                                </span>
+                            {% elif gestion.estado == "Programada" %}
+                                <span class="badge text-bg-warning">
+                                    Programada
+                                </span>
+                            {% else %}
+                                <span class="badge text-bg-secondary">
+                                    {{ gestion.estado }}
+                                </span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="5" class="text-center py-4 text-body-secondary">
+                            No hay gestiones anteriores registradas.
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+
+        </table>
+    </div>
+</div>
+
+<script src="{% static 'js/social-atenciones.js' %}"></script>
+
+{% endblock %}

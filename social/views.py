@@ -35,7 +35,54 @@ class SocialMixin(RolRequeridoMixin):
 class EscrituraSocialMixin(RolRequeridoMixin):
     roles_permitidos = ROLES_OPERATIVOS
 
+
 def cargar_subatenciones(request):
+    if not request.user.is_authenticated:
+        return JsonResponse(
+            {"error": "Debe iniciar sesión."},
+            status=401,
+        )
+
+    if not tiene_rol(request.user, *ROLES_SOCIAL):
+        return JsonResponse(
+            {"error": "No tiene permiso para consultar las subatenciones."},
+            status=403,
+        )
+
+    tipo_id = request.GET.get("tipo_atencion", "").strip()
+    area = request.GET.get("area") or None
+
+    if not tipo_id.isdigit():
+        return JsonResponse({"subatenciones": []})
+
+    from catalogs.models import Catalogo
+
+    tipo = Catalogo.objects.filter(
+        pk=tipo_id,
+        tipo_catalogo=Catalogo.TIPO_ATENCION,
+        estado=Catalogo.ESTADO_ACTIVO,
+    ).first()
+
+    if tipo is None:
+        return JsonResponse({"subatenciones": []})
+
+    subatenciones = Catalogo.objects.disponibles(
+        area=area,
+        tipo=Catalogo.TIPO_SUBATENCION,
+    ).filter(
+        tipo_atencion_padre=tipo,
+    ).order_by("nombre")
+
+    return JsonResponse({
+        "subatenciones": [
+            {
+                "id": sub.pk,
+                "nombre": sub.nombre,
+            }
+            for sub in subatenciones
+        ]
+    })
+
     """
     Devuelve las subatenciones activas que corresponden
     al Tipo de Atención seleccionado.
