@@ -2,378 +2,1166 @@
 {% extends "base.html" %}
 {% load ui_extras %}
 
-{% block title %}Inicio · SGR{% endblock %}
+{% block title %}Panel de control · SGR{% endblock %}
+
 {% block page_title %}Panel de control{% endblock %}
 
 {% block page_actions %}
-<span class="text-body-secondary small align-self-center">
-  <i class="bi bi-calendar3 me-1" aria-hidden="true"></i>
-  {{ hoy|date:"l j \d\e F \d\e Y" }}
+<span class="small text-body-secondary">
+    <i class="bi bi-calendar3 me-1"></i>
+    {{ hoy|date:"d/m/Y" }}
 </span>
 {% endblock %}
+
 
 {% block content %}
 {% with d=datos %}
 
-{# Avisos #}
-{% if sin_funcionario %}
-<div class="alert alert-warning d-flex align-items-start gap-2" role="alert">
-  <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>
-  <div>
-    Su usuario no tiene un funcionario asociado, por lo que no puede registrar ni medir actividades.
-    {% if user.is_superuser %}
-      Desde el <a href="{% url 'admin:index' %}" class="alert-link">panel técnico</a>
-      puede crear los funcionarios y enlazar los accesos.
-    {% else %}
-      Solicite al administrador que lo vincule.
-    {% endif %}
-  </div>
-</div>
-{% endif %}
+<div class="sgr-dashboard">
 
-<div class="mb-4">
-  <p class="lead mb-1">
-    Bienvenido/a,
-    <strong>{{ sgr_funcionario.nombre|default:user.username }}</strong>.
-  </p>
-  {% if d.periodo %}
-  <p class="text-body-secondary mb-0">
-    Período vigente: {{ d.periodo }}
-    ({{ d.periodo.dias_computables }} días).
-  </p>
-  {% endif %}
-</div>
+    <!-- =====================================================
+         1. ENCABEZADO
+    ====================================================== -->
 
-{% if d.periodo is None and not sin_funcionario %}
-<div class="alert alert-info" role="alert">
-  <i class="bi bi-info-circle me-1" aria-hidden="true"></i>
-  No hay un período de medición abierto para hoy, por lo que no se muestran indicadores.
-  {% if sgr_puede_medir %}
-  <a class="alert-link" href="{% url 'measurement:periodo_create' %}">Crear un período</a>.
-  {% endif %}
-</div>
-{% endif %}
+    <section class="sgr-dashboard-header mb-4">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
 
-{# Mi avance personal #}
-{% with r=d.resumen_personal %}
-{% if r %}
-<section class="card shadow-sm mb-4" aria-labelledby="titulo-avance">
-  <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
-    <h2 class="h5 mb-0" id="titulo-avance">Mi avance en el período</h2>
-    <span>{% semaforo_badge r.semaforo %}</span>
-  </div>
+            <div>
+                <span class="badge rounded-pill bg-light text-danger mb-2">
+                    MUNICIPALIDAD DE LA SERENA
+                </span>
 
-  <div class="card-body">
-    {% if r.filas %}
-    <div class="row g-3 align-items-center mb-3">
-      <div class="col-md-8">
-        <div class="progress position-relative sgr-progreso"
-             role="progressbar" aria-label="Resultado ponderado"
-             aria-valuenow="{{ r.total_ponderado|ancho_pct }}"
-             aria-valuemin="0" aria-valuemax="100">
-          <div class="progress-bar bg-{{ r.semaforo|semaforo_color }}"
-               style="width: {{ r.total_ponderado|ancho_pct }}%">
-          </div>
-          <span class="sgr-meta-marca"
-                style="left: {{ r.meta_esperada|ancho_pct }}%"
-                title="Meta esperada al día"></span>
+                <h2 class="h3 fw-bold mb-2">
+                    ¡Bienvenido/a,
+                    {{ sgr_funcionario.nombre|default:user.username }}!
+                </h2>
+
+                <p class="mb-0 opacity-75">
+                    Panel de seguimiento y gestión de resultados.
+                </p>
+
+                {% if d.periodo %}
+                <div class="mt-3 small">
+                    <i class="bi bi-calendar-check me-1"></i>
+                    Período vigente: {{ d.periodo }}
+                </div>
+                {% endif %}
+            </div>
+
+            <div class="text-md-end">
+                <div class="small opacity-75">Fecha de consulta</div>
+                <div class="fs-4 fw-bold">
+                    {{ hoy|date:"d/m/Y" }}
+                </div>
+                <div class="small opacity-75">
+                    {{ sgr_rol_principal|default:"Usuario SGR" }}
+                </div>
+            </div>
+
         </div>
-        <div class="small text-body-secondary mt-1">
-          La marca vertical indica la meta esperada al día.
-        </div>
-      </div>
-
-      <div class="col-md-4">
-        <div class="d-flex justify-content-between">
-          <span>Resultado ponderado</span>
-          <strong>{{ r.total_ponderado|porcentaje }}</strong>
-        </div>
-        <div class="d-flex justify-content-between">
-          <span>Meta esperada al día</span>
-          <strong>{{ r.meta_esperada|porcentaje }}</strong>
-        </div>
-        {% if r.ajustes %}
-        <div class="d-flex justify-content-between">
-          <span>Ajustes</span>
-          <strong>{{ r.ajustes|porcentaje }}</strong>
-        </div>
-        {% endif %}
-      </div>
-    </div>
-
-    <div class="table-responsive">
-      <table class="table table-sm align-middle mb-2">
-        <thead class="table-light">
-          <tr>
-            <th scope="col">Ítem</th>
-            <th scope="col" class="text-end">Avance / meta</th>
-            <th scope="col" class="text-end">Cumplimiento</th>
-            <th scope="col">Semáforo</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for fila in r.filas %}
-          <tr>
-            <td>{{ fila.item.nombre_item }}</td>
-            <td class="text-end">
-              {{ fila.avance }} / {{ fila.meta.valor_objetivo }} {{ fila.meta.unidad }}
-            </td>
-            <td class="text-end">{{ fila.cumplimiento|porcentaje }}</td>
-            <td>{% semaforo_badge fila.semaforo %}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-
-    {% if not r.completa %}
-    <div class="alert alert-warning py-2 small mb-2" role="alert">
-      Sus ponderaciones suman {{ r.suma_ponderadores|porcentaje }};
-      deben sumar 100 % para que el resultado sea completo.
-    </div>
-    {% endif %}
-
-    <a class="btn btn-sm btn-outline-primary"
-       href="{% url 'measurement:mi_desempeno' %}">
-      Ver detalle de mi desempeño
-    </a>
-    {% else %}
-    <p class="mb-0 text-body-secondary">
-      Aún no tiene metas asignadas en este período. Consulte con su coordinación.
-    </p>
-    {% endif %}
-  </div>
-</section>
-{% endif %}
-{% endwith %}
-
-{# Indicadores principales #}
-<div class="row g-3 mb-4">
-
-  {% if d.mis_actividades is not None %}
-  <div class="col-6 col-lg-3">
-    <a class="card h-100 text-decoration-none sgr-kpi shadow-sm"
-       href="{% url 'activities:actividad_list' %}">
-      <div class="card-body">
-        <div class="small text-body-secondary">Mis actividades</div>
-        <div class="valor text-body">{{ d.mis_actividades }}</div>
-      </div>
-    </a>
-  </div>
-  {% endif %}
-
-  {% if d.evidencias_pendientes is not None %}
-    {% if sgr_puede_validar or sgr_puede_supervisar %}
-    <div class="col-6 col-lg-3">
-      <a class="card h-100 text-decoration-none sgr-kpi shadow-sm"
-         href="{% if sgr_puede_validar %}{% url 'activities:validacion_bandeja' %}{% else %}{% url 'activities:actividad_list' %}?estado=En+revisi%C3%B3n{% endif %}">
-        <div class="card-body">
-          <div class="small text-body-secondary">Evidencias pendientes</div>
-          <div class="valor {% if d.evidencias_pendientes %}text-warning-emphasis{% else %}text-body{% endif %}">
-            {{ d.evidencias_pendientes }}
-          </div>
-        </div>
-      </a>
-    </div>
-    {% endif %}
-  {% endif %}
-
-  {% if d.compromisos_vencidos is not None %}
-  <div class="col-6 col-lg-3">
-    <a class="card h-100 text-decoration-none sgr-kpi shadow-sm
-              {% if d.compromisos_vencidos %}sgr-vencido{% endif %}"
-       href="{% url 'agenda:compromiso_list' %}?plazo=vencido">
-      <div class="card-body">
-        <div class="small text-body-secondary">Compromisos vencidos</div>
-        <div class="valor {% if d.compromisos_vencidos %}text-danger{% else %}text-body{% endif %}">
-          {{ d.compromisos_vencidos }}
-        </div>
-      </div>
-    </a>
-  </div>
-
-  <div class="col-6 col-lg-3">
-    <a class="card h-100 text-decoration-none sgr-kpi shadow-sm"
-       href="{% url 'agenda:compromiso_list' %}?plazo=por_vencer">
-      <div class="card-body">
-        <div class="small text-body-secondary">Por vencer (próx. días)</div>
-        <div class="valor text-body">{{ d.compromisos_por_vencer }}</div>
-      </div>
-    </a>
-  </div>
-  {% endif %}
-
-  {% if d.total_funcionarios is not None and sgr_puede_supervisar %}
-  <div class="col-6 col-lg-3">
-    <a class="card h-100 text-decoration-none sgr-kpi shadow-sm"
-       href="{% url 'organizations:funcionario_list' %}">
-      <div class="card-body">
-        <div class="small text-body-secondary">Funcionarios en mi ámbito</div>
-        <div class="valor text-body">{{ d.total_funcionarios }}</div>
-      </div>
-    </a>
-  </div>
-  {% endif %}
-
-  {% if d.total_delegaciones is not None %}
-  <div class="col-6 col-lg-3">
-    <a class="card h-100 text-decoration-none sgr-kpi shadow-sm"
-       href="{% url 'organizations:delegacion_list' %}">
-      <div class="card-body">
-        <div class="small text-body-secondary">Delegaciones</div>
-        <div class="valor text-body">{{ d.total_delegaciones }}</div>
-      </div>
-    </a>
-  </div>
-  {% endif %}
-
-</div>
-
-{# Estado de agenda y equipo #}
-<div class="row g-4 mb-4">
-
-  {% if d.compromisos_por_estado is not None %}
-  <div class="col-lg-5">
-    <section class="card shadow-sm h-100" aria-labelledby="titulo-agenda">
-      <div class="card-header">
-        <h2 class="h6 mb-0" id="titulo-agenda">Agenda colectiva por estado</h2>
-      </div>
-
-      <ul class="list-group list-group-flush">
-        {% for estado, total in d.compromisos_por_estado.items %}
-        <li class="list-group-item d-flex justify-content-between align-items-center">
-          {% estado_badge estado %}
-          <strong>{{ total }}</strong>
-        </li>
-        {% empty %}
-        <li class="list-group-item text-body-secondary">
-          No hay compromisos registrados.
-        </li>
-        {% endfor %}
-      </ul>
-
-      <div class="card-footer bg-transparent">
-        <a href="{% url 'agenda:resumen' %}" class="small">
-          Ver resumen completo
-        </a>
-      </div>
     </section>
-  </div>
-  {% endif %}
 
-  {% with e=d.resumen_equipo %}
-  {% if e %}
-  <div class="col-lg-7">
-    <section class="card shadow-sm h-100" aria-labelledby="titulo-equipo">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <h2 class="h6 mb-0" id="titulo-equipo">Semáforo del equipo</h2>
-        {% if e.semaforo %}{% semaforo_badge e.semaforo %}{% endif %}
-      </div>
 
-      <div class="card-body">
-        {% if e.total_funcionarios %}
-        <div class="d-flex flex-wrap gap-4 mb-3">
-          <div>
-            <span class="sgr-dot verde" aria-hidden="true"></span>
-            <strong>{{ e.conteo|get_item:"Verde" }}</strong> en verde
-          </div>
-          <div>
-            <span class="sgr-dot ambar" aria-hidden="true"></span>
-            <strong>{{ e.conteo|get_item:"Ámbar" }}</strong> en ámbar
-          </div>
-          <div>
-            <span class="sgr-dot rojo" aria-hidden="true"></span>
-            <strong>{{ e.conteo|get_item:"Rojo" }}</strong> en rojo
-          </div>
+    <!-- =====================================================
+         2. ALERTAS
+    ====================================================== -->
+
+    {% if sin_funcionario %}
+    <div class="alert alert-warning d-flex align-items-center gap-2 mb-4">
+        <i class="bi bi-exclamation-triangle-fill fs-5"></i>
+
+        <div>
+            Tu usuario no tiene un funcionario asociado.
+            {% if user.is_superuser %}
+                Puedes vincularlo desde el
+                <a href="{% url 'admin:index' %}" class="alert-link">
+                    panel técnico
+                </a>.
+            {% else %}
+                Solicita al administrador que realice la vinculación.
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+
+    {% if not d.periodo and not sin_funcionario %}
+    <div class="alert alert-info mb-4">
+        <i class="bi bi-info-circle me-2"></i>
+        No existe un período de medición vigente para la fecha actual.
+    </div>
+    {% endif %}
+
+
+    {% if d.compromisos_vencidos %}
+    <div class="alert alert-danger d-flex align-items-center gap-2 mb-4">
+        <i class="bi bi-exclamation-octagon-fill fs-5"></i>
+
+        <div>
+            Existen
+            <strong>{{ d.compromisos_vencidos }}</strong>
+            compromisos vencidos que requieren atención.
         </div>
 
-        <div class="small mb-2">
-          Promedio {{ e.promedio|porcentaje }} ·
-          meta esperada al día {{ e.meta_esperada|porcentaje }}
+        <a href="{% url 'agenda:compromiso_list' %}"
+           class="btn btn-sm btn-outline-danger ms-auto">
+            Revisar agenda
+        </a>
+    </div>
+    {% endif %}
+
+
+    <!-- =====================================================
+         3. INDICADORES KPI
+    ====================================================== -->
+
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <div>
+            <h2 class="h5 fw-bold mb-1">Resumen general</h2>
+            <p class="small text-body-secondary mb-0">
+                Indicadores principales de gestión.
+            </p>
         </div>
 
-        {% if e.bajo_umbral %}
-        <div class="small fw-semibold mb-1">
-          Bajo el umbral colectivo
-          ({{ sgr_parametros.umbral_colectivo|floatformat:0 }} %):
-        </div>
-        <ul class="small mb-2">
-          {% for f in e.bajo_umbral|slice:":5" %}
-          <li>
-            <a href="{% url 'measurement:desempeno_funcionario' f.funcionario.pk %}">
-              {{ f.funcionario.nombre }}
+        <span class="badge rounded-pill text-bg-light">
+            <i class="bi bi-activity me-1"></i>
+            Resumen del sistema
+        </span>
+    </div>
+
+
+    <div class="row g-3 mb-4">
+
+        <!-- KPI 1 -->
+        <div class="col-6 col-xl-3">
+            <a href="{% url 'activities:actividad_list' %}"
+               class="card sgr-kpi text-decoration-none h-100">
+
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+
+                        <div>
+                            <div class="small text-body-secondary">
+                                Mis actividades
+                            </div>
+
+                            <div class="valor">
+                                {{ d.mis_actividades|default:0 }}
+                            </div>
+
+                            <div class="small text-body-secondary mt-1">
+                                Registros de gestión
+                            </div>
+                        </div>
+
+                        <span class="sgr-kpi-icon">
+                            <i class="bi bi-journal-check"></i>
+                        </span>
+
+                    </div>
+                </div>
             </a>
-            — {{ f.total_ponderado|porcentaje }}
-          </li>
-          {% endfor %}
-        </ul>
+        </div>
+
+
+        <!-- KPI 2 -->
+        {% if sgr_puede_validar or sgr_puede_supervisar %}
+        <div class="col-6 col-xl-3">
+            <a href="{% url 'activities:validacion_bandeja' %}"
+               class="card sgr-kpi text-decoration-none h-100">
+
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+
+                        <div>
+                            <div class="small text-body-secondary">
+                                Evidencias pendientes
+                            </div>
+
+                            <div class="valor">
+                                {{ d.evidencias_pendientes|default:0 }}
+                            </div>
+
+                            <div class="small text-body-secondary mt-1">
+                                Requieren revisión
+                            </div>
+                        </div>
+
+                        <span class="sgr-kpi-icon">
+                            <i class="bi bi-file-earmark-check"></i>
+                        </span>
+
+                    </div>
+                </div>
+            </a>
+        </div>
         {% endif %}
 
-        {% else %}
-        <p class="text-body-secondary mb-0">
-          No hay funcionarios activos en su ámbito.
+
+        <!-- KPI 3 -->
+        <div class="col-6 col-xl-3">
+            <a href="{% url 'agenda:compromiso_list' %}"
+               class="card sgr-kpi text-decoration-none h-100
+               {% if d.compromisos_vencidos %}sgr-vencido{% endif %}">
+
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+
+                        <div>
+                            <div class="small text-body-secondary">
+                                Compromisos vencidos
+                            </div>
+
+                            <div class="valor
+                                {% if d.compromisos_vencidos %}text-danger{% endif %}">
+                                {{ d.compromisos_vencidos|default:0 }}
+                            </div>
+
+                            <div class="small text-body-secondary mt-1">
+                                Pendientes de cierre
+                            </div>
+                        </div>
+
+                        <span class="sgr-kpi-icon">
+                            <i class="bi bi-calendar-x"></i>
+                        </span>
+
+                    </div>
+                </div>
+            </a>
+        </div>
+
+
+        <!-- KPI 4 -->
+        <div class="col-6 col-xl-3">
+            <a href="{% url 'agenda:compromiso_list' %}"
+               class="card sgr-kpi text-decoration-none h-100">
+
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+
+                        <div>
+                            <div class="small text-body-secondary">
+                                Compromisos por vencer
+                            </div>
+
+                            <div class="valor">
+                                {{ d.compromisos_por_vencer|default:0 }}
+                            </div>
+
+                            <div class="small text-body-secondary mt-1">
+                                Próximos días
+                            </div>
+                        </div>
+
+                        <span class="sgr-kpi-icon">
+                            <i class="bi bi-calendar-event"></i>
+                        </span>
+
+                    </div>
+                </div>
+            </a>
+        </div>
+
+    </div>
+
+
+    <!-- =====================================================
+         4. ANÁLISIS DE RESULTADOS
+    ====================================================== -->
+
+    <div class="mb-3">
+        <h2 class="h5 fw-bold mb-1">Análisis de resultados</h2>
+
+        <p class="small text-body-secondary mb-0">
+            Visualización de los principales indicadores del sistema.
         </p>
-        {% endif %}
-      </div>
+    </div>
 
-      <div class="card-footer bg-transparent">
-        <a href="{% url 'measurement:semaforo' %}" class="small">
-          Ver tablero de delegación
-        </a>
-      </div>
+
+    <!-- FILA PRINCIPAL -->
+    <div class="row g-3 mb-3">
+
+        <!-- GRÁFICO 1: CUMPLIMIENTO PERSONAL -->
+        {% if d.grafico_personal.labels %}
+        <div class="col-lg-7">
+
+            <section class="sgr-chart-card">
+
+                <div class="sgr-chart-header">
+                    <div>
+                        <h3 class="sgr-chart-title">
+                            Cumplimiento por indicador
+                        </h3>
+
+                        <div class="sgr-chart-subtitle">
+                            Porcentaje de cumplimiento de las metas asignadas
+                        </div>
+                    </div>
+
+                    <i class="bi bi-bar-chart-line text-danger fs-5"></i>
+                </div>
+
+                <div class="sgr-chart-body sgr-chart-large">
+                    <canvas id="graficoPersonal"></canvas>
+                </div>
+
+            </section>
+
+        </div>
+        {% endif %}
+
+
+        <!-- GRÁFICO 2: SEMÁFORO -->
+        {% if sgr_puede_supervisar %}
+        {% if d.grafico_semaforo.labels %}
+
+        <div class="col-lg-5">
+
+            <section class="sgr-chart-card">
+
+                <div class="sgr-chart-header">
+                    <div>
+                        <h3 class="sgr-chart-title">
+                            Semáforo de desempeño
+                        </h3>
+
+                        <div class="sgr-chart-subtitle">
+                            Distribución del equipo según cumplimiento
+                        </div>
+                    </div>
+
+                    <i class="bi bi-pie-chart text-danger fs-5"></i>
+                </div>
+
+                <div class="sgr-chart-body sgr-chart-large">
+                    <canvas id="graficoSemaforo"></canvas>
+                </div>
+
+            </section>
+
+        </div>
+
+        {% endif %}
+        {% endif %}
+
+    </div>
+
+
+    <!-- SEGUNDA FILA -->
+    <div class="row g-3 mb-3">
+
+        <!-- GRÁFICO 3: DELEGACIONES -->
+        {% if sgr_puede_supervisar %}
+        {% if d.grafico_delegaciones.labels %}
+
+        <div class="col-md-6">
+
+            <section class="sgr-chart-card">
+
+                <div class="sgr-chart-header">
+                    <div>
+                        <h3 class="sgr-chart-title">
+                            Desempeño por delegación
+                        </h3>
+
+                        <div class="sgr-chart-subtitle">
+                            Promedio de cumplimiento por unidad
+                        </div>
+                    </div>
+
+                    <i class="bi bi-diagram-3 text-danger fs-5"></i>
+                </div>
+
+                <div class="sgr-chart-body">
+                    <canvas id="graficoDelegaciones"></canvas>
+                </div>
+
+            </section>
+
+        </div>
+
+        {% endif %}
+        {% endif %}
+
+
+        <!-- GRÁFICO 4: AGENDA -->
+        {% if d.grafico_agenda.labels %}
+
+        <div class="col-md-6">
+
+            <section class="sgr-chart-card">
+
+                <div class="sgr-chart-header">
+                    <div>
+                        <h3 class="sgr-chart-title">
+                            Compromisos por estado
+                        </h3>
+
+                        <div class="sgr-chart-subtitle">
+                            Situación de la agenda colectiva
+                        </div>
+                    </div>
+
+                    <i class="bi bi-calendar2-check text-danger fs-5"></i>
+                </div>
+
+                <div class="sgr-chart-body">
+                    <canvas id="graficoAgenda"></canvas>
+                </div>
+
+            </section>
+
+        </div>
+
+        {% endif %}
+
+    </div>
+
+
+    <!-- TERCERA FILA -->
+    <div class="row g-3 mb-4">
+
+        <!-- GRÁFICO 5: EVOLUCIÓN -->
+        {% if d.grafico_evolucion.labels %}
+
+        <div class="col-md-6">
+
+            <section class="sgr-chart-card">
+
+                <div class="sgr-chart-header">
+                    <div>
+                        <h3 class="sgr-chart-title">
+                            Evolución de actividades
+                        </h3>
+
+                        <div class="sgr-chart-subtitle">
+                            Registros de gestión por mes
+                        </div>
+                    </div>
+
+                    <i class="bi bi-graph-up-arrow text-danger fs-5"></i>
+                </div>
+
+                <div class="sgr-chart-body">
+                    <canvas id="graficoEvolucion"></canvas>
+                </div>
+
+            </section>
+
+        </div>
+
+        {% endif %}
+
+
+        <!-- GRÁFICO 6: EVIDENCIAS -->
+        {% if sgr_puede_validar or sgr_puede_supervisar %}
+        {% if d.grafico_evidencias.labels %}
+
+        <div class="col-md-6">
+
+            <section class="sgr-chart-card">
+
+                <div class="sgr-chart-header">
+                    <div>
+                        <h3 class="sgr-chart-title">
+                            Estado de evidencias
+                        </h3>
+
+                        <div class="sgr-chart-subtitle">
+                            Resultado del proceso de revisión
+                        </div>
+                    </div>
+
+                    <i class="bi bi-file-earmark-bar-graph text-danger fs-5"></i>
+                </div>
+
+                <div class="sgr-chart-body">
+                    <canvas id="graficoEvidencias"></canvas>
+                </div>
+
+            </section>
+
+        </div>
+
+        {% endif %}
+        {% endif %}
+
+    </div>
+
+
+    <!-- =====================================================
+         5. COMPROMISOS VENCIDOS
+    ====================================================== -->
+
+    {% if d.lista_vencidos %}
+
+    <section class="sgr-table-card mb-4">
+
+        <div class="card-header d-flex justify-content-between align-items-center">
+
+            <div>
+                <h2 class="h6 fw-bold mb-1 text-danger">
+                    Compromisos vencidos
+                </h2>
+
+                <div class="small text-body-secondary">
+                    Registros que requieren seguimiento
+                </div>
+            </div>
+
+            <i class="bi bi-exclamation-circle text-danger fs-4"></i>
+
+        </div>
+
+
+        <div class="table-responsive">
+
+            <table class="table table-hover align-middle mb-0">
+
+                <thead>
+                    <tr>
+                        <th>Responsable</th>
+                        <th>Delegación</th>
+                        <th>Fecha comprometida</th>
+                        <th>Estado</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+
+                    {% for compromiso in d.lista_vencidos %}
+
+                    <tr>
+
+                        <td>
+                            {% if compromiso.funcionario %}
+                                {{ compromiso.funcionario.nombre }}
+                            {% else %}
+                                Sin responsable
+                            {% endif %}
+                        </td>
+
+                        <td>
+                            {{ compromiso.delegacion|default:"Sin delegación" }}
+                        </td>
+
+                        <td>
+                            {{ compromiso.fecha_comprometida|date:"d/m/Y" }}
+                        </td>
+
+                        <td>
+                            {% estado_badge compromiso.estado %}
+                        </td>
+
+                    </tr>
+
+                    {% endfor %}
+
+                </tbody>
+
+            </table>
+
+        </div>
+
     </section>
-  </div>
-  {% endif %}
-  {% endwith %}
+
+    {% endif %}
+
+
+    <!-- =====================================================
+         6. ÚLTIMAS OPERACIONES
+    ====================================================== -->
+
+    {% if d.ultimas_operaciones %}
+
+    <section class="sgr-table-card mb-4">
+
+        <div class="card-header d-flex justify-content-between align-items-center">
+
+            <div>
+                <h2 class="h6 fw-bold mb-1">
+                    Últimas operaciones
+                </h2>
+
+                <div class="small text-body-secondary">
+                    Actividad reciente en los módulos autorizados
+                </div>
+            </div>
+
+            <i class="bi bi-clock-history text-danger fs-4"></i>
+
+        </div>
+
+
+        <div class="table-responsive">
+
+            <table class="table table-hover align-middle mb-0">
+
+                <thead>
+                    <tr>
+                        <th>Fecha y hora</th>
+                        <th>Módulo</th>
+                        <th>Operación</th>
+                        <th>Registro afectado</th>
+                        <th>Responsable</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+
+                    {% for operacion in d.ultimas_operaciones %}
+
+                    <tr>
+
+                        <td class="text-nowrap">
+                            {{ operacion.fecha|date:"d/m/Y H:i" }}
+                        </td>
+
+                        <td>
+                            {{ operacion.modulo }}
+                        </td>
+
+                        <td>
+                            {{ operacion.evento }}
+                        </td>
+
+                        <td>
+                            {{ operacion.id_entidad_afectada|default:"—" }}
+                        </td>
+
+                        <td>
+                            {{ operacion.responsable_nombre }}
+                        </td>
+
+                    </tr>
+
+                    {% endfor %}
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+    </section>
+
+    {% endif %}
+
+
+    <!-- =====================================================
+         7. ACCESOS RÁPIDOS
+    ====================================================== -->
+
+    <section class="mb-4">
+
+        <div class="mb-3">
+            <h2 class="h5 fw-bold mb-1">Accesos rápidos</h2>
+
+            <p class="small text-body-secondary mb-0">
+                Accede directamente a las funciones principales.
+            </p>
+        </div>
+
+
+        <div class="row g-3">
+
+            {% if sgr_funcionario %}
+            <div class="col-6 col-md-4 col-xl-3">
+
+                <a href="{% url 'measurement:mi_desempeno' %}"
+                   class="card sgr-tarjeta h-100 text-decoration-none">
+
+                    <div class="card-body">
+                        <i class="bi bi-person-check fs-3 text-danger"></i>
+
+                        <h3 class="h6 fw-bold mt-2 text-dark">
+                            Mi desempeño
+                        </h3>
+
+                        <p class="small text-body-secondary mb-0">
+                            Consulta tus metas y avances.
+                        </p>
+                    </div>
+
+                </a>
+
+            </div>
+            {% endif %}
+
+
+            <div class="col-6 col-md-4 col-xl-3">
+
+                <a href="{% url 'activities:actividad_list' %}"
+                   class="card sgr-tarjeta h-100 text-decoration-none">
+
+                    <div class="card-body">
+                        <i class="bi bi-journal-check fs-3 text-danger"></i>
+
+                        <h3 class="h6 fw-bold mt-2 text-dark">
+                            Actividades
+                        </h3>
+
+                        <p class="small text-body-secondary mb-0">
+                            Consulta los registros de gestión.
+                        </p>
+                    </div>
+
+                </a>
+
+            </div>
+
+
+            <div class="col-6 col-md-4 col-xl-3">
+
+                <a href="{% url 'agenda:compromiso_list' %}"
+                   class="card sgr-tarjeta h-100 text-decoration-none">
+
+                    <div class="card-body">
+                        <i class="bi bi-calendar-event fs-3 text-danger"></i>
+
+                        <h3 class="h6 fw-bold mt-2 text-dark">
+                            Agenda colectiva
+                        </h3>
+
+                        <p class="small text-body-secondary mb-0">
+                            Consulta compromisos y plazos.
+                        </p>
+                    </div>
+
+                </a>
+
+            </div>
+
+
+            {% if sgr_puede_supervisar %}
+            <div class="col-6 col-md-4 col-xl-3">
+
+                <a href="{% url 'measurement:semaforo' %}"
+                   class="card sgr-tarjeta h-100 text-decoration-none">
+
+                    <div class="card-body">
+                        <i class="bi bi-stoplights fs-3 text-danger"></i>
+
+                        <h3 class="h6 fw-bold mt-2 text-dark">
+                            Semáforo
+                        </h3>
+
+                        <p class="small text-body-secondary mb-0">
+                            Revisa el desempeño del equipo.
+                        </p>
+                    </div>
+
+                </a>
+
+            </div>
+            {% endif %}
+
+
+            {% if user.is_superuser %}
+            <div class="col-6 col-md-4 col-xl-3">
+
+                <a href="{% url 'admin:index' %}"
+                   class="card sgr-tarjeta h-100 text-decoration-none">
+
+                    <div class="card-body">
+                        <i class="bi bi-gear fs-3 text-danger"></i>
+
+                        <h3 class="h6 fw-bold mt-2 text-dark">
+                            Panel técnico
+                        </h3>
+
+                        <p class="small text-body-secondary mb-0">
+                            Administración del sistema.
+                        </p>
+                    </div>
+
+                </a>
+
+            </div>
+            {% endif %}
+
+        </div>
+
+    </section>
 
 </div>
 
-{# Compromisos vencidos #}
-{% if d.lista_vencidos %}
-<section class="card shadow-sm mb-4 border-danger-subtle"
-         aria-labelledby="titulo-vencidos">
-  <div class="card-header bg-danger-subtle">
-    <h2 class="h6 mb-0 text-danger-emphasis" id="titulo-vencidos">
-      <i class="bi bi-exclamation-octagon me-1" aria-hidden="true"></i>
-      Compromisos vencidos sin cierre
-    </h2>
-  </div>
 
-  <div class="table-responsive">
-    <table class="table table-hover align-middle mb-0">
-      <thead class="table-light">
-        <tr>
-          <th scope="col">Solicitante</th>
-          <th scope="col">Territorio</th>
-          <th scope="col">Responsable</th>
-          <th scope="col">Fecha comprometida</th>
-          <th scope="col">Atraso</th>
-          <th scope="col">Estado</th>
-        </tr>
-      </thead>
+<!-- =========================================================
+     8. DATOS JSON PARA CHART.JS
+========================================================== -->
 
-      <tbody>
-        {% for c in d.lista_vencidos %}
-        <tr>
-          <td>
-            <a href="{% url 'agenda:compromiso_detail' c.pk %}">
-              {{ c.solicitante }}
-            </a>
-          </td>
-          <td>{{ c.territorio }}</td>
-          <td>{{ c.funcionario.nombre }}</td>
-          <td>{{ c.fecha_comprometida|date:"d/m/Y" }}</td>
-          <td class="text-danger">
-            {{ c.fecha_comprometida|timesince:hoy }}
-          </td>
-          <td>{% estado_badge c.estado %}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</section>
+{% if d.grafico_personal.labels %}
+    {{ d.grafico_personal|json_script:"datosPersonal" }}
 {% endif %}
 
+{% if d.grafico_semaforo.labels %}
+    {{ d.grafico_semaforo|json_script:"datosSemaforo" }}
+{% endif %}
+
+{% if d.grafico_delegaciones.labels %}
+    {{ d.grafico_delegaciones|json_script:"datosDelegaciones" }}
+{% endif %}
+
+{% if d.grafico_agenda.labels %}
+    {{ d.grafico_agenda|json_script:"datosAgenda" }}
+{% endif %}
+
+{% if d.grafico_evolucion.labels %}
+    {{ d.grafico_evolucion|json_script:"datosEvolucion" }}
+{% endif %}
+
+{% if d.grafico_evidencias.labels %}
+    {{ d.grafico_evidencias|json_script:"datosEvidencias" }}
+{% endif %}
+
+
 {% endwith %}
+{% endblock %}
+
+
+<!-- =========================================================
+     9. JAVASCRIPT Y CHART.JS
+========================================================== -->
+
+{% block extra_js %}
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+
+    if (typeof Chart === "undefined") {
+        console.error("No se pudo cargar Chart.js.");
+        return;
+    }
+
+    const ROJO = "#AD0000";
+    const ROJO_OSCURO = "#660000";
+    const ROJO_CLARO = "#E08080";
+    const NARANJA = "#CC6600";
+    const GRIS = "#B3B3B3";
+
+    const COLORES = [
+        ROJO,
+        ROJO_OSCURO,
+        ROJO_CLARO,
+        NARANJA,
+        GRIS,
+        "#7A0000"
+    ];
+
+    const COLORES_SEMAFORO = [
+        "#198754",
+        "#F2A900",
+        "#DC3545"
+    ];
+
+
+    function obtenerDatos(id) {
+
+        const elemento = document.getElementById(id);
+
+        if (!elemento) {
+            return null;
+        }
+
+        try {
+            return JSON.parse(elemento.textContent);
+        } catch (error) {
+            console.error("Error leyendo datos del gráfico:", id, error);
+            return null;
+        }
+
+    }
+
+
+    function opcionesBase() {
+
+        return {
+            responsive: true,
+            maintainAspectRatio: false,
+
+            plugins: {
+                legend: {
+                    position: "bottom",
+
+                    labels: {
+                        usePointStyle: true,
+                        padding: 16,
+                        boxWidth: 8,
+                        font: {
+                            size: 11
+                        }
+                    }
+                },
+
+                tooltip: {
+                    backgroundColor: "#333333",
+                    titleFont: {
+                        size: 12
+                    },
+                    bodyFont: {
+                        size: 11
+                    },
+                    padding: 10,
+                    cornerRadius: 8
+                }
+            }
+        };
+
+    }
+
+
+    function crearBarras(id, datos, horizontal = false) {
+
+        const canvas = document.getElementById(id);
+
+        if (!canvas || !datos) {
+            return;
+        }
+
+        new Chart(canvas, {
+
+            type: "bar",
+
+            data: {
+                labels: datos.labels,
+
+                datasets: [{
+                    label: "Cumplimiento",
+                    data: datos.values,
+
+                    backgroundColor: COLORES,
+                    borderRadius: 6,
+                    borderSkipped: false,
+                    maxBarThickness: 32
+                }]
+            },
+
+            options: {
+
+                ...opcionesBase(),
+
+                indexAxis: horizontal ? "y" : "x",
+
+                plugins: {
+                    ...opcionesBase().plugins,
+
+                    legend: {
+                        display: false
+                    },
+
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return " " + context.raw + "%";
+                            }
+                        }
+                    }
+                },
+
+                scales: horizontal ? {
+
+                    x: {
+                        beginAtZero: true,
+                        max: 100,
+
+                        grid: {
+                            color: "rgba(0,0,0,.06)"
+                        },
+
+                        ticks: {
+                            callback: value => value + "%"
+                        }
+                    },
+
+                    y: {
+                        grid: {
+                            display: false
+                        }
+                    }
+
+                } : {
+
+                    y: {
+                        beginAtZero: true,
+
+                        grid: {
+                            color: "rgba(0,0,0,.06)"
+                        }
+                    },
+
+                    x: {
+                        grid: {
+                            display: false
+                        }
+                    }
+
+                }
+
+            }
+
+        });
+
+    }
+
+
+    function crearDona(id, datos, colores = COLORES) {
+
+        const canvas = document.getElementById(id);
+
+        if (!canvas || !datos) {
+            return;
+        }
+
+        new Chart(canvas, {
+
+            type: "doughnut",
+
+            data: {
+                labels: datos.labels,
+
+                datasets: [{
+                    data: datos.values,
+                    backgroundColor: colores,
+                    borderColor: "#FFFFFF",
+                    borderWidth: 3,
+                    hoverOffset: 7
+                }]
+            },
+
+            options: {
+                ...opcionesBase(),
+                cutout: "66%"
+            }
+
+        });
+
+    }
+
+
+    function crearLinea(id, datos) {
+
+        const canvas = document.getElementById(id);
+
+        if (!canvas || !datos) {
+            return;
+        }
+
+        new Chart(canvas, {
+
+            type: "line",
+
+            data: {
+                labels: datos.labels,
+
+                datasets: [{
+                    label: "Actividades",
+                    data: datos.values,
+
+                    borderColor: ROJO,
+                    backgroundColor: "rgba(173,0,0,.10)",
+
+                    fill: true,
+                    tension: .35,
+
+                    pointRadius: 4,
+                    pointHoverRadius: 6,
+
+                    pointBackgroundColor: ROJO,
+                    pointBorderColor: "#FFFFFF",
+                    pointBorderWidth: 2
+                }]
+            },
+
+            options: {
+
+                ...opcionesBase(),
+
+                plugins: {
+                    ...opcionesBase().plugins,
+
+                    legend: {
+                        display: false
+                    }
+                },
+
+                scales: {
+
+                    y: {
+                        beginAtZero: true,
+
+                        grid: {
+                            color: "rgba(0,0,0,.06)"
+                        },
+
+                        ticks: {
+                            precision: 0
+                        }
+                    },
+
+                    x: {
+                        grid: {
+                            display: false
+                        }
+                    }
+
+                }
+
+            }
+
+        });
+
+    }
+
+
+    /* GRÁFICO 1 */
+    crearBarras(
+        "graficoPersonal",
+        obtenerDatos("datosPersonal"),
+        true
+    );
+
+
+    /* GRÁFICO 2 */
+    crearDona(
+        "graficoSemaforo",
+        obtenerDatos("datosSemaforo"),
+        COLORES_SEMAFORO
+    );
+
+
+    /* GRÁFICO 3 */
+    crearBarras(
+        "graficoDelegaciones",
+        obtenerDatos("datosDelegaciones"),
+        false
+    );
+
+
+    /* GRÁFICO 4 */
+    crearDona(
+        "graficoAgenda",
+        obtenerDatos("datosAgenda")
+    );
+
+
+    /* GRÁFICO 5 */
+    crearLinea(
+        "graficoEvolucion",
+        obtenerDatos("datosEvolucion")
+    );
+
+
+    /* GRÁFICO 6 */
+    crearDona(
+        "graficoEvidencias",
+        obtenerDatos("datosEvidencias")
+    );
+
+});
+</script>
+
 {% endblock %}

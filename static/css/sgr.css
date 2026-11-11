@@ -1,95 +1,1157 @@
-/* SGR · estilos propios sobre Bootstrap 5 */
+
+/* ==========================================================
+   SGR - SISTEMA DE GESTIÓN DE RESULTADOS
+   Identidad institucional + Glassmorphism
+   Bootstrap 5.3.3
+   ========================================================== */
+
 :root {
-  --sgr-primary: #AD0000;
-  --sgr-primary-dark: #660000;
-  --sgr-sidebar-bg: #ffffff;
-  --sgr-verde: #198754;
-  --sgr-ambar: #f2a900;
-  --sgr-rojo: #dc3545;
+    /* Paleta institucional La Serena */
+    --sgr-primary: #AD0000;
+    --sgr-primary-dark: #660000;
+    --sgr-primary-deep: #4D0000;
+    --sgr-red-light: #F9DCDC;
+    --sgr-red-soft: #F2B5B5;
+    --sgr-red-medium: #E08080;
+    --sgr-accent: #CC6600;
+    --sgr-orange: #E08000;
+
+    /* Semáforo */
+    --sgr-verde: #198754;
+    --sgr-ambar: #F2A900;
+    --sgr-rojo: #DC3545;
+
+    /* Superficies */
+    --sgr-background: #F5F6FA;
+    --sgr-surface: rgba(255, 255, 255, .88);
+    --sgr-border: rgba(255, 255, 255, .75);
+    --sgr-shadow: 0 8px 30px rgba(65, 25, 25, .07);
+    --sgr-shadow-hover: 0 14px 35px rgba(65, 25, 25, .13);
+
+    /* Bootstrap */
+    --bs-primary: #AD0000;
+    --bs-primary-rgb: 173, 0, 0;
 }
 
-body.sgr-app { background: #f5f5f5; color: #333333; font-family: Arial, Helvetica, sans-serif; }
-body.sgr-guest { background: linear-gradient(135deg, #f9dcdc 0%, #ffffff 68%); min-height: 100vh; font-family: Arial, Helvetica, sans-serif; }
+/* ==========================================================
+   BASE
+   ========================================================== */
 
-.sgr-topbar { background: var(--sgr-primary); min-height: 4.1rem; border-bottom: 4px solid #7a0000; }
-.sgr-topbar .navbar-brand { color: #fff; }
+* {
+    box-sizing: border-box;
+}
 
-/* Menú lateral */
-.sgr-sidebar { background: var(--sgr-sidebar-bg); border-right: 1px solid #dee2e6; }
+body.sgr-app {
+    min-height: 100vh;
+    color: #333333;
+    font-family: Arial, Helvetica, sans-serif;
+    background:
+        radial-gradient(
+            circle at 8% 8%,
+            rgba(173, 0, 0, .075),
+            transparent 28%
+        ),
+        radial-gradient(
+            circle at 92% 75%,
+            rgba(204, 102, 0, .055),
+            transparent 25%
+        ),
+        linear-gradient(135deg, #F8F8FA 0%, #F1F2F6 100%);
+}
+
+body.sgr-guest {
+    min-height: 100vh;
+    font-family: Arial, Helvetica, sans-serif;
+    background: linear-gradient(135deg, #F9DCDC 0%, #FFFFFF 68%);
+}
+
+a {
+    color: #7A0000;
+    transition: color .2s ease;
+}
+
+a:hover {
+    color: var(--sgr-primary);
+}
+
+main:focus {
+    outline: none;
+}
+
+/* ==========================================================
+   BARRA SUPERIOR
+   ========================================================== */
+
+.sgr-topbar {
+    min-height: 4.1rem;
+    background: linear-gradient(
+        110deg,
+        #660000 0%,
+        #AD0000 48%,
+        #870000 100%
+    );
+    border-bottom: 3px solid #7A0000;
+    box-shadow: 0 5px 18px rgba(77, 0, 0, .18);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+}
+
+.sgr-topbar .navbar-brand {
+    color: #FFFFFF;
+}
+
+.sgr-topbar .dropdown .btn:hover {
+    background: rgba(255, 255, 255, .12);
+}
+
+.sgr-brand-logo {
+    width: auto;
+    max-width: 190px;
+    height: 42px;
+    object-fit: contain;
+}
+
+.sgr-brand-mobile {
+    width: 38px;
+    height: 38px;
+    object-fit: contain;
+}
+
+@media (max-width: 767.98px) {
+    .sgr-brand-logo {
+        max-width: 145px;
+        height: 34px;
+    }
+}
+
+/* ==========================================================
+   MENÚ LATERAL
+   ========================================================== */
+
+.sgr-sidebar {
+    background: rgba(255, 255, 255, .83);
+    border-right: 1px solid rgba(173, 0, 0, .08);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+}
+
 @media (min-width: 992px) {
-  .sgr-sidebar { position: sticky; top: 3.25rem; height: calc(100vh - 3.25rem); overflow-y: auto; }
+    .sgr-sidebar {
+        position: sticky;
+        top: 3.25rem;
+        height: calc(100vh - 3.25rem);
+        overflow-y: auto;
+    }
 }
-.sgr-sidebar .nav-link { color: #343a40; padding: .5rem 1rem; display: flex; align-items: center; gap: .6rem; border-left: 3px solid transparent; }
-.sgr-sidebar .nav-link:hover { background: #f9dcdc; color: #660000; }
-.sgr-sidebar .nav-link.active { color: var(--sgr-primary-dark); font-weight: 600; background: #f9dcdc; border-left-color: var(--sgr-primary); }
-.sgr-sidebar .nav-link .bi { font-size: 1.05rem; width: 1.25rem; text-align: center; }
-.sgr-nav-heading { list-style: none; padding: 1rem 1rem .25rem; font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #6c757d; }
 
-/* Contenido */
-main:focus { outline: none; }
-.card { border-color: #e3e8ec; }
-.table > :not(caption) > * > * { vertical-align: middle; }
-.table-responsive { border-radius: .5rem; }
+.sgr-sidebar .nav-link {
+    display: flex;
+    align-items: center;
+    gap: .65rem;
+    padding: .65rem 1rem;
+    margin: .12rem .55rem;
+    color: #343A40;
+    border-left: 3px solid transparent;
+    border-radius: 0 .65rem .65rem 0;
+    transition:
+        background .2s ease,
+        color .2s ease,
+        transform .2s ease;
+}
 
-/* Semáforo (RN-008) */
-.sgr-dot { display: inline-block; width: .85rem; height: .85rem; border-radius: 50%; vertical-align: -1px; margin-right: .35rem; }
-.sgr-dot.verde { background: var(--sgr-verde); }
-.sgr-dot.ambar { background: var(--sgr-ambar); }
-.sgr-dot.rojo  { background: var(--sgr-rojo); }
+.sgr-sidebar .nav-link:hover {
+    color: #660000;
+    background: rgba(249, 220, 220, .8);
+    transform: translateX(3px);
+}
 
-/* Indicadores */
-.sgr-kpi { border-left: 4px solid var(--sgr-primary); }
-.sgr-kpi .valor { font-size: 1.75rem; font-weight: 700; line-height: 1.1; }
-.sgr-vencido { background-color: #fdecee !important; }
+.sgr-sidebar .nav-link.active {
+    color: #660000;
+    font-weight: 700;
+    background: linear-gradient(
+        90deg,
+        rgba(249, 220, 220, .95),
+        rgba(249, 220, 220, .35)
+    );
+    border-left-color: var(--sgr-primary);
+}
 
-/* Línea de tiempo del historial */
-.sgr-timeline { list-style: none; padding-left: 0; border-left: 2px solid #ced4da; margin-left: .5rem; }
-.sgr-timeline > li { position: relative; padding: 0 0 1rem 1.25rem; }
-.sgr-timeline > li::before { content: ""; position: absolute; left: -.45rem; top: .35rem; width: .8rem; height: .8rem; border-radius: 50%; background: var(--sgr-primary); }
+.sgr-sidebar .nav-link .bi {
+    width: 1.25rem;
+    font-size: 1.08rem;
+    text-align: center;
+}
 
-/* Foco visible (accesibilidad) */
-:focus-visible { outline: 3px solid #86b7fe; outline-offset: 2px; }
+.sgr-nav-heading {
+    padding: 1.15rem 1rem .35rem;
+    color: #7A0000;
+    font-size: .7rem;
+    font-weight: 800;
+    letter-spacing: .075em;
+    text-transform: uppercase;
+    list-style: none;
+}
+
+/* ==========================================================
+   CONTENEDORES Y TARJETAS
+   ========================================================== */
+
+.card {
+    border: 1px solid rgba(230, 230, 230, .85);
+    border-radius: 1rem;
+    background: rgba(255, 255, 255, .91);
+    box-shadow: 0 3px 15px rgba(0, 0, 0, .035);
+}
+
+.card-header {
+    padding: 1rem 1.15rem;
+    background: rgba(255, 255, 255, .72);
+    border-bottom: 1px solid rgba(173, 0, 0, .08);
+    border-radius: 1rem 1rem 0 0 !important;
+}
+
+.card-body {
+    padding: 1.15rem;
+}
+
+.card-footer {
+    background: rgba(255, 255, 255, .55);
+    border-top: 1px solid rgba(173, 0, 0, .07);
+}
+
+.table > :not(caption) > * > * {
+    vertical-align: middle;
+}
+
+.table-responsive {
+    border-radius: .7rem;
+}
+
+/* ==========================================================
+   GLASSMORPHISM
+   ========================================================== */
+
+.sgr-glass {
+    background: rgba(255, 255, 255, .72);
+    border: 1px solid rgba(255, 255, 255, .85);
+    border-radius: 1.1rem;
+    box-shadow: var(--sgr-shadow);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+}
+
+.sgr-glass-strong {
+    background: rgba(255, 255, 255, .86);
+    border: 1px solid rgba(255, 255, 255, .92);
+    border-radius: 1.1rem;
+    box-shadow: var(--sgr-shadow);
+    backdrop-filter: blur(22px);
+    -webkit-backdrop-filter: blur(22px);
+}
+
+.sgr-glass-red {
+    color: #FFFFFF;
+    background: linear-gradient(
+        135deg,
+        rgba(102, 0, 0, .94),
+        rgba(173, 0, 0, .86)
+    );
+    border: 1px solid rgba(255, 255, 255, .2);
+    border-radius: 1.1rem;
+    box-shadow: 0 10px 30px rgba(102, 0, 0, .18);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+}
+
+/* ==========================================================
+   DASHBOARD
+   ========================================================== */
+
+.sgr-dashboard {
+    position: relative;
+}
+
+.sgr-dashboard-header {
+    position: relative;
+    overflow: hidden;
+    padding: 1.5rem;
+    color: #FFFFFF;
+    background:
+        radial-gradient(
+            circle at 90% 10%,
+            rgba(255, 255, 255, .18),
+            transparent 30%
+        ),
+        linear-gradient(115deg, #660000, #AD0000 65%, #870000);
+    border: 1px solid rgba(255, 255, 255, .18);
+    border-radius: 1.25rem;
+    box-shadow: 0 12px 30px rgba(102, 0, 0, .16);
+}
+
+.sgr-dashboard-header::after {
+    content: "";
+    position: absolute;
+    right: -45px;
+    bottom: -95px;
+    width: 230px;
+    height: 230px;
+    border: 1px solid rgba(255, 255, 255, .14);
+    border-radius: 50%;
+    box-shadow:
+        0 0 0 25px rgba(255, 255, 255, .035),
+        0 0 0 55px rgba(255, 255, 255, .025);
+    pointer-events: none;
+}
+
+.sgr-dashboard-header > * {
+    position: relative;
+    z-index: 1;
+}
+
+.sgr-dashboard-header .text-muted,
+.sgr-dashboard-header .text-body-secondary {
+    color: rgba(255, 255, 255, .76) !important;
+}
+
+/* ==========================================================
+   KPI / INDICADORES SUPERIORES
+   ========================================================== */
+
+.sgr-kpi {
+    position: relative;
+    overflow: hidden;
+    height: 100%;
+    min-height: 115px;
+    border: 1px solid rgba(255, 255, 255, .85);
+    border-left: 4px solid var(--sgr-primary);
+    border-radius: 1rem;
+    background: rgba(255, 255, 255, .78);
+    box-shadow: var(--sgr-shadow);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    transition:
+        transform .22s ease,
+        box-shadow .22s ease,
+        border-color .22s ease;
+}
+
+.sgr-kpi:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--sgr-shadow-hover);
+}
+
+.sgr-kpi .card-body {
+    padding: 1rem 1.1rem;
+}
+
+.sgr-kpi .valor {
+    margin-top: .35rem;
+    font-size: 1.85rem;
+    font-weight: 800;
+    line-height: 1.1;
+    color: #333333;
+}
+
+.sgr-kpi .sgr-kpi-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    color: var(--sgr-primary);
+    background: var(--sgr-red-light);
+    border-radius: .85rem;
+    font-size: 1.25rem;
+}
+
+.sgr-vencido {
+    background: rgba(253, 236, 238, .88) !important;
+    border-left-color: var(--sgr-rojo) !important;
+}
+
+/* ==========================================================
+   SECCIONES DE GRÁFICOS
+   ========================================================== */
+
+.sgr-chart-card {
+    height: 100%;
+    min-width: 0;
+    overflow: hidden;
+    background: rgba(255, 255, 255, .82);
+    border: 1px solid rgba(255, 255, 255, .9);
+    border-radius: 1.1rem;
+    box-shadow: var(--sgr-shadow);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    transition: transform .2s ease, box-shadow .2s ease;
+}
+
+.sgr-chart-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--sgr-shadow-hover);
+}
+
+.sgr-chart-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    padding: 1rem 1.1rem .75rem;
+    border-bottom: 1px solid rgba(173, 0, 0, .07);
+}
+
+.sgr-chart-title {
+    margin: 0;
+    color: #4D0000;
+    font-size: .95rem;
+    font-weight: 750;
+}
+
+.sgr-chart-subtitle {
+    margin-top: .2rem;
+    color: #777777;
+    font-size: .76rem;
+}
+
+.sgr-chart-body {
+    position: relative;
+    width: 100%;
+    height: 265px;
+    padding: .9rem 1rem 1rem;
+}
+
+.sgr-chart-body.sgr-chart-large {
+    height: 310px;
+}
+
+.sgr-chart-body canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.sgr-chart-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 190px;
+    padding: 1.5rem;
+    color: #777777;
+    text-align: center;
+    font-size: .88rem;
+}
+
+/* ==========================================================
+   SEMÁFORO
+   ========================================================== */
+
+.sgr-dot {
+    display: inline-block;
+    width: .85rem;
+    height: .85rem;
+    margin-right: .35rem;
+    border-radius: 50%;
+    vertical-align: -1px;
+}
+
+.sgr-dot.verde {
+    background: var(--sgr-verde);
+}
+
+.sgr-dot.ambar {
+    background: var(--sgr-ambar);
+}
+
+.sgr-dot.rojo {
+    background: var(--sgr-rojo);
+}
+
+/* ==========================================================
+   PROGRESO DE METAS
+   ========================================================== */
+
+.sgr-progreso {
+    height: 1.5rem;
+    overflow: visible;
+    border-radius: 1rem;
+    background: #EEEEF2;
+}
+
+.sgr-progreso .progress-bar {
+    border-radius: 1rem;
+}
+
+.sgr-meta-marca {
+    position: absolute;
+    top: -4px;
+    bottom: -4px;
+    width: 3px;
+    background: #212529;
+    border-radius: 2px;
+    transform: translateX(-1px);
+}
+
+/* ==========================================================
+   TABLAS
+   ========================================================== */
+
+.table thead th {
+    color: #4D0000;
+    background: #F9DCDC;
+    border-bottom-color: #CC6666;
+    font-size: .8rem;
+    font-weight: 750;
+    white-space: nowrap;
+}
+
+.table tbody td {
+    font-size: .87rem;
+}
+
+.table-hover tbody tr {
+    transition: background .15s ease;
+}
+
+.table-hover tbody tr:hover {
+    background: rgba(249, 220, 220, .28);
+}
+
+.sgr-table-card {
+    overflow: hidden;
+    background: rgba(255, 255, 255, .86);
+    border: 1px solid rgba(255, 255, 255, .9);
+    border-radius: 1rem;
+    box-shadow: var(--sgr-shadow);
+}
+
+/* ==========================================================
+   BOTONES
+   ========================================================== */
+
+.btn-primary,
+.btn-muni {
+    --bs-btn-bg: #AD0000;
+    --bs-btn-border-color: #AD0000;
+    --bs-btn-hover-bg: #7A0000;
+    --bs-btn-hover-border-color: #660000;
+    --bs-btn-active-bg: #660000;
+    --bs-btn-active-border-color: #660000;
+    --bs-btn-disabled-bg: #AD0000;
+    --bs-btn-disabled-border-color: #AD0000;
+}
+
+.btn-outline-primary {
+    --bs-btn-color: #AD0000;
+    --bs-btn-border-color: #AD0000;
+    --bs-btn-hover-bg: #AD0000;
+    --bs-btn-hover-border-color: #AD0000;
+}
+
+.btn-success {
+    --bs-btn-bg: #7A0000;
+    --bs-btn-border-color: #7A0000;
+    --bs-btn-hover-bg: #660000;
+    --bs-btn-hover-border-color: #660000;
+}
+
+.btn {
+    border-radius: .65rem;
+    transition: transform .18s ease, box-shadow .18s ease;
+}
+
+.btn:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, .1);
+}
+
+/* ==========================================================
+   FORMULARIOS Y CRUD
+   ========================================================== */
+
+.form-control,
+.form-select {
+    border-color: #D9D9DF;
+    border-radius: .65rem;
+}
+
+.form-control:focus,
+.form-select:focus {
+    border-color: #CC6666;
+    box-shadow: 0 0 0 .22rem rgba(173, 0, 0, .13);
+}
+
+.form-label {
+    color: #4D0000;
+    font-weight: 650;
+    font-size: .88rem;
+}
+
+.sgr-form-card {
+    background: rgba(255, 255, 255, .86);
+    border: 1px solid rgba(255, 255, 255, .92);
+    border-radius: 1rem;
+    box-shadow: var(--sgr-shadow);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+}
+
+/* ==========================================================
+   ALERTAS Y PAGINACIÓN
+   ========================================================== */
+
+.alert-primary {
+    --bs-alert-color: #660000;
+    --bs-alert-bg: #F9DCDC;
+    --bs-alert-border-color: #E08080;
+}
+
+.pagination {
+    --bs-pagination-color: #7A0000;
+    --bs-pagination-hover-color: #660000;
+    --bs-pagination-focus-box-shadow: 0 0 0 .25rem rgba(173, 0, 0, .15);
+    --bs-pagination-active-bg: #AD0000;
+    --bs-pagination-active-border-color: #AD0000;
+}
+
+/* ==========================================================
+   TIMELINE / HISTORIAL
+   ========================================================== */
+
+.sgr-timeline {
+    margin-left: .5rem;
+    padding-left: 0;
+    border-left: 2px solid #E08080;
+    list-style: none;
+}
+
+.sgr-timeline > li {
+    position: relative;
+    padding: 0 0 1rem 1.25rem;
+}
+
+.sgr-timeline > li::before {
+    content: "";
+    position: absolute;
+    top: .35rem;
+    left: -.45rem;
+    width: .8rem;
+    height: .8rem;
+    background: var(--sgr-primary);
+    border-radius: 50%;
+}
+
+/* ==========================================================
+   TARJETAS DE ACCESO
+   ========================================================== */
+
+.sgr-tarjeta {
+    border-radius: 1rem;
+    transition: transform .2s ease, box-shadow .2s ease;
+}
+
+.sgr-tarjeta:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--sgr-shadow-hover) !important;
+}
+
+/* ==========================================================
+   LOGIN - SE MANTIENE PARA LA ETAPA POSTERIOR
+   ========================================================== */
+
+.sgr-login-logo {
+    color: var(--sgr-primary);
+    font-size: 3rem;
+}
+
+.sgr-login-card {
+    border-top: 4px solid var(--sgr-primary);
+}
+
+/* ==========================================================
+   ACCESIBILIDAD
+   ========================================================== */
+
+:focus-visible {
+    outline: 3px solid #86B7FE;
+    outline-offset: 2px;
+}
+
+/* ==========================================================
+   RESPONSIVE
+   ========================================================== */
+
+@media (max-width: 991.98px) {
+    .sgr-chart-body {
+        height: 245px;
+    }
+
+    .sgr-chart-body.sgr-chart-large {
+        height: 275px;
+    }
+}
+
+@media (max-width: 767.98px) {
+    main#contenido {
+        padding-right: .85rem !important;
+        padding-left: .85rem !important;
+    }
+
+    .sgr-dashboard-header {
+        padding: 1.15rem;
+        border-radius: 1rem;
+    }
+
+    .sgr-kpi {
+        min-height: 100px;
+    }
+
+    .sgr-kpi .valor {
+        font-size: 1.55rem;
+    }
+
+    .sgr-chart-body {
+        height: 225px;
+        padding: .7rem;
+    }
+
+    .sgr-chart-body.sgr-chart-large {
+        height: 245px;
+    }
+
+    .card-body {
+        padding: .95rem;
+    }
+}
+
+@media (max-width: 420px) {
+    .sgr-chart-body {
+        height: 205px;
+    }
+
+    .sgr-kpi .valor {
+        font-size: 1.4rem;
+    }
+}
+
+/* ==========================================================
+   IMPRESIÓN
+   ========================================================== */
 
 @media print {
-  .sgr-topbar, .sgr-sidebar, footer, .btn-toolbar, .no-print { display: none !important; }
-  main { width: 100% !important; margin: 0 !important; }
+    .sgr-topbar,
+    .sgr-sidebar,
+    footer,
+    .btn-toolbar,
+    .no-print {
+        display: none !important;
+    }
+
+    main {
+        width: 100% !important;
+        margin: 0 !important;
+    }
+
+    .card,
+    .sgr-chart-card {
+        box-shadow: none !important;
+        break-inside: avoid;
+    }
 }
 
-/* Login */
-.sgr-login-logo { font-size: 3rem; color: var(--sgr-primary); }
-.sgr-login-card { border-top: 4px solid var(--sgr-primary); }
-
-/* Tarjetas de acceso rápido y contadores */
-.sgr-tarjeta { transition: transform .12s ease, box-shadow .12s ease; }
-.sgr-tarjeta:hover, .sgr-kpi:hover { transform: translateY(-2px); box-shadow: 0 .5rem 1rem rgba(0,0,0,.12) !important; }
-
-/* Barra de avance con marca de la meta esperada al día */
-.sgr-progreso { height: 1.5rem; overflow: visible; }
-.sgr-meta-marca { position: absolute; top: -4px; bottom: -4px; width: 3px; background: #212529; border-radius: 2px; transform: translateX(-1px); }
 
 
-/* Adaptación visual institucional La Serena (paleta digital oficial) */
-:root { --bs-primary: #AD0000; --bs-primary-rgb: 173, 0, 0; --sgr-accent: #cc6600; }
-a { color: #7a0000; }
-a:hover { color: #AD0000; }
-.btn-primary, .btn-muni { --bs-btn-bg: #AD0000; --bs-btn-border-color: #AD0000; --bs-btn-hover-bg: #7a0000; --bs-btn-hover-border-color: #660000; --bs-btn-active-bg: #660000; }
-.btn-outline-primary { --bs-btn-color: #AD0000; --bs-btn-border-color: #AD0000; --bs-btn-hover-bg: #AD0000; --bs-btn-hover-border-color: #AD0000; }
-.btn-success { --bs-btn-bg: #7a0000; --bs-btn-border-color: #7a0000; --bs-btn-hover-bg: #660000; --bs-btn-hover-border-color: #660000; }
-.form-control:focus, .form-select:focus { border-color: #cc6666; box-shadow: 0 0 0 .25rem rgba(173,0,0,.15); }
-.card { border-color: #e6e6e6; border-radius: .6rem; box-shadow: 0 .15rem .6rem rgba(0,0,0,.035); }
-.card-header { background: #fff; border-bottom-color: #e6e6e6; }
-.table thead th { background: #f9dcdc; color: #4d0000; border-bottom-color: #cc6666; }
-.badge.text-bg-primary { background-color: #AD0000 !important; }
-.sgr-kpi { border-left-color: #AD0000; }
-.sgr-timeline { border-left-color: #e08080; }
-.sgr-timeline > li::before { background: #AD0000; }
-.sgr-login-logo { color: #AD0000; }
-.sgr-login-card { border-top-color: #AD0000; }
-.sgr-sidebar { border-right-color: #e6e6e6; }
-.sgr-sidebar .nav-link.active { color: #660000; }
-.sgr-nav-heading { color: #7a0000; }
-.sgr-brand-logo { height: 42px; width: auto; max-width: 190px; object-fit: contain; }
-.sgr-brand-mobile { height: 38px; width: 38px; object-fit: contain; }
-.alert-primary { --bs-alert-color: #660000; --bs-alert-bg: #f9dcdc; --bs-alert-border-color: #e08080; }
-.pagination { --bs-pagination-color: #7a0000; --bs-pagination-hover-color: #660000; --bs-pagination-focus-box-shadow: 0 0 0 .25rem rgba(173,0,0,.15); --bs-pagination-active-bg: #AD0000; --bs-pagination-active-border-color: #AD0000; }
-@media (max-width: 767.98px) { .sgr-brand-logo { height: 34px; max-width: 145px; } }
+/* ==========================================================
+   SGR MUNICIPAL — DASHBOARD EJECUTIVO
+   Diseño inspirado en Template.net
+   Paleta institucional Municipalidad de La Serena
+========================================================== */
+
+:root {
+    --sgr-primary: #AD0000;
+    --sgr-primary-dark: #660000;
+    --sgr-primary-soft: #F9DCDC;
+    --sgr-accent: #CC6600;
+
+    --sgr-background: #F3F4F6;
+    --sgr-surface: rgba(255, 255, 255, .88);
+    --sgr-border: rgba(102, 0, 0, .10);
+
+    --sgr-shadow:
+        0 5px 20px rgba(45, 25, 25, .055);
+
+    --sgr-shadow-hover:
+        0 10px 28px rgba(102, 0, 0, .11);
+}
+
+/* Fondo y contenido */
+
+body.sgr-app {
+    background:
+        radial-gradient(
+            circle at 85% 5%,
+            rgba(173, 0, 0, .055),
+            transparent 28%
+        ),
+        #F3F4F6;
+}
+
+#contenido {
+    min-width: 0;
+}
+
+.sgr-dashboard {
+    width: 100%;
+    max-width: 1800px;
+    margin: 0 auto;
+}
+
+/* Encabezado institucional */
+
+.sgr-dashboard-header {
+    position: relative;
+    overflow: hidden;
+    padding: 1.7rem 2rem;
+    color: #FFFFFF;
+    border-radius: 15px;
+
+    background:
+        radial-gradient(
+            circle at 85% 10%,
+            rgba(255,255,255,.15),
+            transparent 28%
+        ),
+        linear-gradient(
+            120deg,
+            #660000 0%,
+            #AD0000 58%,
+            #B33D3D 100%
+        );
+
+    box-shadow: 0 8px 24px rgba(102, 0, 0, .16);
+}
+
+.sgr-dashboard-header::after {
+    content: "";
+    position: absolute;
+    width: 230px;
+    height: 230px;
+    right: -75px;
+    bottom: -155px;
+    border-radius: 50%;
+    border: 35px solid rgba(255,255,255,.08);
+    pointer-events: none;
+}
+
+.sgr-dashboard-header > * {
+    position: relative;
+    z-index: 1;
+}
+
+.sgr-dashboard-header h2 {
+    letter-spacing: -.035em;
+}
+
+.sgr-dashboard-header .badge {
+    font-size: .68rem;
+    letter-spacing: .07em;
+    padding: .5rem .8rem;
+}
+
+/* Títulos de secciones */
+
+.sgr-dashboard h2.h5 {
+    color: #333333;
+    letter-spacing: -.02em;
+}
+
+.sgr-dashboard .text-body-secondary {
+    color: #777777 !important;
+}
+
+/* KPI — cuatro tarjetas ejecutivas */
+
+.sgr-kpi {
+    position: relative;
+    overflow: hidden;
+    min-height: 125px;
+
+    border: 1px solid var(--sgr-border) !important;
+    border-left: 4px solid var(--sgr-primary) !important;
+    border-radius: 12px !important;
+
+    background: var(--sgr-surface) !important;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+
+    box-shadow: var(--sgr-shadow) !important;
+
+    transition:
+        transform .2s ease,
+        box-shadow .2s ease,
+        border-color .2s ease;
+}
+
+.sgr-kpi:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--sgr-shadow-hover) !important;
+}
+
+.sgr-kpi .card-body {
+    padding: 1.1rem 1.2rem;
+}
+
+.sgr-kpi .valor {
+    margin-top: .45rem;
+    color: #292929;
+    font-size: 2rem;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -.04em;
+}
+
+.sgr-kpi-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    width: 43px;
+    height: 43px;
+
+    color: var(--sgr-primary);
+    background: #F9DCDC;
+
+    border-radius: 11px;
+    font-size: 1.25rem;
+}
+
+.sgr-kpi.sgr-vencido {
+    background: rgba(255, 245, 245, .95) !important;
+}
+
+/* Tarjetas de gráficos */
+
+.sgr-chart-card {
+    height: 100%;
+    min-width: 0;
+    overflow: hidden;
+
+    border: 1px solid rgba(102, 0, 0, .09);
+    border-radius: 13px;
+
+    background: var(--sgr-surface);
+
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+
+    box-shadow: var(--sgr-shadow);
+
+    transition:
+        transform .2s ease,
+        box-shadow .2s ease;
+}
+
+.sgr-chart-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--sgr-shadow-hover);
+}
+
+.sgr-chart-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+
+    padding: 1rem 1.15rem .75rem;
+
+    border-bottom: 1px solid rgba(0,0,0,.045);
+}
+
+.sgr-chart-title {
+    margin: 0;
+    color: #333333;
+    font-size: .94rem;
+    font-weight: 750;
+}
+
+.sgr-chart-subtitle {
+    margin-top: .3rem;
+    color: #888888;
+    font-size: .74rem;
+    line-height: 1.4;
+}
+
+.sgr-chart-body {
+    position: relative;
+    width: 100%;
+    height: 230px;
+    padding: .8rem 1rem 1rem;
+}
+
+.sgr-chart-large {
+    height: 285px;
+}
+
+/* Alertas */
+
+.sgr-dashboard .alert {
+    border-radius: 11px;
+    box-shadow: 0 3px 12px rgba(0,0,0,.025);
+}
+
+/* Tablas */
+
+.sgr-table-card {
+    overflow: hidden;
+
+    border: 1px solid var(--sgr-border);
+    border-radius: 13px;
+
+    background: var(--sgr-surface);
+    box-shadow: var(--sgr-shadow);
+}
+
+.sgr-table-card .card-header {
+    padding: 1rem 1.2rem;
+    background: rgba(255,255,255,.75);
+    border-bottom: 1px solid rgba(0,0,0,.055);
+}
+
+.sgr-table-card .table {
+    font-size: .84rem;
+}
+
+.sgr-table-card .table thead th {
+    padding: .8rem 1rem;
+    white-space: nowrap;
+
+    color: #660000;
+    background: #F9DCDC;
+
+    font-size: .73rem;
+    font-weight: 750;
+    text-transform: uppercase;
+    letter-spacing: .035em;
+}
+
+.sgr-table-card .table tbody td {
+    padding: .75rem 1rem;
+}
+
+.sgr-table-card .table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+/* Accesos rápidos */
+
+.sgr-tarjeta {
+    height: 100%;
+    overflow: hidden;
+
+    border: 1px solid var(--sgr-border) !important;
+    border-radius: 12px !important;
+
+    background: var(--sgr-surface);
+    box-shadow: var(--sgr-shadow) !important;
+
+    transition:
+        transform .2s ease,
+        box-shadow .2s ease;
+}
+
+.sgr-tarjeta:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--sgr-shadow-hover) !important;
+}
+
+.sgr-tarjeta .card-body {
+    padding: 1.2rem;
+}
+
+/* Paginación y detalles visuales */
+
+.sgr-dashboard .badge {
+    font-weight: 600;
+}
+
+.sgr-dashboard a {
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+}
+
+.sgr-dashboard a.card:hover {
+    color: inherit;
+}
+
+/* Diseño adaptable */
+
+@media (min-width: 1400px) {
+    .sgr-chart-body {
+        height: 245px;
+    }
+
+    .sgr-chart-large {
+        height: 300px;
+    }
+}
+
+@media (max-width: 991.98px) {
+    .sgr-dashboard-header {
+        padding: 1.35rem;
+    }
+
+    .sgr-chart-large {
+        height: 255px;
+    }
+}
+
+@media (max-width: 575.98px) {
+    .sgr-dashboard-header {
+        padding: 1.15rem;
+        border-radius: 11px;
+    }
+
+    .sgr-dashboard-header h2 {
+        font-size: 1.3rem;
+    }
+
+    .sgr-kpi {
+        min-height: 112px;
+    }
+
+    .sgr-kpi .card-body {
+        padding: .85rem;
+    }
+
+    .sgr-kpi .valor {
+        font-size: 1.65rem;
+    }
+
+    .sgr-kpi-icon {
+        width: 35px;
+        height: 35px;
+        font-size: 1rem;
+    }
+
+    .sgr-chart-header {
+        padding: .85rem;
+    }
+
+    .sgr-chart-body {
+        height: 215px;
+        padding: .65rem;
+    }
+
+    .sgr-chart-large {
+        height: 235px;
+    }
+}
+
+/* Respeto a usuarios que reducen animaciones */
+
+@media (prefers-reduced-motion: reduce) {
+    .sgr-kpi,
+    .sgr-chart-card,
+    .sgr-tarjeta {
+        transition: none;
+    }
+}
+
