@@ -3,7 +3,6 @@
 {% load ui_extras %}
 
 {% block title %}Panel de control · SGR{% endblock %}
-
 {% block page_title %}Panel de control{% endblock %}
 
 {% block page_actions %}
@@ -13,19 +12,14 @@
 </span>
 {% endblock %}
 
-
 {% block content %}
 {% with d=datos %}
 
 <div class="sgr-dashboard">
 
-    <!-- =====================================================
-         1. ENCABEZADO
-    ====================================================== -->
-
+    <!-- 1. ENCABEZADO -->
     <section class="sgr-dashboard-header mb-4">
         <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
-
             <div>
                 <span class="badge rounded-pill bg-light text-danger mb-2">
                     MUNICIPALIDAD DE LA SERENA
@@ -50,26 +44,18 @@
 
             <div class="text-md-end">
                 <div class="small opacity-75">Fecha de consulta</div>
-                <div class="fs-4 fw-bold">
-                    {{ hoy|date:"d/m/Y" }}
-                </div>
+                <div class="fs-4 fw-bold">{{ hoy|date:"d/m/Y" }}</div>
                 <div class="small opacity-75">
                     {{ sgr_rol_principal|default:"Usuario SGR" }}
                 </div>
             </div>
-
         </div>
     </section>
 
-
-    <!-- =====================================================
-         2. ALERTAS
-    ====================================================== -->
-
+    <!-- 2. ALERTAS -->
     {% if sin_funcionario %}
     <div class="alert alert-warning d-flex align-items-center gap-2 mb-4">
         <i class="bi bi-exclamation-triangle-fill fs-5"></i>
-
         <div>
             Tu usuario no tiene un funcionario asociado.
             {% if user.is_superuser %}
@@ -84,7 +70,6 @@
     </div>
     {% endif %}
 
-
     {% if not d.periodo and not sin_funcionario %}
     <div class="alert alert-info mb-4">
         <i class="bi bi-info-circle me-2"></i>
@@ -92,17 +77,13 @@
     </div>
     {% endif %}
 
-
     {% if d.compromisos_vencidos %}
     <div class="alert alert-danger d-flex align-items-center gap-2 mb-4">
         <i class="bi bi-exclamation-octagon-fill fs-5"></i>
-
         <div>
-            Existen
-            <strong>{{ d.compromisos_vencidos }}</strong>
+            Existen <strong>{{ d.compromisos_vencidos }}</strong>
             compromisos vencidos que requieren atención.
         </div>
-
         <a href="{% url 'agenda:compromiso_list' %}"
            class="btn btn-sm btn-outline-danger ms-auto">
             Revisar agenda
@@ -110,11 +91,7 @@
     </div>
     {% endif %}
 
-
-    <!-- =====================================================
-         3. INDICADORES KPI
-    ====================================================== -->
-
+    <!-- 3. INDICADORES KPI -->
     <div class="d-flex align-items-center justify-content-between mb-3">
         <div>
             <h2 class="h5 fw-bold mb-1">Resumen general</h2>
@@ -122,13 +99,11 @@
                 Indicadores principales de gestión.
             </p>
         </div>
-
         <span class="badge rounded-pill text-bg-light">
             <i class="bi bi-activity me-1"></i>
             Resumen del sistema
         </span>
     </div>
-
 
     <div class="row g-3 mb-4">
 
@@ -136,128 +111,97 @@
         <div class="col-6 col-xl-3">
             <a href="{% url 'activities:actividad_list' %}"
                class="card sgr-kpi text-decoration-none h-100">
-
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-start">
-
                         <div>
-                            <div class="small text-body-secondary">
-                                Mis actividades
-                            </div>
-
-                            <div class="valor">
-                                {{ d.mis_actividades|default:0 }}
-                            </div>
-
+                            <div class="small text-body-secondary">Mis actividades</div>
+                            <div class="valor">{{ d.mis_actividades|default:0 }}</div>
                             <div class="small text-body-secondary mt-1">
                                 Registros de gestión
                             </div>
                         </div>
-
                         <span class="sgr-kpi-icon">
                             <i class="bi bi-journal-check"></i>
                         </span>
-
                     </div>
                 </div>
             </a>
         </div>
-
 
         <!-- KPI 2 -->
         {% if sgr_puede_validar or sgr_puede_supervisar %}
         <div class="col-6 col-xl-3">
             <a href="{% url 'activities:validacion_bandeja' %}"
                class="card sgr-kpi text-decoration-none h-100">
-
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-start">
-
                         <div>
                             <div class="small text-body-secondary">
                                 Evidencias pendientes
                             </div>
-
                             <div class="valor">
                                 {{ d.evidencias_pendientes|default:0 }}
                             </div>
-
                             <div class="small text-body-secondary mt-1">
                                 Requieren revisión
                             </div>
                         </div>
-
                         <span class="sgr-kpi-icon">
                             <i class="bi bi-file-earmark-check"></i>
                         </span>
-
                     </div>
                 </div>
             </a>
         </div>
         {% endif %}
-
 
         <!-- KPI 3 -->
         <div class="col-6 col-xl-3">
             <a href="{% url 'agenda:compromiso_list' %}"
                class="card sgr-kpi text-decoration-none h-100
                {% if d.compromisos_vencidos %}sgr-vencido{% endif %}">
-
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-start">
-
                         <div>
                             <div class="small text-body-secondary">
                                 Compromisos vencidos
                             </div>
-
                             <div class="valor
                                 {% if d.compromisos_vencidos %}text-danger{% endif %}">
                                 {{ d.compromisos_vencidos|default:0 }}
                             </div>
-
                             <div class="small text-body-secondary mt-1">
                                 Pendientes de cierre
                             </div>
                         </div>
-
                         <span class="sgr-kpi-icon">
                             <i class="bi bi-calendar-x"></i>
                         </span>
-
                     </div>
                 </div>
             </a>
         </div>
-
 
         <!-- KPI 4 -->
         <div class="col-6 col-xl-3">
             <a href="{% url 'agenda:compromiso_list' %}"
                class="card sgr-kpi text-decoration-none h-100">
-
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-start">
-
                         <div>
                             <div class="small text-body-secondary">
                                 Compromisos por vencer
                             </div>
-
                             <div class="valor">
                                 {{ d.compromisos_por_vencer|default:0 }}
                             </div>
-
                             <div class="small text-body-secondary mt-1">
                                 Próximos días
                             </div>
                         </div>
-
                         <span class="sgr-kpi-icon">
                             <i class="bi bi-calendar-event"></i>
                         </span>
-
                     </div>
                 </div>
             </a>
@@ -265,260 +209,232 @@
 
     </div>
 
-
-    <!-- =====================================================
-         4. ANÁLISIS DE RESULTADOS
-    ====================================================== -->
-
+    <!-- 4. ANÁLISIS DE RESULTADOS -->
     <div class="mb-3">
         <h2 class="h5 fw-bold mb-1">Análisis de resultados</h2>
-
         <p class="small text-body-secondary mb-0">
             Visualización de los principales indicadores del sistema.
         </p>
     </div>
 
-
     <!-- FILA PRINCIPAL -->
     <div class="row g-3 mb-3">
 
         <!-- GRÁFICO 1: CUMPLIMIENTO PERSONAL -->
-        {% if d.grafico_personal.labels %}
+        {% if d.grafico_personal.labels or user.is_superuser %}
         <div class="col-lg-7">
-
             <section class="sgr-chart-card">
-
                 <div class="sgr-chart-header">
                     <div>
                         <h3 class="sgr-chart-title">
                             Cumplimiento por indicador
                         </h3>
-
                         <div class="sgr-chart-subtitle">
                             Porcentaje de cumplimiento de las metas asignadas
                         </div>
                     </div>
-
                     <i class="bi bi-bar-chart-line text-danger fs-5"></i>
                 </div>
 
                 <div class="sgr-chart-body sgr-chart-large">
-                    <canvas id="graficoPersonal"></canvas>
+                    {% if d.grafico_personal.labels %}
+                        <canvas id="graficoPersonal"></canvas>
+                    {% else %}
+                        <div class="text-center text-body-secondary py-5">
+                            <i class="bi bi-bar-chart fs-2 d-block mb-2"></i>
+                            <strong>Sin datos disponibles</strong>
+                            <p class="small mb-0">
+                                Se mostrarán resultados cuando existan metas e indicadores registrados.
+                            </p>
+                        </div>
+                    {% endif %}
                 </div>
-
             </section>
-
         </div>
         {% endif %}
 
-
         <!-- GRÁFICO 2: SEMÁFORO -->
-        {% if sgr_puede_supervisar %}
-        {% if d.grafico_semaforo.labels %}
-
+        {% if sgr_puede_supervisar or user.is_superuser %}
         <div class="col-lg-5">
-
             <section class="sgr-chart-card">
-
                 <div class="sgr-chart-header">
                     <div>
-                        <h3 class="sgr-chart-title">
-                            Semáforo de desempeño
-                        </h3>
-
+                        <h3 class="sgr-chart-title">Semáforo de desempeño</h3>
                         <div class="sgr-chart-subtitle">
                             Distribución del equipo según cumplimiento
                         </div>
                     </div>
-
                     <i class="bi bi-pie-chart text-danger fs-5"></i>
                 </div>
 
                 <div class="sgr-chart-body sgr-chart-large">
-                    <canvas id="graficoSemaforo"></canvas>
+                    {% if d.grafico_semaforo.labels and d.grafico_semaforo.values %}
+                        <canvas id="graficoSemaforo"></canvas>
+                    {% else %}
+                        <div class="text-center text-body-secondary py-5">
+                            <i class="bi bi-pie-chart fs-2 d-block mb-2"></i>
+                            <strong>Sin datos disponibles</strong>
+                            <p class="small mb-0">
+                                Se requiere un período vigente y funcionarios con metas.
+                            </p>
+                        </div>
+                    {% endif %}
                 </div>
-
             </section>
-
         </div>
-
-        {% endif %}
         {% endif %}
 
     </div>
-
 
     <!-- SEGUNDA FILA -->
     <div class="row g-3 mb-3">
 
         <!-- GRÁFICO 3: DELEGACIONES -->
-        {% if sgr_puede_supervisar %}
-        {% if d.grafico_delegaciones.labels %}
-
+        {% if sgr_puede_supervisar or user.is_superuser %}
         <div class="col-md-6">
-
             <section class="sgr-chart-card">
-
                 <div class="sgr-chart-header">
                     <div>
-                        <h3 class="sgr-chart-title">
-                            Desempeño por delegación
-                        </h3>
-
+                        <h3 class="sgr-chart-title">Desempeño por delegación</h3>
                         <div class="sgr-chart-subtitle">
                             Promedio de cumplimiento por unidad
                         </div>
                     </div>
-
                     <i class="bi bi-diagram-3 text-danger fs-5"></i>
                 </div>
 
                 <div class="sgr-chart-body">
-                    <canvas id="graficoDelegaciones"></canvas>
+                    {% if d.grafico_delegaciones.labels %}
+                        <canvas id="graficoDelegaciones"></canvas>
+                    {% else %}
+                        <div class="text-center text-body-secondary py-5">
+                            <i class="bi bi-diagram-3 fs-2 d-block mb-2"></i>
+                            <strong>Sin datos disponibles</strong>
+                            <p class="small mb-0">
+                                Se mostrarán resultados cuando existan delegaciones y metas.
+                            </p>
+                        </div>
+                    {% endif %}
                 </div>
-
             </section>
-
         </div>
-
         {% endif %}
-        {% endif %}
-
 
         <!-- GRÁFICO 4: AGENDA -->
-        {% if d.grafico_agenda.labels %}
-
+        {% if d.grafico_agenda.labels or user.is_superuser %}
         <div class="col-md-6">
-
             <section class="sgr-chart-card">
-
                 <div class="sgr-chart-header">
                     <div>
-                        <h3 class="sgr-chart-title">
-                            Compromisos por estado
-                        </h3>
-
+                        <h3 class="sgr-chart-title">Compromisos por estado</h3>
                         <div class="sgr-chart-subtitle">
                             Situación de la agenda colectiva
                         </div>
                     </div>
-
                     <i class="bi bi-calendar2-check text-danger fs-5"></i>
                 </div>
 
                 <div class="sgr-chart-body">
-                    <canvas id="graficoAgenda"></canvas>
+                    {% if d.grafico_agenda.labels %}
+                        <canvas id="graficoAgenda"></canvas>
+                    {% else %}
+                        <div class="text-center text-body-secondary py-5">
+                            <i class="bi bi-calendar2-check fs-2 d-block mb-2"></i>
+                            <strong>Sin datos disponibles</strong>
+                            <p class="small mb-0">
+                                Todavía no hay compromisos registrados.
+                            </p>
+                        </div>
+                    {% endif %}
                 </div>
-
             </section>
-
         </div>
-
         {% endif %}
 
     </div>
-
 
     <!-- TERCERA FILA -->
     <div class="row g-3 mb-4">
 
         <!-- GRÁFICO 5: EVOLUCIÓN -->
-        {% if d.grafico_evolucion.labels %}
-
+        {% if d.grafico_evolucion.labels or user.is_superuser %}
         <div class="col-md-6">
-
             <section class="sgr-chart-card">
-
                 <div class="sgr-chart-header">
                     <div>
-                        <h3 class="sgr-chart-title">
-                            Evolución de actividades
-                        </h3>
-
+                        <h3 class="sgr-chart-title">Evolución de actividades</h3>
                         <div class="sgr-chart-subtitle">
                             Registros de gestión por mes
                         </div>
                     </div>
-
                     <i class="bi bi-graph-up-arrow text-danger fs-5"></i>
                 </div>
 
                 <div class="sgr-chart-body">
-                    <canvas id="graficoEvolucion"></canvas>
+                    {% if d.grafico_evolucion.labels %}
+                        <canvas id="graficoEvolucion"></canvas>
+                    {% else %}
+                        <div class="text-center text-body-secondary py-5">
+                            <i class="bi bi-graph-up-arrow fs-2 d-block mb-2"></i>
+                            <strong>Sin datos disponibles</strong>
+                            <p class="small mb-0">
+                                Se mostrará la evolución cuando existan actividades.
+                            </p>
+                        </div>
+                    {% endif %}
                 </div>
-
             </section>
-
         </div>
-
         {% endif %}
 
-
         <!-- GRÁFICO 6: EVIDENCIAS -->
-        {% if sgr_puede_validar or sgr_puede_supervisar %}
-        {% if d.grafico_evidencias.labels %}
-
+        {% if sgr_puede_validar or sgr_puede_supervisar or user.is_superuser %}
         <div class="col-md-6">
-
             <section class="sgr-chart-card">
-
                 <div class="sgr-chart-header">
                     <div>
-                        <h3 class="sgr-chart-title">
-                            Estado de evidencias
-                        </h3>
-
+                        <h3 class="sgr-chart-title">Estado de evidencias</h3>
                         <div class="sgr-chart-subtitle">
                             Resultado del proceso de revisión
                         </div>
                     </div>
-
                     <i class="bi bi-file-earmark-bar-graph text-danger fs-5"></i>
                 </div>
 
                 <div class="sgr-chart-body">
-                    <canvas id="graficoEvidencias"></canvas>
+                    {% if d.grafico_evidencias.labels %}
+                        <canvas id="graficoEvidencias"></canvas>
+                    {% else %}
+                        <div class="text-center text-body-secondary py-5">
+                            <i class="bi bi-file-earmark-bar-graph fs-2 d-block mb-2"></i>
+                            <strong>Sin datos disponibles</strong>
+                            <p class="small mb-0">
+                                Todavía no hay evidencias para mostrar.
+                            </p>
+                        </div>
+                    {% endif %}
                 </div>
-
             </section>
-
         </div>
-
-        {% endif %}
         {% endif %}
 
     </div>
 
-
-    <!-- =====================================================
-         5. COMPROMISOS VENCIDOS
-    ====================================================== -->
-
+    <!-- 5. COMPROMISOS VENCIDOS -->
     {% if d.lista_vencidos %}
-
     <section class="sgr-table-card mb-4">
-
         <div class="card-header d-flex justify-content-between align-items-center">
-
             <div>
-                <h2 class="h6 fw-bold mb-1 text-danger">
-                    Compromisos vencidos
-                </h2>
-
+                <h2 class="h6 fw-bold mb-1 text-danger">Compromisos vencidos</h2>
                 <div class="small text-body-secondary">
                     Registros que requieren seguimiento
                 </div>
             </div>
-
             <i class="bi bi-exclamation-circle text-danger fs-4"></i>
-
         </div>
 
-
         <div class="table-responsive">
-
             <table class="table table-hover align-middle mb-0">
-
                 <thead>
                     <tr>
                         <th>Responsable</th>
@@ -527,13 +443,9 @@
                         <th>Estado</th>
                     </tr>
                 </thead>
-
                 <tbody>
-
                     {% for compromiso in d.lista_vencidos %}
-
                     <tr>
-
                         <td>
                             {% if compromiso.funcionario %}
                                 {{ compromiso.funcionario.nombre }}
@@ -541,63 +453,32 @@
                                 Sin responsable
                             {% endif %}
                         </td>
-
-                        <td>
-                            {{ compromiso.delegacion|default:"Sin delegación" }}
-                        </td>
-
-                        <td>
-                            {{ compromiso.fecha_comprometida|date:"d/m/Y" }}
-                        </td>
-
-                        <td>
-                            {% estado_badge compromiso.estado %}
-                        </td>
-
+                        <td>{{ compromiso.delegacion|default:"Sin delegación" }}</td>
+                        <td>{{ compromiso.fecha_comprometida|date:"d/m/Y" }}</td>
+                        <td>{% estado_badge compromiso.estado %}</td>
                     </tr>
-
                     {% endfor %}
-
                 </tbody>
-
             </table>
-
         </div>
-
     </section>
-
     {% endif %}
 
-
-    <!-- =====================================================
-         6. ÚLTIMAS OPERACIONES
-    ====================================================== -->
-
+    <!-- 6. ÚLTIMAS OPERACIONES -->
     {% if d.ultimas_operaciones %}
-
     <section class="sgr-table-card mb-4">
-
         <div class="card-header d-flex justify-content-between align-items-center">
-
             <div>
-                <h2 class="h6 fw-bold mb-1">
-                    Últimas operaciones
-                </h2>
-
+                <h2 class="h6 fw-bold mb-1">Últimas operaciones</h2>
                 <div class="small text-body-secondary">
                     Actividad reciente en los módulos autorizados
                 </div>
             </div>
-
             <i class="bi bi-clock-history text-danger fs-4"></i>
-
         </div>
 
-
         <div class="table-responsive">
-
             <table class="table table-hover align-middle mb-0">
-
                 <thead>
                     <tr>
                         <th>Fecha y hora</th>
@@ -607,226 +488,123 @@
                         <th>Responsable</th>
                     </tr>
                 </thead>
-
                 <tbody>
-
                     {% for operacion in d.ultimas_operaciones %}
-
                     <tr>
-
                         <td class="text-nowrap">
                             {{ operacion.fecha|date:"d/m/Y H:i" }}
                         </td>
-
-                        <td>
-                            {{ operacion.modulo }}
-                        </td>
-
-                        <td>
-                            {{ operacion.evento }}
-                        </td>
-
-                        <td>
-                            {{ operacion.id_entidad_afectada|default:"—" }}
-                        </td>
-
-                        <td>
-                            {{ operacion.responsable_nombre }}
-                        </td>
-
+                        <td>{{ operacion.modulo }}</td>
+                        <td>{{ operacion.evento }}</td>
+                        <td>{{ operacion.id_entidad_afectada|default:"—" }}</td>
+                        <td>{{ operacion.responsable_nombre }}</td>
                     </tr>
-
                     {% endfor %}
-
                 </tbody>
-
             </table>
-
         </div>
-
     </section>
-
     {% endif %}
 
-
-    <!-- =====================================================
-         7. ACCESOS RÁPIDOS
-    ====================================================== -->
-
+    <!-- 7. ACCESOS RÁPIDOS -->
     <section class="mb-4">
-
         <div class="mb-3">
             <h2 class="h5 fw-bold mb-1">Accesos rápidos</h2>
-
             <p class="small text-body-secondary mb-0">
                 Accede directamente a las funciones principales.
             </p>
         </div>
 
-
         <div class="row g-3">
 
             {% if sgr_funcionario %}
             <div class="col-6 col-md-4 col-xl-3">
-
                 <a href="{% url 'measurement:mi_desempeno' %}"
                    class="card sgr-tarjeta h-100 text-decoration-none">
-
                     <div class="card-body">
                         <i class="bi bi-person-check fs-3 text-danger"></i>
-
-                        <h3 class="h6 fw-bold mt-2 text-dark">
-                            Mi desempeño
-                        </h3>
-
+                        <h3 class="h6 fw-bold mt-2 text-dark">Mi desempeño</h3>
                         <p class="small text-body-secondary mb-0">
                             Consulta tus metas y avances.
                         </p>
                     </div>
-
                 </a>
-
             </div>
             {% endif %}
 
-
             <div class="col-6 col-md-4 col-xl-3">
-
                 <a href="{% url 'activities:actividad_list' %}"
                    class="card sgr-tarjeta h-100 text-decoration-none">
-
                     <div class="card-body">
                         <i class="bi bi-journal-check fs-3 text-danger"></i>
-
-                        <h3 class="h6 fw-bold mt-2 text-dark">
-                            Actividades
-                        </h3>
-
+                        <h3 class="h6 fw-bold mt-2 text-dark">Actividades</h3>
                         <p class="small text-body-secondary mb-0">
                             Consulta los registros de gestión.
                         </p>
                     </div>
-
                 </a>
-
             </div>
 
-
             <div class="col-6 col-md-4 col-xl-3">
-
                 <a href="{% url 'agenda:compromiso_list' %}"
                    class="card sgr-tarjeta h-100 text-decoration-none">
-
                     <div class="card-body">
                         <i class="bi bi-calendar-event fs-3 text-danger"></i>
-
-                        <h3 class="h6 fw-bold mt-2 text-dark">
-                            Agenda colectiva
-                        </h3>
-
+                        <h3 class="h6 fw-bold mt-2 text-dark">Agenda colectiva</h3>
                         <p class="small text-body-secondary mb-0">
                             Consulta compromisos y plazos.
                         </p>
                     </div>
-
                 </a>
-
             </div>
-
 
             {% if sgr_puede_supervisar %}
             <div class="col-6 col-md-4 col-xl-3">
-
                 <a href="{% url 'measurement:semaforo' %}"
                    class="card sgr-tarjeta h-100 text-decoration-none">
-
                     <div class="card-body">
                         <i class="bi bi-stoplights fs-3 text-danger"></i>
-
-                        <h3 class="h6 fw-bold mt-2 text-dark">
-                            Semáforo
-                        </h3>
-
+                        <h3 class="h6 fw-bold mt-2 text-dark">Semáforo</h3>
                         <p class="small text-body-secondary mb-0">
                             Revisa el desempeño del equipo.
                         </p>
                     </div>
-
                 </a>
-
             </div>
             {% endif %}
 
-
             {% if user.is_superuser %}
             <div class="col-6 col-md-4 col-xl-3">
-
                 <a href="{% url 'admin:index' %}"
                    class="card sgr-tarjeta h-100 text-decoration-none">
-
                     <div class="card-body">
                         <i class="bi bi-gear fs-3 text-danger"></i>
-
-                        <h3 class="h6 fw-bold mt-2 text-dark">
-                            Panel técnico
-                        </h3>
-
+                        <h3 class="h6 fw-bold mt-2 text-dark">Panel técnico</h3>
                         <p class="small text-body-secondary mb-0">
                             Administración del sistema.
                         </p>
                     </div>
-
                 </a>
-
             </div>
             {% endif %}
 
         </div>
-
     </section>
 
 </div>
 
-
-<!-- =========================================================
-     8. DATOS JSON PARA CHART.JS
-========================================================== -->
-
-{% if d.grafico_personal.labels %}
-    {{ d.grafico_personal|json_script:"datosPersonal" }}
-{% endif %}
-
-{% if d.grafico_semaforo.labels %}
-    {{ d.grafico_semaforo|json_script:"datosSemaforo" }}
-{% endif %}
-
-{% if d.grafico_delegaciones.labels %}
-    {{ d.grafico_delegaciones|json_script:"datosDelegaciones" }}
-{% endif %}
-
-{% if d.grafico_agenda.labels %}
-    {{ d.grafico_agenda|json_script:"datosAgenda" }}
-{% endif %}
-
-{% if d.grafico_evolucion.labels %}
-    {{ d.grafico_evolucion|json_script:"datosEvolucion" }}
-{% endif %}
-
-{% if d.grafico_evidencias.labels %}
-    {{ d.grafico_evidencias|json_script:"datosEvidencias" }}
-{% endif %}
-
+<!-- 8. DATOS JSON PARA CHART.JS -->
+{{ d.grafico_personal|json_script:"datosPersonal" }}
+{{ d.grafico_semaforo|json_script:"datosSemaforo" }}
+{{ d.grafico_delegaciones|json_script:"datosDelegaciones" }}
+{{ d.grafico_agenda|json_script:"datosAgenda" }}
+{{ d.grafico_evolucion|json_script:"datosEvolucion" }}
+{{ d.grafico_evidencias|json_script:"datosEvidencias" }}
 
 {% endwith %}
 {% endblock %}
 
-
-<!-- =========================================================
-     9. JAVASCRIPT Y CHART.JS
-========================================================== -->
-
 {% block extra_js %}
-
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 
 <script>
@@ -858,9 +636,7 @@ document.addEventListener("DOMContentLoaded", function () {
         "#DC3545"
     ];
 
-
     function obtenerDatos(id) {
-
         const elemento = document.getElementById(id);
 
         if (!elemento) {
@@ -873,86 +649,59 @@ document.addEventListener("DOMContentLoaded", function () {
             console.error("Error leyendo datos del gráfico:", id, error);
             return null;
         }
-
     }
 
-
     function opcionesBase() {
-
         return {
             responsive: true,
             maintainAspectRatio: false,
-
             plugins: {
                 legend: {
                     position: "bottom",
-
                     labels: {
                         usePointStyle: true,
                         padding: 16,
                         boxWidth: 8,
-                        font: {
-                            size: 11
-                        }
+                        font: { size: 11 }
                     }
                 },
-
                 tooltip: {
                     backgroundColor: "#333333",
-                    titleFont: {
-                        size: 12
-                    },
-                    bodyFont: {
-                        size: 11
-                    },
+                    titleFont: { size: 12 },
+                    bodyFont: { size: 11 },
                     padding: 10,
                     cornerRadius: 8
                 }
             }
         };
-
     }
 
-
     function crearBarras(id, datos, horizontal = false) {
-
         const canvas = document.getElementById(id);
 
-        if (!canvas || !datos) {
+        if (!canvas || !datos || !datos.labels || !datos.labels.length) {
             return;
         }
 
         new Chart(canvas, {
-
             type: "bar",
-
             data: {
                 labels: datos.labels,
-
                 datasets: [{
                     label: "Cumplimiento",
                     data: datos.values,
-
                     backgroundColor: COLORES,
                     borderRadius: 6,
                     borderSkipped: false,
                     maxBarThickness: 32
                 }]
             },
-
             options: {
-
                 ...opcionesBase(),
-
                 indexAxis: horizontal ? "y" : "x",
-
                 plugins: {
                     ...opcionesBase().plugins,
-
-                    legend: {
-                        display: false
-                    },
-
+                    legend: { display: false },
                     tooltip: {
                         callbacks: {
                             label: function(context) {
@@ -961,68 +710,42 @@ document.addEventListener("DOMContentLoaded", function () {
                         }
                     }
                 },
-
                 scales: horizontal ? {
-
                     x: {
                         beginAtZero: true,
                         max: 100,
-
-                        grid: {
-                            color: "rgba(0,0,0,.06)"
-                        },
-
+                        grid: { color: "rgba(0,0,0,.06)" },
                         ticks: {
                             callback: value => value + "%"
                         }
                     },
-
                     y: {
-                        grid: {
-                            display: false
-                        }
+                        grid: { display: false }
                     }
-
                 } : {
-
                     y: {
                         beginAtZero: true,
-
-                        grid: {
-                            color: "rgba(0,0,0,.06)"
-                        }
+                        grid: { color: "rgba(0,0,0,.06)" }
                     },
-
                     x: {
-                        grid: {
-                            display: false
-                        }
+                        grid: { display: false }
                     }
-
                 }
-
             }
-
         });
-
     }
 
-
     function crearDona(id, datos, colores = COLORES) {
-
         const canvas = document.getElementById(id);
 
-        if (!canvas || !datos) {
+        if (!canvas || !datos || !datos.labels || !datos.labels.length) {
             return;
         }
 
         new Chart(canvas, {
-
             type: "doughnut",
-
             data: {
                 labels: datos.labels,
-
                 datasets: [{
                     data: datos.values,
                     backgroundColor: colores,
@@ -1031,137 +754,65 @@ document.addEventListener("DOMContentLoaded", function () {
                     hoverOffset: 7
                 }]
             },
-
             options: {
                 ...opcionesBase(),
                 cutout: "66%"
             }
-
         });
-
     }
 
-
     function crearLinea(id, datos) {
-
         const canvas = document.getElementById(id);
 
-        if (!canvas || !datos) {
+        if (!canvas || !datos || !datos.labels || !datos.labels.length) {
             return;
         }
 
         new Chart(canvas, {
-
             type: "line",
-
             data: {
                 labels: datos.labels,
-
                 datasets: [{
                     label: "Actividades",
                     data: datos.values,
-
                     borderColor: ROJO,
                     backgroundColor: "rgba(173,0,0,.10)",
-
                     fill: true,
                     tension: .35,
-
                     pointRadius: 4,
                     pointHoverRadius: 6,
-
                     pointBackgroundColor: ROJO,
                     pointBorderColor: "#FFFFFF",
                     pointBorderWidth: 2
                 }]
             },
-
             options: {
-
                 ...opcionesBase(),
-
                 plugins: {
                     ...opcionesBase().plugins,
-
-                    legend: {
-                        display: false
-                    }
+                    legend: { display: false }
                 },
-
                 scales: {
-
                     y: {
                         beginAtZero: true,
-
-                        grid: {
-                            color: "rgba(0,0,0,.06)"
-                        },
-
-                        ticks: {
-                            precision: 0
-                        }
+                        grid: { color: "rgba(0,0,0,.06)" },
+                        ticks: { precision: 0 }
                     },
-
                     x: {
-                        grid: {
-                            display: false
-                        }
+                        grid: { display: false }
                     }
-
                 }
-
             }
-
         });
-
     }
 
-
-    /* GRÁFICO 1 */
-    crearBarras(
-        "graficoPersonal",
-        obtenerDatos("datosPersonal"),
-        true
-    );
-
-
-    /* GRÁFICO 2 */
-    crearDona(
-        "graficoSemaforo",
-        obtenerDatos("datosSemaforo"),
-        COLORES_SEMAFORO
-    );
-
-
-    /* GRÁFICO 3 */
-    crearBarras(
-        "graficoDelegaciones",
-        obtenerDatos("datosDelegaciones"),
-        false
-    );
-
-
-    /* GRÁFICO 4 */
-    crearDona(
-        "graficoAgenda",
-        obtenerDatos("datosAgenda")
-    );
-
-
-    /* GRÁFICO 5 */
-    crearLinea(
-        "graficoEvolucion",
-        obtenerDatos("datosEvolucion")
-    );
-
-
-    /* GRÁFICO 6 */
-    crearDona(
-        "graficoEvidencias",
-        obtenerDatos("datosEvidencias")
-    );
+    crearBarras("graficoPersonal", obtenerDatos("datosPersonal"), true);
+    crearDona("graficoSemaforo", obtenerDatos("datosSemaforo"), COLORES_SEMAFORO);
+    crearBarras("graficoDelegaciones", obtenerDatos("datosDelegaciones"), false);
+    crearDona("graficoAgenda", obtenerDatos("datosAgenda"));
+    crearLinea("graficoEvolucion", obtenerDatos("datosEvolucion"));
+    crearDona("graficoEvidencias", obtenerDatos("datosEvidencias"));
 
 });
 </script>
-
 {% endblock %}
