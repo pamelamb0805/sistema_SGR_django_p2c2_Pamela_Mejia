@@ -28,7 +28,10 @@
     {% block extra_css %}{% endblock %}
 </head>
 
-<body class="{% if user.is_authenticated %}sgr-app{% else %}sgr-guest{% endif %}">
+<body
+    class="{% if user.is_authenticated %}sgr-app{% else %}sgr-guest{% endif %}"
+    data-sgr-module="{{ request.resolver_match.app_name|default:'' }}"
+>
 
 <a class="visually-hidden-focusable position-absolute p-2 bg-white"
    href="#contenido">
@@ -459,6 +462,7 @@
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.10.8/dist/sweetalert2.all.min.js"></script>
 
 <script src="{% static 'js/alerts.js' %}"></script>
+<script src="{% static 'js/sgr-websocket.js' %}?v=20261111-1"></script>
 
 {% block extra_js %}{% endblock %}
 

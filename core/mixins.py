@@ -25,6 +25,8 @@ from .exceptions import ReglaNegocioError
 
 from django.core.exceptions import ImproperlyConfigured
 
+from django.apps import apps
+from django.db import transaction
 
 logger = logging.getLogger(__name__)
 
@@ -231,17 +233,23 @@ def filtrar_por_ambito(queryset, user, campo="delegacion_id"):
 # ---------------------------------------------------------------------------
 # Auditoría y denegación de acceso
 # ---------------------------------------------------------------------------
-def auditar(usuario, evento, entidad="", id_entidad=0, valor_anterior=None, valor_nuevo=None):
+
+def auditar(
+    usuario,
+    evento,
+    entidad="",
+    id_entidad=0,
+    valor_anterior=None,
+    valor_nuevo=None,
+):
     """
-    Envoltorio seguro hacia audit.services.registrar_evento (usable desde servicios).
-    Nunca debe romper la operación: si audit aún no existe o falla, se informa en el log.
+    Registra auditoría y publica notificaciones para acciones especiales.
+    Las operaciones CREAR, MODIFICAR y ELIMINAR ya se notifican
+    desde core.services, por lo que aquí no se duplican.
     """
     try:
         from audit.services import registrar_evento
-    except ImportError:
-        logger.debug("App audit aún no disponible; evento %s no registrado.", evento)
-        return
-    try:
+
         registrar_evento(
             usuario=usuario,
             evento=evento,
@@ -250,8 +258,78 @@ def auditar(usuario, evento, entidad="", id_entidad=0, valor_anterior=None, valo
             valor_anterior=valor_anterior,
             valor_nuevo=valor_nuevo,
         )
-    except Exception:  # pragma: no cover
-        logger.exception("No se pudo registrar el evento de auditoría %s", evento)
+
+    except ImportError:
+        logger.debug(
+            "App audit aún no disponible; evento %s no registrado.",
+            evento,
+        )
+        return
+
+    except Exception:
+        logger.exception(
+            "No se pudo registrar el evento de auditoría %s.",
+            evento,
+        )
+        return
+
+    # Las operaciones normales ya se publican desde core.services.
+    if evento in ("CREAR", "MODIFICAR", "ELIMINAR"):
+        return
+
+    entidades = {
+        "delegacion": ("organizations", "Delegacion", "organizations"),
+        "cargo": ("organizations", "Cargo", "organizations"),
+        "item_medible": ("organizations", "ItemMedible", "organizations"),
+        "rol": ("organizations", "Rol", "organizations"),
+        "funcionario": ("organizations", "Funcionario", "organizations"),
+        "usuario": ("organizations", "Usuario", "organizations"),
+        "catalogo": ("catalogs", "Catalogo", "catalogs"),
+        "periodo": ("measurement", "Periodo", "measurement"),
+        "meta": ("measurement", "Meta", "measurement"),
+        "ajuste": ("measurement", "Ajuste", "measurement"),
+        "actividad": ("activities", "Actividad", "activities"),
+        "evidencia": ("activities", "Evidencia", "activities"),
+        "validacion": ("activities", "Validacion", "activities"),
+        "compromiso": ("agenda", "Compromiso", "agenda"),
+        "usuario_social": ("social", "UsuarioSocial", "social"),
+        "atencion_social": ("social", "AtencionSocial", "social"),
+    }
+
+    configuracion = entidades.get(str(entidad).lower())
+
+    if not configuracion or not id_entidad:
+        return
+
+    app_label, modelo, modulo = configuracion
+
+    def publicar():
+        try:
+            modelo_objeto = apps.get_model(app_label, modelo)
+
+            objeto = modelo_objeto.objects.filter(
+                pk=id_entidad
+            ).first()
+
+            if objeto is None:
+                return
+
+            from websocket.services import publish_crud_event
+
+            publish_crud_event(
+                module=modulo,
+                action=str(evento).lower(),
+                actor=usuario,
+                objeto=objeto,
+            )
+
+        except Exception:
+            logger.exception(
+                "No se pudo publicar el evento especial %s.",
+                evento,
+            )
+
+    transaction.on_commit(publicar)
 
 
 def registrar_auditoria(request, evento, entidad="", id_entidad=0, valor_anterior=None, valor_nuevo=None):
