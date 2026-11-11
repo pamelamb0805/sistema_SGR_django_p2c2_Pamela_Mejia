@@ -40,34 +40,36 @@ class LecturaMixin(RolRequeridoMixin):
     roles_permitidos = ROLES_SUPERVISION
 
 
+
 class EscrituraMixin(RolRequeridoMixin):
     roles_permitidos = ROLES_CONFIGURACION
 
-    def _filtrar_usuarios_por_estado(queryset, estado):
-        """
-        Aplica el mismo criterio de estado que utiliza Usuario.is_active.
-        """
-        if estado == "ACTIVO":
-            return queryset.filter(
-                activo_acceso=True,
-            ).filter(
-                Q(is_superuser=True)
-                | Q(funcionario__estado=Funcionario.ESTADO_ACTIVO)
-            )
 
-        if estado == "INACTIVO":
-            return queryset.filter(
-                Q(activo_acceso=False)
-                | (
-                    Q(is_superuser=False)
-                    & (
-                        Q(funcionario__estado=Funcionario.ESTADO_INACTIVO)
-                        | Q(funcionario__isnull=True)
-                    )
+def _filtrar_usuarios_por_estado(queryset, estado):
+    """
+    Aplica el mismo criterio de estado que utiliza Usuario.is_active.
+    """
+    if estado == "ACTIVO":
+        return queryset.filter(
+            activo_acceso=True,
+        ).filter(
+            Q(is_superuser=True)
+            | Q(funcionario__estado=Funcionario.ESTADO_ACTIVO)
+        )
+
+    if estado == "INACTIVO":
+        return queryset.filter(
+            Q(activo_acceso=False)
+            | (
+                Q(is_superuser=False)
+                & (
+                    Q(funcionario__estado=Funcionario.ESTADO_INACTIVO)
+                    | Q(funcionario__isnull=True)
                 )
             )
+        )
 
-        return queryset
+    return queryset
 
 # ---------------------------------------------------------------------------
 # Delegaciones
@@ -544,6 +546,7 @@ class FuncionarioAccesoView(EscrituraMixin, View):
             pk=funcionario.pk,
         )
 
+
 class UsuarioListView(EscrituraMixin, ListView):
     model = Usuario
     template_name = "organization/usuario_.html"
@@ -567,12 +570,17 @@ class UsuarioListView(EscrituraMixin, ListView):
                 | Q(email__icontains=q)
                 | Q(funcionario__nombre__icontains=q)
             )
-        queryset = _filtrar_usuarios_por_estado(queryset, estado)
+
+        queryset = _filtrar_usuarios_por_estado(
+            queryset,
+            estado,
+        )
 
         return queryset
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+
         context.update({
             "q": self.request.GET.get("q", ""),
             "estado_sel": self.request.GET.get("estado", ""),
@@ -582,6 +590,7 @@ class UsuarioListView(EscrituraMixin, ListView):
             ],
             "titulo": "Usuarios",
         })
+
         return context
 
 
@@ -754,14 +763,17 @@ def exportar_roles_excel(request):
         filas,
     )
 
-
 @login_required
 def exportar_usuarios_excel(request):
     if not tiene_rol(request.user, *ROLES_CONFIGURACION):
         return HttpResponse("No autorizado", status=403)
 
-    queryset = _filtrar_usuarios_por_estado(queryset, estado)
-    
+    queryset = (
+        Usuario.objects
+        .select_related("funcionario", "funcionario__delegacion")
+        .prefetch_related("delegaciones_autorizadas")
+        .order_by("username")
+    )
 
     q = request.GET.get("q", "").strip()
     estado = request.GET.get("estado", "").strip()
@@ -773,17 +785,10 @@ def exportar_usuarios_excel(request):
             | Q(funcionario__nombre__icontains=q)
         )
 
-    if estado == "ACTIVO":
-        queryset = queryset.filter(
-            activo_acceso=True,
-            funcionario__activo=True,
-        )
-    elif estado == "INACTIVO":
-        queryset = queryset.filter(
-            Q(activo_acceso=False)
-            | Q(funcionario__activo=False)
-            | Q(funcionario__isnull=True)
-        )
+    queryset = _filtrar_usuarios_por_estado(
+        queryset,
+        estado,
+    )
 
     filas = []
 
@@ -791,7 +796,9 @@ def exportar_usuarios_excel(request):
         delegaciones = []
 
         if usuario.funcionario and usuario.funcionario.delegacion:
-            delegaciones.append(usuario.funcionario.delegacion.nombre)
+            delegaciones.append(
+                usuario.funcionario.delegacion.nombre
+            )
 
         delegaciones.extend(
             usuario.delegaciones_autorizadas.values_list(
