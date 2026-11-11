@@ -1,0 +1,806 @@
+
+/* ==========================================================
+   SGR - IDENTIDAD VISUAL MUNICIPAL
+   Inspiración: Eco Friendly Modern UI
+   Municipalidad de La Serena
+   Diseño: fondo rojo oscuro + superficies claras
+========================================================== */
+
+:root {
+    --sgr-primary: #AD0000;
+    --sgr-dark: #4D0000;
+    --sgr-dark-secondary: #660000;
+    --sgr-accent: #CC6600;
+
+    --sgr-red-light: #F9DCDC;
+    --sgr-red-soft: #F2B5B5;
+
+    --sgr-background: #F5F6F5;
+    --sgr-surface: #FFFFFF;
+    --sgr-surface-soft: #FAF9F8;
+
+    --sgr-text: #333333;
+    --sgr-muted: #737C7B;
+    --sgr-border: #E7E8E5;
+
+    --sgr-success: #25845D;
+    --sgr-warning: #D18A18;
+    --sgr-danger: #C43D42;
+    --sgr-info: #397B91;
+
+    --sgr-radius: 13px;
+    --sgr-radius-lg: 18px;
+
+    --sgr-shadow:
+        0 3px 12px rgba(0, 0, 0, .045),
+        0 8px 24px rgba(0, 0, 0, .035);
+
+    --sgr-shadow-hover:
+        0 10px 28px rgba(77, 0, 0, .13);
+
+    --bs-primary: #AD0000;
+    --bs-primary-rgb: 173, 0, 0;
+    --bs-body-color: #333333;
+    --bs-body-bg: #F5F6F5;
+    --bs-border-color: #E7E8E5;
+}
+
+/* ==========================================================
+   FONDO GENERAL ROJO OSCURO
+========================================================== */
+
+* {
+    box-sizing: border-box;
+}
+
+html {
+    scroll-behavior: smooth;
+}
+
+body.sgr-app {
+    min-height: 100vh;
+    color: var(--sgr-text);
+    background: var(--sgr-dark);
+    font-family: Inter, "Segoe UI", Arial, sans-serif;
+    font-size: .91rem;
+    line-height: 1.5;
+}
+
+body.sgr-guest {
+    min-height: 100vh;
+    color: var(--sgr-text);
+    background:
+        radial-gradient(
+            circle at 15% 15%,
+            #660000 0,
+            #4D0000 45%,
+            #330000 100%
+        );
+    font-family: Inter, "Segoe UI", Arial, sans-serif;
+}
+
+a {
+    color: var(--sgr-primary);
+    text-decoration: none;
+}
+
+a:hover {
+    color: var(--sgr-dark-secondary);
+}
+
+::selection {
+    color: white;
+    background: var(--sgr-primary);
+}
+
+main:focus {
+    outline: none;
+}
+
+/* ==========================================================
+   BARRA SUPERIOR
+========================================================== */
+
+.sgr-topbar {
+    min-height: 68px;
+    padding: 0 .8rem !important;
+    background: var(--sgr-dark);
+    border-bottom: 1px solid rgba(255, 255, 255, .12);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, .15);
+}
+
+.sgr-topbar .navbar-brand {
+    color: #FFFFFF;
+}
+
+.sgr-topbar .navbar-brand span {
+    letter-spacing: -.02em;
+}
+
+.sgr-brand-logo {
+    width: 175px;
+    height: 40px;
+    object-fit: contain;
+}
+
+.sgr-brand-mobile {
+    width: 38px;
+    height: 38px;
+    object-fit: contain;
+}
+
+.sgr-topbar .navbar-toggler {
+    color: white;
+}
+
+.sgr-topbar .dropdown-menu {
+    min-width: 225px;
+    padding: 8px;
+    border: 1px solid var(--sgr-border);
+    border-radius: var(--sgr-radius);
+    box-shadow: var(--sgr-shadow-hover);
+}
+
+.sgr-topbar .dropdown-item {
+    padding: 9px 11px;
+    border-radius: 7px;
+    font-size: .84rem;
+}
+
+.sgr-topbar .dropdown-item:hover {
+    color: var(--sgr-dark);
+    background: var(--sgr-red-light);
+}
+
+/* ==========================================================
+   ESTRUCTURA PRINCIPAL
+========================================================== */
+
+body.sgr-app > .container-fluid {
+    min-height: calc(100vh - 68px);
+    padding-left: 0;
+    padding-right: 0;
+    background: var(--sgr-dark);
+}
+
+body.sgr-app > .container-fluid > .row {
+    min-height: calc(100vh - 68px);
+    margin: 0;
+}
+
+/* ==========================================================
+   MENÚ LATERAL ROJO OSCURO
+========================================================== */
+
+.sgr-sidebar {
+    color: #FFFFFF;
+    background: var(--sgr-dark-secondary);
+    border-right: 1px solid rgba(255, 255, 255, .09);
+}
+
+@media (min-width: 992px) {
+    .sgr-sidebar {
+        position: sticky;
+        top: 68px;
+        height: calc(100vh - 68px);
+        overflow-y: auto;
+    }
+}
+
+.sgr-sidebar .offcanvas-header {
+    color: white;
+    background: var(--sgr-dark);
+}
+
+.sgr-sidebar .offcanvas-title {
+    color: white;
+}
+
+.sgr-sidebar .btn-close {
+    filter: invert(1);
+}
+
+.sgr-sidebar .offcanvas-body {
+    background: transparent;
+}
+
+.sgr-sidebar .nav {
+    padding: 13px 8px 24px;
+}
+
+.sgr-sidebar .nav-link {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    min-height: 41px;
+    padding: 9px 12px;
+    margin: 2px 4px;
+    color: #F5EAEA;
+    font-size: .83rem;
+    font-weight: 550;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    transition: background .2s ease, color .2s ease;
+}
+
+.sgr-sidebar .nav-link:hover {
+    color: white;
+    background: rgba(255, 255, 255, .10);
+}
+
+.sgr-sidebar .nav-link.active {
+    color: var(--sgr-dark);
+    background: #FFFFFF;
+    border-color: rgba(255, 255, 255, .25);
+    font-weight: 750;
+    box-shadow: 0 3px 12px rgba(0, 0, 0, .12);
+}
+
+.sgr-sidebar .nav-link .bi {
+    width: 19px;
+    font-size: 1rem;
+    text-align: center;
+    color: #F2B5B5;
+}
+
+.sgr-sidebar .nav-link.active .bi {
+    color: var(--sgr-primary);
+}
+
+.sgr-nav-heading {
+    padding: 19px 12px 6px;
+    color: #E4BDBD;
+    font-size: .65rem;
+    font-weight: 800;
+    letter-spacing: .10em;
+    text-transform: uppercase;
+    list-style: none;
+}
+
+/* ==========================================================
+   ÁREA DE CONTENIDO CLARA
+========================================================== */
+
+main#contenido {
+    min-width: 0;
+    min-height: calc(100vh - 68px);
+    padding-top: 25px !important;
+    padding-bottom: 30px !important;
+    color: var(--sgr-text);
+    background: var(--sgr-background);
+    border-radius: 18px 0 0 0;
+}
+
+main#contenido > .d-flex.border-bottom {
+    min-height: 48px;
+    border-color: var(--sgr-border) !important;
+}
+
+main#contenido h1 {
+    color: var(--sgr-dark);
+    font-size: 1.4rem;
+    font-weight: 800;
+    letter-spacing: -.035em;
+}
+
+/* ==========================================================
+   TARJETAS Y PANELES
+========================================================== */
+
+.card,
+.sgr-tarjeta,
+.sgr-form-card,
+.sgr-table-card {
+    overflow: hidden;
+    color: var(--sgr-text);
+    background: var(--sgr-surface);
+    border: 1px solid var(--sgr-border);
+    border-radius: var(--sgr-radius);
+    box-shadow: var(--sgr-shadow);
+}
+
+.card {
+    transition: box-shadow .2s ease, transform .2s ease;
+}
+
+.card:hover {
+    box-shadow: var(--sgr-shadow-hover);
+}
+
+.card-header {
+    padding: 14px 17px;
+    color: var(--sgr-dark);
+    background: #FFFFFF;
+    border-bottom: 1px solid var(--sgr-border);
+    font-weight: 750;
+}
+
+.card-body {
+    padding: 17px;
+}
+
+.card-footer {
+    padding: 12px 16px;
+    background: var(--sgr-surface-soft);
+    border-top: 1px solid var(--sgr-border);
+}
+
+/* ==========================================================
+   INDICADORES KPI
+========================================================== */
+
+.sgr-kpi {
+    color: var(--sgr-text);
+    background: #FFFFFF !important;
+    border: 1px solid var(--sgr-border) !important;
+    border-left: 4px solid var(--sgr-primary) !important;
+    border-radius: var(--sgr-radius) !important;
+    box-shadow: var(--sgr-shadow) !important;
+}
+
+.sgr-kpi:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--sgr-shadow-hover) !important;
+}
+
+.sgr-kpi-icon {
+    color: var(--sgr-primary);
+    background: var(--sgr-red-light);
+    border-radius: 11px;
+}
+
+/* ==========================================================
+   GRÁFICOS
+========================================================== */
+
+.sgr-chart-card {
+    color: var(--sgr-text);
+    background: white;
+    border: 1px solid var(--sgr-border);
+    border-radius: var(--sgr-radius);
+    box-shadow: var(--sgr-shadow);
+}
+
+.sgr-chart-header {
+    color: var(--sgr-dark);
+    background: white;
+}
+
+.sgr-chart-title {
+    color: var(--sgr-dark);
+    font-weight: 750;
+}
+
+.sgr-chart-subtitle {
+    color: var(--sgr-muted);
+}
+
+/* ==========================================================
+   TABLAS
+========================================================== */
+
+.table-responsive {
+    width: 100%;
+    border-radius: 0 0 var(--sgr-radius) var(--sgr-radius);
+}
+
+.table {
+    margin-bottom: 0;
+    color: var(--sgr-text);
+    font-size: .84rem;
+    vertical-align: middle;
+}
+
+.table thead th {
+    padding: 12px 13px;
+    color: var(--sgr-dark);
+    background: #F9EEEE;
+    border-bottom: 1px solid #EBD9D9;
+    font-size: .72rem;
+    font-weight: 800;
+    letter-spacing: .035em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.table tbody td {
+    padding: 11px 13px;
+    border-color: #F0F0ED;
+}
+
+.table-hover tbody tr:hover {
+    background: #FCF6F5;
+}
+
+.table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+/* ==========================================================
+   BOTONES
+========================================================== */
+
+.btn {
+    min-height: 36px;
+    padding: .45rem .85rem;
+    border-radius: 8px;
+    font-size: .83rem;
+    font-weight: 650;
+    transition: background .18s ease, border-color .18s ease;
+}
+
+.btn-primary,
+.btn-muni {
+    --bs-btn-color: #FFFFFF;
+    --bs-btn-bg: #AD0000;
+    --bs-btn-border-color: #AD0000;
+    --bs-btn-hover-color: #FFFFFF;
+    --bs-btn-hover-bg: #660000;
+    --bs-btn-hover-border-color: #660000;
+    --bs-btn-active-bg: #4D0000;
+    --bs-btn-active-border-color: #4D0000;
+    --bs-btn-disabled-bg: #AD0000;
+    --bs-btn-disabled-border-color: #AD0000;
+}
+
+.btn-outline-primary {
+    --bs-btn-color: #AD0000;
+    --bs-btn-border-color: #AD0000;
+    --bs-btn-hover-color: #FFFFFF;
+    --bs-btn-hover-bg: #AD0000;
+    --bs-btn-hover-border-color: #AD0000;
+    --bs-btn-active-bg: #660000;
+}
+
+.btn-light {
+    color: var(--sgr-dark);
+    background: #F8F8F7;
+    border-color: var(--sgr-border);
+}
+
+.btn-link {
+    min-height: auto;
+}
+
+/* ==========================================================
+   FORMULARIOS
+========================================================== */
+
+.form-label {
+    margin-bottom: 5px;
+    color: #454C49;
+    font-size: .82rem;
+    font-weight: 700;
+}
+
+.form-control,
+.form-select {
+    min-height: 39px;
+    padding: .48rem .72rem;
+    color: var(--sgr-text);
+    background-color: white;
+    border: 1px solid #DADDD9;
+    border-radius: 8px;
+    font-size: .85rem;
+}
+
+textarea.form-control {
+    min-height: 90px;
+}
+
+.form-control::placeholder {
+    color: #A1A6A2;
+}
+
+.form-control:focus,
+.form-select:focus {
+    color: var(--sgr-text);
+    background-color: white;
+    border-color: #C87979;
+    box-shadow: 0 0 0 .2rem rgba(173, 0, 0, .12);
+}
+
+.form-check-input:checked {
+    background-color: var(--sgr-primary);
+    border-color: var(--sgr-primary);
+}
+
+.form-check-input:focus {
+    border-color: #C87979;
+    box-shadow: 0 0 0 .2rem rgba(173, 0, 0, .12);
+}
+
+.input-group-text {
+    color: #656C68;
+    background: #F5F5F3;
+    border-color: #DADDD9;
+}
+
+/* ==========================================================
+   MODALES
+========================================================== */
+
+.modal-content {
+    overflow: hidden;
+    color: var(--sgr-text);
+    background: white;
+    border: 1px solid var(--sgr-border);
+    border-radius: 16px;
+    box-shadow: 0 15px 50px rgba(0, 0, 0, .18);
+}
+
+.modal-header {
+    padding: 15px 18px;
+    background: #F9EEEE;
+    border-bottom: 1px solid var(--sgr-border);
+}
+
+.modal-title {
+    color: var(--sgr-dark);
+    font-size: 1rem;
+    font-weight: 800;
+}
+
+.modal-body {
+    padding: 18px;
+}
+
+.modal-footer {
+    padding: 12px 18px;
+    background: #FBFBFA;
+    border-top: 1px solid var(--sgr-border);
+}
+
+/* ==========================================================
+   BADGES Y ESTADOS
+========================================================== */
+
+.badge {
+    padding: .42em .65em;
+    border-radius: 6px;
+    font-weight: 700;
+}
+
+.text-bg-primary {
+    color: white !important;
+    background-color: var(--sgr-primary) !important;
+}
+
+.text-bg-success {
+    background-color: var(--sgr-success) !important;
+}
+
+.text-bg-warning {
+    color: #473000 !important;
+    background-color: #F5D58D !important;
+}
+
+.text-bg-danger {
+    background-color: var(--sgr-danger) !important;
+}
+
+/* ==========================================================
+   ALERTAS
+========================================================== */
+
+.alert {
+    padding: 11px 14px;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    font-size: .85rem;
+}
+
+.alert-primary {
+    color: var(--sgr-dark);
+    background: var(--sgr-red-light);
+    border-color: #E8BABA;
+}
+
+.alert-success {
+    color: #176344;
+    background: #EAF5EF;
+    border-color: #C5E3D1;
+}
+
+.alert-warning {
+    color: #78500D;
+    background: #FFF6E3;
+    border-color: #F0D9A8;
+}
+
+.alert-danger {
+    color: #92272D;
+    background: #FCECED;
+    border-color: #EBC4C6;
+}
+
+.alert-info {
+    color: #245C70;
+    background: #EAF4F7;
+    border-color: #C7E1E9;
+}
+
+/* ==========================================================
+   PAGINACIÓN
+========================================================== */
+
+.pagination {
+    gap: 3px;
+    --bs-pagination-color: #AD0000;
+    --bs-pagination-hover-color: #660000;
+    --bs-pagination-hover-bg: #F9DCDC;
+    --bs-pagination-border-color: #E7E8E5;
+    --bs-pagination-active-bg: #AD0000;
+    --bs-pagination-active-border-color: #AD0000;
+    --bs-pagination-border-radius: 7px;
+}
+
+.pagination .page-link {
+    min-width: 34px;
+    text-align: center;
+    border-radius: 7px;
+    font-size: .82rem;
+}
+
+/* ==========================================================
+   PROGRESO Y BARRAS
+========================================================== */
+
+.progress {
+    height: 9px;
+    overflow: hidden;
+    background: #ECEDE9;
+    border-radius: 20px;
+}
+
+.progress-bar {
+    background-color: var(--sgr-primary);
+    border-radius: 20px;
+}
+
+/* ==========================================================
+   BREADCRUMBS
+========================================================== */
+
+.breadcrumb {
+    font-size: .8rem;
+}
+
+.breadcrumb-item a {
+    color: var(--sgr-primary);
+    font-weight: 600;
+}
+
+.breadcrumb-item.active {
+    color: var(--sgr-muted);
+}
+
+/* ==========================================================
+   FOOTER
+========================================================== */
+
+footer {
+    color: #8A908C !important;
+    border-color: var(--sgr-border) !important;
+    font-size: .76rem;
+}
+
+/* ==========================================================
+   LOGIN Y PÁGINAS DE ACCESO
+========================================================== */
+
+.sgr-login-card {
+    color: var(--sgr-text);
+    background: white;
+    border: 1px solid rgba(255, 255, 255, .25);
+    border-radius: 18px;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, .20);
+}
+
+.sgr-login-logo {
+    max-width: 190px;
+    max-height: 85px;
+    object-fit: contain;
+}
+
+/* ==========================================================
+   ACCESIBILIDAD
+========================================================== */
+
+:focus-visible {
+    outline: 3px solid #397B91;
+    outline-offset: 2px;
+}
+
+/* ==========================================================
+   RESPONSIVE
+========================================================== */
+
+@media (max-width: 991.98px) {
+    .sgr-sidebar {
+        width: min(310px, 88vw);
+        background: var(--sgr-dark-secondary);
+    }
+
+    main#contenido {
+        border-radius: 0;
+    }
+}
+
+@media (max-width: 767.98px) {
+    body.sgr-app {
+        font-size: .87rem;
+    }
+
+    main#contenido {
+        padding: 18px 13px !important;
+    }
+
+    main#contenido h1 {
+        font-size: 1.16rem;
+    }
+
+    .card-body {
+        padding: 13px;
+    }
+
+    .table {
+        font-size: .78rem;
+    }
+
+    .table thead th,
+    .table tbody td {
+        padding: 8px;
+    }
+
+    .modal-body {
+        padding: 14px;
+    }
+}
+
+/* ==========================================================
+   MOVIMIENTO REDUCIDO
+========================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        scroll-behavior: auto !important;
+        transition-duration: .01ms !important;
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+    }
+}
+
+/* ==========================================================
+   IMPRESIÓN
+========================================================== */
+
+@media print {
+    .sgr-topbar,
+    .sgr-sidebar,
+    footer,
+    .no-print {
+        display: none !important;
+    }
+
+    body.sgr-app,
+    body.sgr-app > .container-fluid,
+    main#contenido {
+        color: black !important;
+        background: white !important;
+    }
+
+    main#contenido {
+        width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+
+    .card,
+    .sgr-table-card {
+        box-shadow: none !important;
+        break-inside: avoid;
+    }
+}
