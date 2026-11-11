@@ -24,6 +24,7 @@ urlpatterns = [
     path("ajustes/", views.AjusteListView.as_view(), name="ajuste_list"),
     path("ajustes/nuevo/", views.AjusteCreateView.as_view(), name="ajuste_create"),
     path("ajustes/<int:pk>/eliminar/", views.AjusteDeleteView.as_view(), name="ajuste_delete"),
+    path("ajustes/<int:pk>/editar/", views.AjusteUpdateView.as_view(), name="ajuste_update"),
 
     # Desempeño y semáforo
     path("mi-desempeno/", views.mi_desempeno, name="mi_desempeno"),

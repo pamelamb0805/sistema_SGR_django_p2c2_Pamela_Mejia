@@ -239,12 +239,30 @@ class CRUDAjuste:
     @staticmethod
     def crear_ajuste(ajuste, actor=None):
         _exigir_abierto(ajuste.periodo, "registrar ajustes")
+        ajuste.full_clean()
+        return guardar(ajuste, actor, "ajuste")
+
+    @staticmethod
+    def modificar_ajuste(ajuste, actor=None):
+        original = Ajuste.objects.select_related(
+            "periodo"
+        ).get(pk=ajuste.pk)
+
+        _exigir_abierto(original.periodo, "modificar ajustes")
+        _exigir_abierto(ajuste.periodo, "modificar ajustes")
+
+        ajuste.full_clean()
         return guardar(ajuste, actor, "ajuste")
 
     @staticmethod
     def eliminar_ajuste(ajuste, actor=None):
         _exigir_abierto(ajuste.periodo, "eliminar ajustes")
-        eliminar(ajuste, actor, "ajuste", "No se puede eliminar el ajuste.")
+        eliminar(
+            ajuste,
+            actor,
+            "ajuste",
+            "No se puede eliminar el ajuste."
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -36,7 +36,9 @@
                 {% csrf_token %}
 
                 {% if form.non_field_errors %}
-                    <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+                    <div class="alert alert-danger">
+                        {{ form.non_field_errors }}
+                    </div>
                 {% endif %}
 
                 <div class="row">
@@ -45,6 +47,7 @@
                             <label for="{{ field.id_for_label }}" class="form-label">
                                 {{ field.label }}
                             </label>
+
                             {{ field }}
 
                             {% if field.help_text %}
@@ -58,8 +61,13 @@
                     {% endfor %}
                 </div>
 
-                <button type="submit" class="btn btn-primary">Guardar ajuste</button>
-                <a href="{% url 'measurement:ajuste_list' %}" class="btn btn-outline-secondary">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-check-circle"></i>
+                    {% if object %}Guardar cambios{% else %}Guardar ajuste{% endif %}
+                </button>
+
+                <a href="{% url 'measurement:ajuste_list' %}"
+                   class="btn btn-outline-secondary">
                     Cancelar
                 </a>
             </form>
@@ -120,10 +128,12 @@
                     <label for="efecto" class="form-label">Tipo de ajuste</label>
                     <select name="efecto" id="efecto" class="form-select">
                         <option value="">Todos</option>
-                        <option value="Positivo" {% if efecto_sel == "Positivo" %}selected{% endif %}>
+                        <option value="Positivo"
+                            {% if efecto_sel == "Positivo" %}selected{% endif %}>
                             Incentivo
                         </option>
-                        <option value="Negativo" {% if efecto_sel == "Negativo" %}selected{% endif %}>
+                        <option value="Negativo"
+                            {% if efecto_sel == "Negativo" %}selected{% endif %}>
                             Penalización
                         </option>
                     </select>
@@ -133,6 +143,7 @@
                     <button type="submit" class="btn btn-primary">
                         <i class="bi bi-search"></i> Buscar y filtrar
                     </button>
+
                     <a href="{% url 'measurement:ajuste_list' %}"
                        class="btn btn-outline-secondary">
                         Limpiar filtros
@@ -145,7 +156,9 @@
     <div class="card shadow-sm">
         <div class="card-header d-flex justify-content-between align-items-center">
             <h5 class="mb-0">Ajustes registrados</h5>
-            <span class="text-muted small">Resultados: {{ total_resultados }}</span>
+            <span class="text-muted small">
+                Resultados: {{ total_resultados }}
+            </span>
         </div>
 
         <div class="card-body">
@@ -179,15 +192,21 @@
                                         {% if ajuste.meta %}
                                             {{ ajuste.meta.item.nombre_item }}
                                         {% else %}
-                                            <span class="text-muted">Sin meta asociada</span>
+                                            <span class="text-muted">
+                                                Sin meta asociada
+                                            </span>
                                         {% endif %}
                                     </td>
 
                                     <td>
                                         {% if ajuste.efecto == "Positivo" %}
-                                            <span class="badge bg-success">Incentivo</span>
+                                            <span class="badge bg-success">
+                                                Incentivo
+                                            </span>
                                         {% else %}
-                                            <span class="badge bg-danger">Penalización</span>
+                                            <span class="badge bg-danger">
+                                                Penalización
+                                            </span>
                                         {% endif %}
                                     </td>
 
@@ -207,18 +226,28 @@
 
                                     <td class="text-end">
                                         {% if puede_editar and ajuste.periodo.abierto %}
+
+                                            <a href="{% url 'measurement:ajuste_update' ajuste.pk %}"
+                                               class="btn btn-sm btn-outline-primary">
+                                                <i class="bi bi-pencil"></i> Editar
+                                            </a>
+
                                             <form method="post"
                                                   action="{% url 'measurement:ajuste_delete' ajuste.pk %}"
                                                   class="d-inline">
                                                 {% csrf_token %}
+
                                                 <button type="submit"
                                                         class="btn btn-sm btn-outline-danger"
                                                         onclick="return confirm('¿Estás segura de eliminar este ajuste?');">
                                                     <i class="bi bi-trash"></i> Eliminar
                                                 </button>
                                             </form>
+
                                         {% else %}
-                                            <span class="text-muted small">No disponible</span>
+                                            <span class="text-muted small">
+                                                No disponible
+                                            </span>
                                         {% endif %}
                                     </td>
                                 </tr>

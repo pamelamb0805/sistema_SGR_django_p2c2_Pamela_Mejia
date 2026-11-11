@@ -12,7 +12,7 @@ reabrir un período -> solo Administrador; lectura -> Administrador, Coordinador
 """
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.generic import CreateView, DetailView, ListView, UpdateView
@@ -391,6 +391,40 @@ class AjusteCreateView(MedicionMixin, ModoMixin, GuardarMixin, CreateView):
     def guardar(self, form):
         self.object = CRUDAjuste.crear_ajuste(form.instance, self.request.user)
 
+
+class AjusteUpdateView(MedicionMixin, ModoMixin, GuardarMixin, UpdateView):
+    model = Ajuste
+    form_class = AjusteForm
+    template_name = "measurement/ajuste_.html"
+    modo, titulo = "form", "Editar ajuste"
+    roles_edicion = ROLES_MEDICION
+    success_url_name = "measurement:ajuste_list"
+    mensaje_exito = "Ajuste actualizado."
+
+    def get_queryset(self):
+        return filtrar_por_ambito(
+            Ajuste.objects.select_related("funcionario", "periodo", "meta"),
+            self.request.user,
+            "funcionario__delegacion_id"
+        )
+
+    def dispatch(self, request, *args, **kwargs):
+        self.object = self.get_object()
+
+        if not self.object.periodo.abierto:
+            messages.error(
+                request,
+                "No se pueden modificar ajustes de períodos cerrados."
+            )
+            return redirect("measurement:ajuste_list")
+
+        return super().dispatch(request, *args, **kwargs)
+
+    def guardar(self, form):
+        self.object = CRUDAjuste.modificar_ajuste(
+            form.instance,
+            self.request.user
+        )
 
 class AjusteDeleteView(AccionPostView):
     roles_permitidos = ROLES_MEDICION
