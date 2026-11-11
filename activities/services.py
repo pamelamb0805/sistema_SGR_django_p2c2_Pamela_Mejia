@@ -18,7 +18,7 @@ from core.mixins import (
     ROLES_VALIDACION, ROL_CONSULTA, ROL_DELEGADO, ROL_VERIFICADOR,
     auditar, es_transversal, get_funcionario, tiene_rol,
 )
-from core.services import guardar, snapshot
+from core.services import guardar, snapshot, _notificar_crud
 from catalogs.models import Catalogo
 from measurement.models import Periodo
 from measurement.services import CalculoIndicadores
@@ -252,39 +252,84 @@ class CRUDValidacion:
     @staticmethod
     def _decidir(evidencia, decision, observacion, actor):
         observacion = (observacion or "").strip()
+
         if not tiene_rol(actor, *ROLES_VALIDACION):
             raise ReglaNegocioError("No tiene el rol de verificador.")
+
         verificador = get_funcionario(actor)
+
         if verificador is None:
             raise ReglaNegocioError("Su usuario no tiene un funcionario asociado.")
+
         if decision != Validacion.DECISION_APROBADA and not observacion:
-            raise ReglaNegocioError("Debe registrar una observación para rechazar o solicitar corrección.")
+            raise ReglaNegocioError(
+                "Debe registrar una observación para rechazar o solicitar corrección."
+            )
 
         with transaction.atomic():
             evidencia = Evidencia.objects.select_for_update().get(pk=evidencia.pk)
+
             if not evidencias_visibles(actor).filter(pk=evidencia.pk).exists():
                 raise ReglaNegocioError("La evidencia está fuera de su ámbito.")
-            actividad = Actividad.objects.select_for_update().get(pk=evidencia.actividad_id)
+
+            actividad = Actividad.objects.select_for_update().get(
+                pk=evidencia.actividad_id
+            )
+
             if verificador.pk == actividad.funcionario_id:
-                raise ReglaNegocioError("No puede validar sus propias actividades (segregación de funciones).")
+                raise ReglaNegocioError(
+                    "No puede validar sus propias actividades (segregación de funciones)."
+                )
+
             if actividad.estado == Actividad.ESTADO_ANULADA:
                 raise ReglaNegocioError("La actividad está anulada.")
-            _exigir_periodo_abierto(actividad.periodo_id, "validar evidencias")
+
+            _exigir_periodo_abierto(
+                actividad.periodo_id, "validar evidencias"
+            )
 
             version = evidencia.validaciones.count() + 1
             anterior = evidencia.estado_revision
-            Validacion.objects.create(evidencia=evidencia, funcionario=verificador, decision=decision,
-                                      observacion=observacion, version=version)
+
+            Validacion.objects.create(
+                evidencia=evidencia,
+                funcionario=verificador,
+                decision=decision,
+                observacion=observacion,
+                version=version
+            )
+
             evidencia.estado_revision = decision
             evidencia.save(update_fields=["estado_revision"])
+
             estado_anterior_actividad = actividad.estado
             _recalcular_estado(actividad)
-            auditar(actor, "VALIDAR_EVIDENCIA", "evidencia", evidencia.pk,
-                    json.dumps({"estado_revision": anterior, "estado_actividad": estado_anterior_actividad}),
-                    json.dumps({"decision": decision, "version": version, "observacion": observacion,
-                                "estado_actividad": actividad.estado}, ensure_ascii=False))
+
+            auditar(
+                actor,
+                "VALIDAR_EVIDENCIA",
+                "evidencia",
+                evidencia.pk,
+                json.dumps({
+                    "estado_revision": anterior,
+                    "estado_actividad": estado_anterior_actividad
+                }),
+                json.dumps({
+                    "decision": decision,
+                    "version": version,
+                    "observacion": observacion,
+                    "estado_actividad": actividad.estado
+                }, ensure_ascii=False)
+            )
+
             _recalcular_indicadores(actividad)
+
+            _notificar_crud(
+                "validacion", "actualizar", actor, evidencia
+            )
+
         return evidencia
+
 
     @staticmethod
     def aprobar_evidencia(evidencia, observacion="", actor=None):

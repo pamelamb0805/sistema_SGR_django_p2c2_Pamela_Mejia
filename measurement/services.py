@@ -19,7 +19,7 @@ from django.utils import timezone
 
 from core.exceptions import ReglaNegocioError
 from core.mixins import auditar
-from core.services import eliminar, guardar, snapshot
+from core.services import eliminar, guardar, snapshot, _notificar_crud
 from organizations.models import Funcionario
 
 from . import calculations as calc
@@ -41,6 +41,7 @@ def _exigir_abierto(periodo, accion="modificar"):
 # ---------------------------------------------------------------------------
 # CRUDPeriodo (RF-005, HU-28)
 # ---------------------------------------------------------------------------
+
 class CRUDPeriodo:
     @staticmethod
     def calcular_dias_computables(fecha_inicio, fecha_termino):
@@ -68,35 +69,67 @@ class CRUDPeriodo:
 
     @staticmethod
     def cerrar_periodo(periodo, actor=None):
-        """Congela los indicadores a la fecha de término y bloquea toda modificación (RN-013)."""
+        """Congela los indicadores a la fecha de término y bloquea toda modificación."""
         with transaction.atomic():
             periodo = Periodo.objects.select_for_update().get(pk=periodo.pk)
             if not periodo.abierto:
                 raise ReglaNegocioError("El período ya está cerrado.")
-            CalculoIndicadores.recalcular_periodo(periodo, fecha=periodo.fecha_termino, forzar=True)
+
+            CalculoIndicadores.recalcular_periodo(
+                periodo, fecha=periodo.fecha_termino, forzar=True
+            )
+
             anterior = snapshot(periodo)
             periodo.estado = Periodo.ESTADO_CERRADO
             periodo.save(update_fields=["estado"])
-            auditar(actor, "CERRAR_PERIODO", "periodo", periodo.pk, anterior, snapshot(periodo))
+
+            auditar(
+                actor, "CERRAR_PERIODO", "periodo",
+                periodo.pk, anterior, snapshot(periodo)
+            )
+
+            _notificar_crud("periodo", "actualizar", actor, periodo)
+
         return periodo
 
     @staticmethod
     def reabrir_periodo(periodo, motivo, actor=None):
-        """Reapertura autorizada y auditada (el rol se exige en la vista). Sube la versión de parámetros."""
+        """Reapertura autorizada y auditada."""
         motivo = (motivo or "").strip()
+
         if not motivo:
             raise ReglaNegocioError("Debe indicar el motivo de la reapertura.")
+
         with transaction.atomic():
             periodo = Periodo.objects.select_for_update().get(pk=periodo.pk)
+
             if periodo.abierto:
                 raise ReglaNegocioError("El período ya está abierto.")
+
             anterior = snapshot(periodo)
             periodo.estado = Periodo.ESTADO_ABIERTO
             periodo.version_parametros += 1
             periodo.save(update_fields=["estado", "version_parametros"])
-            auditar(actor, "REABRIR_PERIODO", "periodo", periodo.pk, anterior,
-                    json.dumps({"motivo": motivo, "periodo": json.loads(snapshot(periodo))}, ensure_ascii=False))
+
+            auditar(
+                actor,
+                "REABRIR_PERIODO",
+                "periodo",
+                periodo.pk,
+                anterior,
+                json.dumps(
+                    {
+                        "motivo": motivo,
+                        "periodo": json.loads(snapshot(periodo))
+                    },
+                    ensure_ascii=False
+                )
+            )
+
+            _notificar_crud("periodo", "actualizar", actor, periodo)
+
         return periodo
+
 
 
 # ---------------------------------------------------------------------------
