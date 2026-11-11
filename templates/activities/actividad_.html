@@ -8,10 +8,18 @@
 {% endblock %}
 
 {% block page_actions %}
-  {% if modo == "lista" and puede_editar %}
-    <a class="btn btn-primary" href="{% url 'activities:actividad_create' %}">
-      <i class="bi bi-plus-lg me-1"></i>Registrar actividad
-    </a>
+  {% if modo == "lista" %}
+    <div class="d-flex flex-wrap gap-2">
+      <a class="btn btn-outline-success"
+         href="{% url 'activities:actividad_exportar_excel' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}">
+        <i class="bi bi-file-earmark-excel me-1"></i>Exportar Excel
+      </a>
+      {% if puede_editar %}
+        <a class="btn btn-primary" href="{% url 'activities:actividad_create' %}">
+          <i class="bi bi-plus-lg me-1"></i>Registrar actividad
+        </a>
+      {% endif %}
+    </div>
   {% endif %}
 {% endblock %}
 

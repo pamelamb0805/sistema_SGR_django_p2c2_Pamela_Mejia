@@ -24,7 +24,7 @@ from core.mixins import (
     GuardarMixin, ModoMixin, RolRequeridoMixin, denegar_acceso, es_transversal,
     filtrar_por_ambito, get_funcionario, tiene_rol,
 )
-from organizations.models import Cargo, Delegacion, Funcionario
+from organizations.models import Cargo, Delegacion, Funcionario, ItemMedible
 
 from .forms import AjusteForm, MetaForm, PeriodoForm, ReabrirPeriodoForm
 from .models import Ajuste, Meta as MetaModel, Periodo
@@ -216,6 +216,9 @@ class MetaListView(LecturaMixin, AmbitoDelegacionMixin, ModoMixin, ListView):
             item_sel=g.get("item", ""),
             q=g.get("q", ""),
             total_resultados=self.get_queryset().count(),
+            items=ItemMedible.objects.select_related("cargo").order_by(
+            "cargo__nombre_cargo", "nombre_item"
+            ),
         )
         return contexto
 
