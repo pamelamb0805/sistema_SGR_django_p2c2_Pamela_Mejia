@@ -1,13 +1,9 @@
 
 from django.urls import path
 
-from .consumers import SGRCrudConsumer
+from .consumers import SGRConsumer
 
 
 websocket_urlpatterns = [
-    path(
-        "ws/crud/",
-        SGRCrudConsumer.as_asgi(),
-        name="sgr_crud_websocket",
-    ),
+    path("ws/sgr/", SGRConsumer.as_asgi()),
 ]
