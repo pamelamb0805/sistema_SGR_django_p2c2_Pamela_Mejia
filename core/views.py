@@ -34,6 +34,7 @@ import time
 from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
 from django.shortcuts import redirect, render
+from organizations.forms import PerfilUsuarioForm
 
 class SGRLoginView(LoginView):
     template_name = "registration/login.html"
@@ -146,7 +147,7 @@ def dashboard(request):
 
 
 # Recuperación con código de un solo uso.
-CODIGO_VIGENCIA_SEGUNDOS = 600
+CODIGO_VIGENCIA_SEGUNDOS = 120
 CODIGO_REENVIO_SEGUNDOS = 45
 CODIGO_MAX_INTENTOS = 5
 CODIGO_MAX_REENVIOS = 3
@@ -191,7 +192,7 @@ def recuperar_clave(request):
             User = get_user_model()
             user = User.objects.filter(email__iexact=email).first()
 
-            # Mensaje neutro: no revelar si el correo está registrado.
+            # No revelar si el correo está registrado.
             if user and user.is_active and user.email:
                 codigo = f"{secrets.randbelow(1000000):06d}"
 
@@ -208,17 +209,21 @@ def recuperar_clave(request):
                 }
 
                 try:
+                    asunto = "Código de recuperación SGR"
+                    mensaje = (
+                        f"Tu código de recuperación es {codigo}. "
+                        "Vence en 2 minutos. "
+                        "Si no lo solicitaste, ignora este correo."
+                    )
+
                     send_mail(
-                        subject="Código de recuperación SGR",
-                        message=(
-                            f"Tu código de recuperación es {codigo}. "
-                            "Vence en 10 minutos. "
-                            "Si no lo solicitaste, ignora este correo."
-                        ),
-                        from_email=settings.DEFAULT_FROM_EMAIL,
-                        recipient_list=[email],
+                        asunto,
+                        mensaje,
+                        settings.DEFAULT_FROM_EMAIL,
+                        [email],
                         fail_silently=False,
                     )
+
                 except Exception:
                     request.session.pop("recuperacion_sgr", None)
                     messages.error(
@@ -238,6 +243,7 @@ def recuperar_clave(request):
                 "recibirás un código de recuperación.",
             )
             return redirect("validar_codigo")
+
     else:
         form = SolicitarCodigoForm()
 
@@ -246,6 +252,7 @@ def recuperar_clave(request):
         "registration/recuperar_clave.html",
         {"form": form},
     )
+
 
 
 def validar_codigo(request):
@@ -395,4 +402,55 @@ def registro(request):
         request,
         "registration/registro.html",
         {"form": form},
+    )
+
+@login_required
+def perfil(request):
+    """Muestra los datos de la cuenta del usuario autenticado."""
+
+    usuario = request.user
+    funcionario = get_funcionario(usuario)
+
+    return render(
+        request,
+        "core/perfil.html",
+        {
+            "usuario_perfil": usuario,
+            "funcionario_perfil": funcionario,
+        },
+    )
+
+
+@login_required
+def perfil_editar(request):
+    """Permite modificar el correo y la fotografía del usuario autenticado."""
+
+    if request.method == "POST":
+        form = PerfilUsuarioForm(
+            request.POST,
+            request.FILES,
+            instance=request.user,
+        )
+
+        if form.is_valid():
+            form.save()
+
+            messages.success(
+                request,
+                "Tu perfil se actualizó correctamente.",
+            )
+
+            return redirect("perfil")
+
+    else:
+        form = PerfilUsuarioForm(
+            instance=request.user,
+        )
+
+    return render(
+        request,
+        "core/perfil_editar.html",
+        {
+            "form": form,
+        },
     )
