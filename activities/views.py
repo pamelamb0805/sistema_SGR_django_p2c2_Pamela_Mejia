@@ -32,6 +32,7 @@ from django.contrib.auth.decorators import login_required
 from django.db.models import Q
 from django.http import HttpResponse
 from openpyxl import Workbook
+from core.pagination import PageSizeMixin
 
 TIPOS_MIME = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "pdf": "application/pdf"}
 
@@ -60,38 +61,54 @@ def _puede_anular(user, actividad):
 # ---------------------------------------------------------------------------
 # Actividades
 # ---------------------------------------------------------------------------
-class ActividadListView(RolRequeridoMixin, ModoMixin, ListView):
+class ActividadListView(PageSizeMixin, RolRequeridoMixin, ModoMixin, ListView):
     """Historial filtrable (RF-032): cada usuario ve solo lo que su ámbito permite."""
     template_name = "activities/actividad_.html"
     context_object_name = "actividades"
     paginate_by = 15
+    page_size_session_key = "actividad_page_size"
     titulo = "Actividades"
     roles_edicion = ROLES_OPERATIVOS
 
     def get_queryset(self):
         qs = actividades_visibles(self.request.user)
         g = self.request.GET
-        for campo, filtro in (("estado", "estado"), ("tipo_registro", "tipo_registro"), ("item", "item_id"),
-                              ("periodo", "periodo_id"), ("funcionario", "funcionario_id"),
-                              ("fecha_desde", "fecha__gte"), ("fecha_hasta", "fecha__lte")):
+
+        for campo, filtro in (
+            ("estado", "estado"),
+            ("tipo_registro", "tipo_registro"),
+            ("item", "item_id"),
+            ("periodo", "periodo_id"),
+            ("funcionario", "funcionario_id"),
+            ("fecha_desde", "fecha__gte"),
+            ("fecha_hasta", "fecha__lte"),
+        ):
             if g.get(campo):
                 qs = qs.filter(**{filtro: g[campo]})
+
         if g.get("q", "").strip():
             q = g["q"].strip()
             qs = qs.filter(accion__icontains=q) | qs.filter(contacto__icontains=q)
+
         return qs
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
         g = self.request.GET
+
         contexto.update(
-            filtros=g, estados=Actividad.ESTADOS, tipos=Actividad.TIPOS, periodos=Periodo.objects.all(),
+            filtros=g,
+            estados=Actividad.ESTADOS,
+            tipos=Actividad.TIPOS,
+            periodos=Periodo.objects.all(),
             items=ItemMedible.objects.select_related("cargo"),
             funcionarios=Funcionario.objects.filter(
-                pk__in=actividades_visibles(self.request.user).values("funcionario_id")),
+                pk__in=actividades_visibles(
+                    self.request.user
+                ).values("funcionario_id")
+            ),
         )
         return contexto
-
 
 class ActividadDetailView(RolRequeridoMixin, ModoMixin, DetailView):
     template_name = "activities/actividad_.html"
@@ -252,11 +269,12 @@ def evidencia_archivo(request, pk):
 # ---------------------------------------------------------------------------
 # Validación (verificador)
 # ---------------------------------------------------------------------------
-class ValidacionBandejaView(VerificadorMixin, ModoMixin, ListView):
+class ValidacionBandejaView(PageSizeMixin, VerificadorMixin, ModoMixin, ListView):
     """Bandeja filtrable de evidencias pendientes dentro del ámbito autorizado."""
     template_name = "activities/validacion_.html"
     context_object_name = "evidencias"
     paginate_by = 15
+    page_size_session_key = "validacion_page_size"
     titulo = "Evidencias pendientes de validación"
     roles_edicion = ROLES_VALIDACION
 
@@ -341,7 +359,6 @@ class ValidacionBandejaView(VerificadorMixin, ModoMixin, ListView):
         )
 
         return contexto
-
 
 class ValidacionCreateView(VerificadorMixin, ModoMixin, GuardarMixin, FormView):
     form_class = ValidacionForm

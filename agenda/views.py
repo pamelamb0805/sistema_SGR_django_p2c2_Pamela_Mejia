@@ -30,6 +30,7 @@ from .services import (
 
 from django.http import HttpResponse
 from openpyxl import Workbook
+from core.pagination import PageSizeMixin
 
 def _filtrar(qs, g):
     """Filtros de la agenda (HU-12, RF-032): responsable, estado, territorio, fechas, período, plazo."""
@@ -57,31 +58,46 @@ class OperativoMixin(RolRequeridoMixin):
     roles_permitidos = ROLES_OPERATIVOS
 
 
-class CompromisoListView(RolRequeridoMixin, ModoMixin, ListView):
+class CompromisoListView(PageSizeMixin, RolRequeridoMixin, ModoMixin, ListView):
     """Agenda colectiva ordenada por fecha comprometida (el agrupado por fecha se hace en la plantilla)."""
     template_name = "agenda/compromiso_.html"
     context_object_name = "compromisos"
     paginate_by = 20
+    page_size_session_key = "compromiso_page_size"
     titulo = "Agenda colectiva"
     roles_edicion = ROLES_OPERATIVOS
 
     def get_queryset(self):
-        qs = compromisos_visibles(self.request.user).prefetch_related("historial")
+        qs = compromisos_visibles(
+            self.request.user
+        ).prefetch_related("historial")
+
         return _filtrar(qs, self.request.GET)
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
         g = self.request.GET
         visibles = compromisos_visibles(self.request.user)
+
         contexto.update(
-            filtros=g, estados=Compromiso.ESTADOS, periodos=Periodo.objects.all(),
-            funcionarios=Funcionario.objects.filter(pk__in=visibles.values("funcionario_id")),
-            delegaciones=Delegacion.objects.all() if es_transversal(self.request.user) else [],
-            plazos=CRUDCompromiso.controlar_plazos(queryset=self.object_list),
+            filtros=g,
+            estados=Compromiso.ESTADOS,
+            periodos=Periodo.objects.all(),
+            funcionarios=Funcionario.objects.filter(
+                pk__in=visibles.values("funcionario_id")
+            ),
+            delegaciones=(
+                Delegacion.objects.all()
+                if es_transversal(self.request.user)
+                else []
+            ),
+            plazos=CRUDCompromiso.controlar_plazos(
+                queryset=self.object_list
+            ),
             hoy=timezone.localdate(),
         )
-        return contexto
 
+        return contexto
 
 class CompromisoDetailView(RolRequeridoMixin, ModoMixin, DetailView):
     template_name = "agenda/compromiso_.html"

@@ -27,6 +27,7 @@ from .services import (
     gestiones_visibles, maximo_gestiones, puede_escribir, puede_reabrir,
 )
 from django.http import Http404, JsonResponse
+from core.pagination import PageSizeMixin
 
 class SocialMixin(RolRequeridoMixin):
     roles_permitidos = ROLES_SOCIAL
@@ -86,35 +87,57 @@ def cargar_subatenciones(request):
 # ---------------------------------------------------------------------------
 # Casos
 # ---------------------------------------------------------------------------
-class CasoListView(SocialMixin, ModoMixin, ListView):
+class CasoListView(PageSizeMixin, SocialMixin, ModoMixin, ListView):
     template_name = "social/caso_.html"
     context_object_name = "casos"
     paginate_by = 15
+    page_size_session_key = "caso_page_size"
     titulo = "Casos de atención social"
     roles_edicion = ROLES_OPERATIVOS
 
     def get_queryset(self):
-        qs = casos_visibles(self.request.user).annotate(total_gestiones=Count("gestiones")) \
+        qs = (
+            casos_visibles(self.request.user)
+            .annotate(total_gestiones=Count("gestiones"))
             .order_by("-fecha_primer_registro", "nombre")
+        )
+
         g = self.request.GET
+
         if g.get("q", "").strip():
             qs = qs.filter(nombre__icontains=g["q"].strip())
+
         if g.get("territorio", "").strip():
-            qs = qs.filter(territorio__icontains=g["territorio"].strip())
-        for campo, filtro in (("estado_caso", "estado_caso"), ("delegacion", "delegacion_id"),
-                              ("fecha_desde", "fecha_primer_registro__gte"),
-                              ("fecha_hasta", "fecha_primer_registro__lte")):
+            qs = qs.filter(
+                territorio__icontains=g["territorio"].strip()
+            )
+
+        for campo, filtro in (
+            ("estado_caso", "estado_caso"),
+            ("delegacion", "delegacion_id"),
+            ("fecha_desde", "fecha_primer_registro__gte"),
+            ("fecha_hasta", "fecha_primer_registro__lte"),
+        ):
             if g.get(campo):
                 qs = qs.filter(**{filtro: g[campo]})
+
         return qs
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
-        contexto.update(
-            filtros=self.request.GET, estados=UsuarioSocial.ESTADOS, maximo=maximo_gestiones(),
-            delegaciones=Delegacion.objects.all() if es_transversal(self.request.user) else [])
-        return contexto
 
+        contexto.update(
+            filtros=self.request.GET,
+            estados=UsuarioSocial.ESTADOS,
+            maximo=maximo_gestiones(),
+            delegaciones=(
+                Delegacion.objects.all()
+                if es_transversal(self.request.user)
+                else []
+            ),
+        )
+
+        return contexto
 
 class CasoDetailView(SocialMixin, ModoMixin, DetailView):
     """Secuencia completa de gestiones desde un único caso (CA-04)."""

@@ -32,6 +32,7 @@ from core.mixins import (
     filtrar_por_ambito,
     tiene_rol,
 )
+from core.pagination import PageSizeMixin
 
 # ---------------------------------------------------------------------------
 # Bloques reutilizables
@@ -74,29 +75,45 @@ def _filtrar_usuarios_por_estado(queryset, estado):
 # ---------------------------------------------------------------------------
 # Delegaciones
 # ---------------------------------------------------------------------------
-class DelegacionListView(LecturaMixin, AmbitoDelegacionMixin, ModoMixin, ListView):
+class DelegacionListView(PageSizeMixin, LecturaMixin, AmbitoDelegacionMixin, ModoMixin, ListView):
     model = Delegacion
     template_name = "organization/delegacion_.html"
     context_object_name = "delegaciones"
     ambito_campo = "id_delegacion"
     paginate_by = 10
+    page_size_session_key = "delegacion_page_size"
     titulo = "Delegaciones"
 
     def get_queryset(self):
         qs = super().get_queryset()
-        q, estado = self.request.GET.get("q", "").strip(), self.request.GET.get("estado", "")
+        q = self.request.GET.get("q", "").strip()
+        estado = self.request.GET.get("estado", "")
+
         if q:
-            qs = qs.filter(Q(codigo__icontains=q) | Q(nombre__icontains=q) | Q(direccion__icontains=q) | Q(comuna__icontains=q) | Q(ambito__icontains=q))
+            qs = qs.filter(
+                Q(codigo__icontains=q)
+                | Q(nombre__icontains=q)
+                | Q(direccion__icontains=q)
+                | Q(comuna__icontains=q)
+                | Q(ambito__icontains=q)
+            )
+
         if estado:
             qs = qs.filter(estado=estado)
+
         return qs
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
-        contexto.update(q=self.request.GET.get("q", ""), estado_sel=self.request.GET.get("estado", ""),
-                        total_resultados=self.get_queryset().count(), estados=Delegacion.ESTADOS)
-        return contexto
 
+        contexto.update(
+            q=self.request.GET.get("q", ""),
+            estado_sel=self.request.GET.get("estado", ""),
+            total_resultados=self.get_queryset().count(),
+            estados=Delegacion.ESTADOS,
+        )
+
+        return contexto
 
 class DelegacionCreateView(
     EscrituraMixin,
@@ -153,22 +170,28 @@ class DelegacionToggleView(AccionPostView):
 # ---------------------------------------------------------------------------
 # Cargos e ítems medibles
 # ---------------------------------------------------------------------------
-class CargoListView(LecturaMixin, ModoMixin, ListView):
+class CargoListView(PageSizeMixin, LecturaMixin, ModoMixin, ListView):
     model = Cargo
     template_name = "organization/cargo_.html"
     context_object_name = "cargos"
     paginate_by = 10
+    page_size_session_key = "cargo_page_size"
     titulo = "Cargos y funciones"
 
     def get_queryset(self):
         qs = super().get_queryset().prefetch_related("items")
         q = self.request.GET.get("q", "").strip()
-        return qs.filter(nombre_cargo__icontains=q) if q else qs
+
+        return qs.filter(
+            nombre_cargo__icontains=q
+        ) if q else qs
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
         contexto["q"] = self.request.GET.get("q", "")
+
         return contexto
+
 
 
 class CargoDetailView(LecturaMixin, ModoMixin, DetailView):
@@ -266,11 +289,12 @@ class ItemToggleView(AccionPostView):
 # Roles
 # ---------------------------------------------------------------------------
 
-class RolListView(LecturaMixin, ModoMixin, ListView):
+class RolListView(PageSizeMixin, LecturaMixin, ModoMixin, ListView):
     model = Rol
     template_name = "organization/rol_.html"
     context_object_name = "roles"
     paginate_by = 10
+    page_size_session_key = "rol_page_size"
     titulo = "Roles y permisos"
 
     def get_queryset(self):
@@ -305,7 +329,6 @@ class RolListView(LecturaMixin, ModoMixin, ListView):
         })
 
         return contexto
-
 
 
 class RolCreateView(EscrituraMixin,ModalFormPageMixin, ModoMixin, GuardarMixin, CreateView):
@@ -348,40 +371,58 @@ class RolDeleteView(AccionPostView):
 # ---------------------------------------------------------------------------
 # Funcionarios
 # ---------------------------------------------------------------------------
-class FuncionarioListView(LecturaMixin, AmbitoDelegacionMixin, ModoMixin, ListView):
+
+class FuncionarioListView(PageSizeMixin, LecturaMixin, AmbitoDelegacionMixin, ModoMixin, ListView):
     model = Funcionario
     template_name = "organization/funcionario_.html"
     context_object_name = "funcionarios"
     ambito_campo = "delegacion_id"
     paginate_by = 10
+    page_size_session_key = "funcionario_page_size"
     titulo = "Funcionarios"
 
     def get_queryset(self):
-        qs = super().get_queryset().select_related("cargo", "delegacion") \
+        qs = (
+            super().get_queryset()
+            .select_related("cargo", "delegacion")
             .prefetch_related("funcionario_roles__rol")
+        )
+
         g = self.request.GET
+
         if g.get("q", "").strip():
             q = g["q"].strip()
-            qs = qs.filter(Q(nombre__icontains=q) | Q(identificador_institucional__icontains=q))
+            qs = qs.filter(
+                Q(nombre__icontains=q)
+                | Q(identificador_institucional__icontains=q)
+            )
+
         if g.get("delegacion"):
             qs = qs.filter(delegacion_id=g["delegacion"])
+
         if g.get("cargo"):
             qs = qs.filter(cargo_id=g["cargo"])
+
         if g.get("estado"):
             qs = qs.filter(estado=g["estado"])
+
         return qs
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
         g = self.request.GET
+
         contexto.update(
-            q=g.get("q", ""), delegacion_sel=g.get("delegacion", ""),
-            cargo_sel=g.get("cargo", ""), estado_sel=g.get("estado", ""),
-            delegaciones=Delegacion.objects.all(), cargos=Cargo.objects.all(),
+            q=g.get("q", ""),
+            delegacion_sel=g.get("delegacion", ""),
+            cargo_sel=g.get("cargo", ""),
+            estado_sel=g.get("estado", ""),
+            delegaciones=Delegacion.objects.all(),
+            cargos=Cargo.objects.all(),
             estados=Funcionario.ESTADOS,
         )
-        return contexto
 
+        return contexto
 
 class FuncionarioDetailView(LecturaMixin, AmbitoDelegacionMixin, ModoMixin, DetailView):
     model = Funcionario
@@ -547,11 +588,12 @@ class FuncionarioAccesoView(EscrituraMixin, View):
         )
 
 
-class UsuarioListView(EscrituraMixin, ListView):
+class UsuarioListView(PageSizeMixin, EscrituraMixin, ListView):
     model = Usuario
     template_name = "organization/usuario_.html"
     context_object_name = "usuarios"
     paginate_by = 15
+    page_size_session_key = "usuario_page_size"
 
     def get_queryset(self):
         queryset = (
@@ -592,7 +634,6 @@ class UsuarioListView(EscrituraMixin, ListView):
         })
 
         return context
-
 
 class UsuarioCreateView(
     EscrituraMixin,

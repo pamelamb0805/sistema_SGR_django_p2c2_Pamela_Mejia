@@ -33,6 +33,7 @@ from .services import CalculoIndicadores, CRUDAjuste, CRUDMeta, CRUDPeriodo
 from django.db.models import Q
 from django.http import HttpResponse
 from openpyxl import Workbook
+from core.pagination import PageSizeMixin
 
 class LecturaMixin(RolRequeridoMixin):
     roles_permitidos = ROLES_SUPERVISION
@@ -54,11 +55,12 @@ def _periodo_seleccionado(request):
 # Períodos
 # ---------------------------------------------------------------------------
 
-class PeriodoListView(LecturaMixin, ModoMixin, ListView):
+class PeriodoListView(PageSizeMixin, LecturaMixin, ModoMixin, ListView):
     model = Periodo
     template_name = "measurement/periodo_.html"
     context_object_name = "periodos"
     paginate_by = 10
+    page_size_session_key = "periodo_page_size"
     titulo = "Períodos de medición"
     roles_edicion = ROLES_MEDICION
 
@@ -116,7 +118,6 @@ class PeriodoListView(LecturaMixin, ModoMixin, ListView):
             total_resultados=self.get_queryset().count(),
         )
         return contexto
-
 
 
 class PeriodoDetailView(LecturaMixin, ModoMixin, DetailView):
@@ -215,12 +216,13 @@ class PeriodoRecalcularView(AccionPostView):
 # ---------------------------------------------------------------------------
 # Metas
 # ---------------------------------------------------------------------------
-class MetaListView(LecturaMixin, AmbitoDelegacionMixin, ModoMixin, ListView):
+class MetaListView(PageSizeMixin, LecturaMixin, AmbitoDelegacionMixin, ModoMixin, ListView):
     model = MetaModel
     template_name = "measurement/meta_.html"
     context_object_name = "metas"
     ambito_campo = "funcionario__delegacion_id"
     paginate_by = 15
+    page_size_session_key = "meta_page_size"
     titulo = "Metas y ponderaciones"
     roles_edicion = ROLES_MEDICION
 
@@ -268,7 +270,7 @@ class MetaListView(LecturaMixin, AmbitoDelegacionMixin, ModoMixin, ListView):
             q=g.get("q", ""),
             total_resultados=self.get_queryset().count(),
             items=ItemMedible.objects.select_related("cargo").order_by(
-            "cargo__nombre_cargo", "nombre_item"
+                "cargo__nombre_cargo", "nombre_item"
             ),
         )
         return contexto
@@ -324,12 +326,13 @@ class MetaDeleteView(AccionPostView):
 # Ajustes (incentivos y penalizaciones)
 # ---------------------------------------------------------------------------
 
-class AjusteListView(LecturaMixin, AmbitoDelegacionMixin, ModoMixin, ListView):
+class AjusteListView(PageSizeMixin, LecturaMixin, AmbitoDelegacionMixin, ModoMixin, ListView):
     model = Ajuste
     template_name = "measurement/ajuste_.html"
     context_object_name = "ajustes"
     ambito_campo = "funcionario__delegacion_id"
     paginate_by = 15
+    page_size_session_key = "ajuste_page_size"
     titulo = "Incentivos y penalizaciones"
     roles_edicion = ROLES_MEDICION
 
@@ -377,7 +380,6 @@ class AjusteListView(LecturaMixin, AmbitoDelegacionMixin, ModoMixin, ListView):
             total_resultados=self.get_queryset().count(),
         )
         return contexto
-
 
 class AjusteCreateView(MedicionMixin, ModoMixin, GuardarMixin, CreateView):
     model = Ajuste

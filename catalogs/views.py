@@ -19,7 +19,7 @@ from .forms import CatalogoForm
 from .models import Catalogo
 from .services import CRUDCatalogo
 from core.mixins import ModalFormPageMixin
-
+from core.pagination import PageSizeMixin   
 
 class LecturaMixin(RolRequeridoMixin):
     roles_permitidos = ROLES_SUPERVISION
@@ -33,34 +33,48 @@ def _areas():
     return list(Catalogo.objects.order_by("area").values_list("area", flat=True).distinct())
 
 
-class CatalogoListView(LecturaMixin, ModoMixin, ListView):
+class CatalogoListView(PageSizeMixin, LecturaMixin, ModoMixin, ListView):
     model = Catalogo
     template_name = "catalogs/catalogo_.html"
     context_object_name = "elementos"
     paginate_by = 15
+    page_size_session_key = "catalogo_page_size"
     titulo = "Catálogos de actividades y servicios"
 
     def get_queryset(self):
         qs = super().get_queryset()
         g = self.request.GET
+
         if g.get("q", "").strip():
             term = g["q"].strip()
-            qs = qs.filter(Q(nombre__icontains=term) | Q(codigo__icontains=term) | Q(descripcion__icontains=term))
+            qs = qs.filter(
+                Q(nombre__icontains=term)
+                | Q(codigo__icontains=term)
+                | Q(descripcion__icontains=term)
+            )
+
         for campo in ("tipo_catalogo", "area", "estado"):
             if g.get(campo):
                 qs = qs.filter(**{campo: g[campo]})
+
         return qs
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
         g = self.request.GET
+
         contexto.update(
             total_resultados=self.get_queryset().count(),
-            q=g.get("q", ""), tipo_sel=g.get("tipo_catalogo", ""), area_sel=g.get("area", ""),
-            estado_sel=g.get("estado", ""), tipos=Catalogo.TIPOS, estados=Catalogo.ESTADOS, areas=_areas(),
+            q=g.get("q", ""),
+            tipo_sel=g.get("tipo_catalogo", ""),
+            area_sel=g.get("area", ""),
+            estado_sel=g.get("estado", ""),
+            tipos=Catalogo.TIPOS,
+            estados=Catalogo.ESTADOS,
+            areas=_areas(),
         )
-        return contexto
 
+        return contexto
 
 class CatalogoFormMixin(EscrituraMixin, ModalFormPageMixin, ModoMixin, GuardarMixin):
     model = Catalogo
