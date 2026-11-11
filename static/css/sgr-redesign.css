@@ -1415,3 +1415,33 @@ main#contenido:has(.sgr-executive) > .d-flex.border-bottom .text-body-secondary 
 main#contenido:has(.sgr-executive) > .d-flex.border-bottom .btn {
     color: #FFFFFF;
 }
+
+
+/* CORRECCIÓN: MENÚ LATERAL INTERACTIVO */
+#sgr-sidebar {
+    position: relative;
+    z-index: 1040;
+    pointer-events: auto !important;
+}
+
+#sgr-sidebar .offcanvas-body,
+#sgr-sidebar .nav,
+#sgr-sidebar .nav-item,
+#sgr-sidebar .nav-link {
+    pointer-events: auto !important;
+}
+
+#sgr-sidebar .nav-link {
+    position: relative;
+    z-index: 1041;
+    cursor: pointer;
+}
+
+@media (min-width: 992px) {
+    #sgr-sidebar {
+        position: sticky;
+        top: 68px;
+        height: calc(100vh - 68px);
+        overflow-y: auto;
+    }
+}
