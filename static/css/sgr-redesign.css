@@ -1,0 +1,1417 @@
+
+/* ==========================================================
+   SGR - IDENTIDAD VISUAL MUNICIPAL
+   Inspiración: Eco Friendly Modern UI
+   Municipalidad de La Serena
+   Diseño: fondo rojo oscuro + superficies claras
+========================================================== */
+
+:root {
+    --sgr-primary: #AD0000;
+    --sgr-dark: #4D0000;
+    --sgr-dark-secondary: #660000;
+    --sgr-accent: #CC6600;
+
+    --sgr-red-light: #F9DCDC;
+    --sgr-red-soft: #F2B5B5;
+
+    --sgr-background: #F5F6F5;
+    --sgr-surface: #FFFFFF;
+    --sgr-surface-soft: #FAF9F8;
+
+    --sgr-text: #333333;
+    --sgr-muted: #737C7B;
+    --sgr-border: #E7E8E5;
+
+    --sgr-success: #25845D;
+    --sgr-warning: #D18A18;
+    --sgr-danger: #C43D42;
+    --sgr-info: #397B91;
+
+    --sgr-radius: 13px;
+    --sgr-radius-lg: 18px;
+
+    --sgr-shadow:
+        0 3px 12px rgba(0, 0, 0, .045),
+        0 8px 24px rgba(0, 0, 0, .035);
+
+    --sgr-shadow-hover:
+        0 10px 28px rgba(77, 0, 0, .13);
+
+    --bs-primary: #AD0000;
+    --bs-primary-rgb: 173, 0, 0;
+    --bs-body-color: #333333;
+    --bs-body-bg: #F5F6F5;
+    --bs-border-color: #E7E8E5;
+}
+
+/* ==========================================================
+   FONDO GENERAL ROJO OSCURO
+========================================================== */
+
+* {
+    box-sizing: border-box;
+}
+
+html {
+    scroll-behavior: smooth;
+}
+
+body.sgr-app {
+    min-height: 100vh;
+    color: var(--sgr-text);
+    background: var(--sgr-dark);
+    font-family: Inter, "Segoe UI", Arial, sans-serif;
+    font-size: .91rem;
+    line-height: 1.5;
+}
+
+body.sgr-guest {
+    min-height: 100vh;
+    color: var(--sgr-text);
+    background:
+        radial-gradient(
+            circle at 15% 15%,
+            #660000 0,
+            #4D0000 45%,
+            #330000 100%
+        );
+    font-family: Inter, "Segoe UI", Arial, sans-serif;
+}
+
+a {
+    color: var(--sgr-primary);
+    text-decoration: none;
+}
+
+a:hover {
+    color: var(--sgr-dark-secondary);
+}
+
+::selection {
+    color: white;
+    background: var(--sgr-primary);
+}
+
+main:focus {
+    outline: none;
+}
+
+/* ==========================================================
+   BARRA SUPERIOR
+========================================================== */
+
+.sgr-topbar {
+    min-height: 68px;
+    padding: 0 .8rem !important;
+    background: var(--sgr-dark);
+    border-bottom: 1px solid rgba(255, 255, 255, .12);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, .15);
+}
+
+.sgr-topbar .navbar-brand {
+    color: #FFFFFF;
+}
+
+.sgr-topbar .navbar-brand span {
+    letter-spacing: -.02em;
+}
+
+.sgr-brand-logo {
+    width: 175px;
+    height: 40px;
+    object-fit: contain;
+}
+
+.sgr-brand-mobile {
+    width: 38px;
+    height: 38px;
+    object-fit: contain;
+}
+
+.sgr-topbar .navbar-toggler {
+    color: white;
+}
+
+.sgr-topbar .dropdown-menu {
+    min-width: 225px;
+    padding: 8px;
+    border: 1px solid var(--sgr-border);
+    border-radius: var(--sgr-radius);
+    box-shadow: var(--sgr-shadow-hover);
+}
+
+.sgr-topbar .dropdown-item {
+    padding: 9px 11px;
+    border-radius: 7px;
+    font-size: .84rem;
+}
+
+.sgr-topbar .dropdown-item:hover {
+    color: var(--sgr-dark);
+    background: var(--sgr-red-light);
+}
+
+/* ==========================================================
+   ESTRUCTURA PRINCIPAL
+========================================================== */
+
+body.sgr-app > .container-fluid {
+    min-height: calc(100vh - 68px);
+    padding-left: 0;
+    padding-right: 0;
+    background: var(--sgr-dark);
+}
+
+body.sgr-app > .container-fluid > .row {
+    min-height: calc(100vh - 68px);
+    margin: 0;
+}
+
+/* ==========================================================
+   MENÚ LATERAL ROJO OSCURO
+========================================================== */
+
+.sgr-sidebar {
+    color: #FFFFFF;
+    background: var(--sgr-dark-secondary);
+    border-right: 1px solid rgba(255, 255, 255, .09);
+}
+
+@media (min-width: 992px) {
+    .sgr-sidebar {
+        position: sticky;
+        top: 68px;
+        height: calc(100vh - 68px);
+        overflow-y: auto;
+    }
+}
+
+.sgr-sidebar .offcanvas-header {
+    color: white;
+    background: var(--sgr-dark);
+}
+
+.sgr-sidebar .offcanvas-title {
+    color: white;
+}
+
+.sgr-sidebar .btn-close {
+    filter: invert(1);
+}
+
+.sgr-sidebar .offcanvas-body {
+    background: transparent;
+}
+
+.sgr-sidebar .nav {
+    padding: 13px 8px 24px;
+}
+
+.sgr-sidebar .nav-link {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    min-height: 41px;
+    padding: 9px 12px;
+    margin: 2px 4px;
+    color: #F5EAEA;
+    font-size: .83rem;
+    font-weight: 550;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    transition: background .2s ease, color .2s ease;
+}
+
+.sgr-sidebar .nav-link:hover {
+    color: white;
+    background: rgba(255, 255, 255, .10);
+}
+
+.sgr-sidebar .nav-link.active {
+    color: var(--sgr-dark);
+    background: #FFFFFF;
+    border-color: rgba(255, 255, 255, .25);
+    font-weight: 750;
+    box-shadow: 0 3px 12px rgba(0, 0, 0, .12);
+}
+
+.sgr-sidebar .nav-link .bi {
+    width: 19px;
+    font-size: 1rem;
+    text-align: center;
+    color: #F2B5B5;
+}
+
+.sgr-sidebar .nav-link.active .bi {
+    color: var(--sgr-primary);
+}
+
+.sgr-nav-heading {
+    padding: 19px 12px 6px;
+    color: #E4BDBD;
+    font-size: .65rem;
+    font-weight: 800;
+    letter-spacing: .10em;
+    text-transform: uppercase;
+    list-style: none;
+}
+
+/* ==========================================================
+   ÁREA DE CONTENIDO CLARA
+========================================================== */
+
+main#contenido {
+    min-width: 0;
+    min-height: calc(100vh - 68px);
+    padding-top: 25px !important;
+    padding-bottom: 30px !important;
+    color: var(--sgr-text);
+    background: var(--sgr-background);
+    border-radius: 18px 0 0 0;
+}
+
+main#contenido > .d-flex.border-bottom {
+    min-height: 48px;
+    border-color: var(--sgr-border) !important;
+}
+
+main#contenido h1 {
+    color: var(--sgr-dark);
+    font-size: 1.4rem;
+    font-weight: 800;
+    letter-spacing: -.035em;
+}
+
+/* ==========================================================
+   TARJETAS Y PANELES
+========================================================== */
+
+.card,
+.sgr-tarjeta,
+.sgr-form-card,
+.sgr-table-card {
+    overflow: hidden;
+    color: var(--sgr-text);
+    background: var(--sgr-surface);
+    border: 1px solid var(--sgr-border);
+    border-radius: var(--sgr-radius);
+    box-shadow: var(--sgr-shadow);
+}
+
+.card {
+    transition: box-shadow .2s ease, transform .2s ease;
+}
+
+.card:hover {
+    box-shadow: var(--sgr-shadow-hover);
+}
+
+.card-header {
+    padding: 14px 17px;
+    color: var(--sgr-dark);
+    background: #FFFFFF;
+    border-bottom: 1px solid var(--sgr-border);
+    font-weight: 750;
+}
+
+.card-body {
+    padding: 17px;
+}
+
+.card-footer {
+    padding: 12px 16px;
+    background: var(--sgr-surface-soft);
+    border-top: 1px solid var(--sgr-border);
+}
+
+/* ==========================================================
+   INDICADORES KPI
+========================================================== */
+
+.sgr-kpi {
+    color: var(--sgr-text);
+    background: #FFFFFF !important;
+    border: 1px solid var(--sgr-border) !important;
+    border-left: 4px solid var(--sgr-primary) !important;
+    border-radius: var(--sgr-radius) !important;
+    box-shadow: var(--sgr-shadow) !important;
+}
+
+.sgr-kpi:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--sgr-shadow-hover) !important;
+}
+
+.sgr-kpi-icon {
+    color: var(--sgr-primary);
+    background: var(--sgr-red-light);
+    border-radius: 11px;
+}
+
+/* ==========================================================
+   GRÁFICOS
+========================================================== */
+
+.sgr-chart-card {
+    color: var(--sgr-text);
+    background: white;
+    border: 1px solid var(--sgr-border);
+    border-radius: var(--sgr-radius);
+    box-shadow: var(--sgr-shadow);
+}
+
+.sgr-chart-header {
+    color: var(--sgr-dark);
+    background: white;
+}
+
+.sgr-chart-title {
+    color: var(--sgr-dark);
+    font-weight: 750;
+}
+
+.sgr-chart-subtitle {
+    color: var(--sgr-muted);
+}
+
+/* ==========================================================
+   TABLAS
+========================================================== */
+
+.table-responsive {
+    width: 100%;
+    border-radius: 0 0 var(--sgr-radius) var(--sgr-radius);
+}
+
+.table {
+    margin-bottom: 0;
+    color: var(--sgr-text);
+    font-size: .84rem;
+    vertical-align: middle;
+}
+
+.table thead th {
+    padding: 12px 13px;
+    color: var(--sgr-dark);
+    background: #F9EEEE;
+    border-bottom: 1px solid #EBD9D9;
+    font-size: .72rem;
+    font-weight: 800;
+    letter-spacing: .035em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.table tbody td {
+    padding: 11px 13px;
+    border-color: #F0F0ED;
+}
+
+.table-hover tbody tr:hover {
+    background: #FCF6F5;
+}
+
+.table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+/* ==========================================================
+   BOTONES
+========================================================== */
+
+.btn {
+    min-height: 36px;
+    padding: .45rem .85rem;
+    border-radius: 8px;
+    font-size: .83rem;
+    font-weight: 650;
+    transition: background .18s ease, border-color .18s ease;
+}
+
+.btn-primary,
+.btn-muni {
+    --bs-btn-color: #FFFFFF;
+    --bs-btn-bg: #AD0000;
+    --bs-btn-border-color: #AD0000;
+    --bs-btn-hover-color: #FFFFFF;
+    --bs-btn-hover-bg: #660000;
+    --bs-btn-hover-border-color: #660000;
+    --bs-btn-active-bg: #4D0000;
+    --bs-btn-active-border-color: #4D0000;
+    --bs-btn-disabled-bg: #AD0000;
+    --bs-btn-disabled-border-color: #AD0000;
+}
+
+.btn-outline-primary {
+    --bs-btn-color: #AD0000;
+    --bs-btn-border-color: #AD0000;
+    --bs-btn-hover-color: #FFFFFF;
+    --bs-btn-hover-bg: #AD0000;
+    --bs-btn-hover-border-color: #AD0000;
+    --bs-btn-active-bg: #660000;
+}
+
+.btn-light {
+    color: var(--sgr-dark);
+    background: #F8F8F7;
+    border-color: var(--sgr-border);
+}
+
+.btn-link {
+    min-height: auto;
+}
+
+/* ==========================================================
+   FORMULARIOS
+========================================================== */
+
+.form-label {
+    margin-bottom: 5px;
+    color: #454C49;
+    font-size: .82rem;
+    font-weight: 700;
+}
+
+.form-control,
+.form-select {
+    min-height: 39px;
+    padding: .48rem .72rem;
+    color: var(--sgr-text);
+    background-color: white;
+    border: 1px solid #DADDD9;
+    border-radius: 8px;
+    font-size: .85rem;
+}
+
+textarea.form-control {
+    min-height: 90px;
+}
+
+.form-control::placeholder {
+    color: #A1A6A2;
+}
+
+.form-control:focus,
+.form-select:focus {
+    color: var(--sgr-text);
+    background-color: white;
+    border-color: #C87979;
+    box-shadow: 0 0 0 .2rem rgba(173, 0, 0, .12);
+}
+
+.form-check-input:checked {
+    background-color: var(--sgr-primary);
+    border-color: var(--sgr-primary);
+}
+
+.form-check-input:focus {
+    border-color: #C87979;
+    box-shadow: 0 0 0 .2rem rgba(173, 0, 0, .12);
+}
+
+.input-group-text {
+    color: #656C68;
+    background: #F5F5F3;
+    border-color: #DADDD9;
+}
+
+/* ==========================================================
+   MODALES
+========================================================== */
+
+.modal-content {
+    overflow: hidden;
+    color: var(--sgr-text);
+    background: white;
+    border: 1px solid var(--sgr-border);
+    border-radius: 16px;
+    box-shadow: 0 15px 50px rgba(0, 0, 0, .18);
+}
+
+.modal-header {
+    padding: 15px 18px;
+    background: #F9EEEE;
+    border-bottom: 1px solid var(--sgr-border);
+}
+
+.modal-title {
+    color: var(--sgr-dark);
+    font-size: 1rem;
+    font-weight: 800;
+}
+
+.modal-body {
+    padding: 18px;
+}
+
+.modal-footer {
+    padding: 12px 18px;
+    background: #FBFBFA;
+    border-top: 1px solid var(--sgr-border);
+}
+
+/* ==========================================================
+   BADGES Y ESTADOS
+========================================================== */
+
+.badge {
+    padding: .42em .65em;
+    border-radius: 6px;
+    font-weight: 700;
+}
+
+.text-bg-primary {
+    color: white !important;
+    background-color: var(--sgr-primary) !important;
+}
+
+.text-bg-success {
+    background-color: var(--sgr-success) !important;
+}
+
+.text-bg-warning {
+    color: #473000 !important;
+    background-color: #F5D58D !important;
+}
+
+.text-bg-danger {
+    background-color: var(--sgr-danger) !important;
+}
+
+/* ==========================================================
+   ALERTAS
+========================================================== */
+
+.alert {
+    padding: 11px 14px;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    font-size: .85rem;
+}
+
+.alert-primary {
+    color: var(--sgr-dark);
+    background: var(--sgr-red-light);
+    border-color: #E8BABA;
+}
+
+.alert-success {
+    color: #176344;
+    background: #EAF5EF;
+    border-color: #C5E3D1;
+}
+
+.alert-warning {
+    color: #78500D;
+    background: #FFF6E3;
+    border-color: #F0D9A8;
+}
+
+.alert-danger {
+    color: #92272D;
+    background: #FCECED;
+    border-color: #EBC4C6;
+}
+
+.alert-info {
+    color: #245C70;
+    background: #EAF4F7;
+    border-color: #C7E1E9;
+}
+
+/* ==========================================================
+   PAGINACIÓN
+========================================================== */
+
+.pagination {
+    gap: 3px;
+    --bs-pagination-color: #AD0000;
+    --bs-pagination-hover-color: #660000;
+    --bs-pagination-hover-bg: #F9DCDC;
+    --bs-pagination-border-color: #E7E8E5;
+    --bs-pagination-active-bg: #AD0000;
+    --bs-pagination-active-border-color: #AD0000;
+    --bs-pagination-border-radius: 7px;
+}
+
+.pagination .page-link {
+    min-width: 34px;
+    text-align: center;
+    border-radius: 7px;
+    font-size: .82rem;
+}
+
+/* ==========================================================
+   PROGRESO Y BARRAS
+========================================================== */
+
+.progress {
+    height: 9px;
+    overflow: hidden;
+    background: #ECEDE9;
+    border-radius: 20px;
+}
+
+.progress-bar {
+    background-color: var(--sgr-primary);
+    border-radius: 20px;
+}
+
+/* ==========================================================
+   BREADCRUMBS
+========================================================== */
+
+.breadcrumb {
+    font-size: .8rem;
+}
+
+.breadcrumb-item a {
+    color: var(--sgr-primary);
+    font-weight: 600;
+}
+
+.breadcrumb-item.active {
+    color: var(--sgr-muted);
+}
+
+/* ==========================================================
+   FOOTER
+========================================================== */
+
+footer {
+    color: #8A908C !important;
+    border-color: var(--sgr-border) !important;
+    font-size: .76rem;
+}
+
+/* ==========================================================
+   LOGIN Y PÁGINAS DE ACCESO
+========================================================== */
+
+.sgr-login-card {
+    color: var(--sgr-text);
+    background: white;
+    border: 1px solid rgba(255, 255, 255, .25);
+    border-radius: 18px;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, .20);
+}
+
+.sgr-login-logo {
+    max-width: 190px;
+    max-height: 85px;
+    object-fit: contain;
+}
+
+/* ==========================================================
+   ACCESIBILIDAD
+========================================================== */
+
+:focus-visible {
+    outline: 3px solid #397B91;
+    outline-offset: 2px;
+}
+
+/* ==========================================================
+   RESPONSIVE
+========================================================== */
+
+@media (max-width: 991.98px) {
+    .sgr-sidebar {
+        width: min(310px, 88vw);
+        background: var(--sgr-dark-secondary);
+    }
+
+    main#contenido {
+        border-radius: 0;
+    }
+}
+
+@media (max-width: 767.98px) {
+    body.sgr-app {
+        font-size: .87rem;
+    }
+
+    main#contenido {
+        padding: 18px 13px !important;
+    }
+
+    main#contenido h1 {
+        font-size: 1.16rem;
+    }
+
+    .card-body {
+        padding: 13px;
+    }
+
+    .table {
+        font-size: .78rem;
+    }
+
+    .table thead th,
+    .table tbody td {
+        padding: 8px;
+    }
+
+    .modal-body {
+        padding: 14px;
+    }
+}
+
+/* ==========================================================
+   MOVIMIENTO REDUCIDO
+========================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        scroll-behavior: auto !important;
+        transition-duration: .01ms !important;
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+    }
+}
+
+/* ==========================================================
+   IMPRESIÓN
+========================================================== */
+
+@media print {
+    .sgr-topbar,
+    .sgr-sidebar,
+    footer,
+    .no-print {
+        display: none !important;
+    }
+
+    body.sgr-app,
+    body.sgr-app > .container-fluid,
+    main#contenido {
+        color: black !important;
+        background: white !important;
+    }
+
+    main#contenido {
+        width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+
+    .card,
+    .sgr-table-card {
+        box-shadow: none !important;
+        break-inside: avoid;
+    }
+}
+
+
+/* ==========================================================
+   DASHBOARD SGR - DISEÑO INSTITUCIONAL PROFESIONAL
+   Identidad municipal de La Serena
+========================================================== */
+
+/* Área principal: clara y limpia */
+main#contenido:has(.sgr-executive) {
+    background: #F3F4F6 !important;
+    color: #333333 !important;
+    border-radius: 16px 0 0 0;
+}
+
+/* Encabezado: superficie blanca */
+main#contenido:has(.sgr-executive) > .d-flex.border-bottom {
+    background: #FFFFFF !important;
+    padding: 16px 20px !important;
+    margin-bottom: 20px !important;
+    border: 1px solid #E5E5E5 !important;
+    border-left: 5px solid #AD0000 !important;
+    border-radius: 10px !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .045);
+}
+
+main#contenido:has(.sgr-executive) > .d-flex h1 {
+    color: #4D0000 !important;
+    font-weight: 800 !important;
+}
+
+main#contenido:has(.sgr-executive) > .d-flex .text-body-secondary {
+    color: #737373 !important;
+}
+
+/* Contenedor general */
+.sgr-executive {
+    padding: 8px 10px 24px;
+    color: #333333;
+}
+
+/* Títulos de secciones */
+.sgr-executive .sgr-section-heading {
+    margin-bottom: 14px;
+}
+
+.sgr-executive .sgr-section-heading h3 {
+    color: #4D0000 !important;
+    font-weight: 800;
+}
+
+.sgr-executive .sgr-section-heading span {
+    color: #737373 !important;
+}
+
+/* Bienvenida: superficie blanca */
+.sgr-executive .sgr-welcome {
+    background: #FFFFFF !important;
+    color: #333333 !important;
+    border: 1px solid #E8DADA !important;
+    border-left: 5px solid #AD0000 !important;
+    border-radius: 12px !important;
+    box-shadow: 0 3px 12px rgba(0, 0, 0, .055);
+}
+
+.sgr-executive .sgr-welcome h2 {
+    color: #4D0000 !important;
+    font-weight: 800;
+}
+
+.sgr-executive .sgr-welcome p {
+    color: #626262 !important;
+    opacity: 1 !important;
+}
+
+.sgr-executive .sgr-welcome-tag {
+    color: #AD0000 !important;
+    opacity: 1 !important;
+    font-weight: 800;
+}
+
+.sgr-executive .sgr-welcome-date {
+    color: #737373 !important;
+}
+
+/* Indicadores KPI */
+.sgr-executive .sgr-kpi {
+    color: #333333 !important;
+    background: #FFFFFF !important;
+    border: 1px solid #E8E8E8 !important;
+    border-left: 4px solid #AD0000 !important;
+    border-radius: 11px !important;
+    box-shadow: 0 2px 9px rgba(0, 0, 0, .045);
+    transition: transform .2s ease, box-shadow .2s ease;
+}
+
+.sgr-executive .sgr-kpi:nth-child(2) {
+    border-left-color: #CC6600 !important;
+}
+
+.sgr-executive .sgr-kpi:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 7px 18px rgba(77, 0, 0, .10);
+}
+
+.sgr-executive .sgr-kpi-icon {
+    color: #AD0000;
+    background: #F9EAEA;
+    border-radius: 10px;
+}
+
+/* Accesos directos */
+.sgr-executive .sgr-quick-link {
+    color: #4D0000 !important;
+    background: #FFFFFF !important;
+    border: 1px solid #E7E2E2 !important;
+    border-radius: 10px !important;
+    box-shadow: 0 2px 7px rgba(0, 0, 0, .035);
+    transition: transform .2s ease, background .2s ease, border-color .2s ease;
+}
+
+.sgr-executive .sgr-quick-link:hover {
+    color: #AD0000 !important;
+    background: #FFF8F6 !important;
+    border-color: #CC6600 !important;
+    transform: translateY(-2px);
+}
+
+/* Tarjetas de gráficos */
+.sgr-executive .sgr-chart-card {
+    color: #333333 !important;
+    background: #FFFFFF !important;
+    border: 1px solid #E7E7E7 !important;
+    border-top: 3px solid #AD0000 !important;
+    border-radius: 11px !important;
+    box-shadow: 0 3px 12px rgba(0, 0, 0, .045);
+}
+
+.sgr-executive .sgr-chart-header {
+    color: #4D0000 !important;
+    background: #FFFFFF !important;
+}
+
+.sgr-executive .sgr-chart-title {
+    color: #4D0000 !important;
+    font-weight: 800;
+}
+
+.sgr-executive .sgr-chart-subtitle {
+    color: #737373 !important;
+}
+
+/* Tablas y registros */
+.sgr-executive .sgr-table-card {
+    color: #333333 !important;
+    background: #FFFFFF !important;
+    border: 1px solid #E7E7E7 !important;
+    border-top: 3px solid #AD0000 !important;
+    border-radius: 11px !important;
+    box-shadow: 0 3px 12px rgba(0, 0, 0, .045);
+}
+
+/* Encabezados de tablas */
+.sgr-executive .table thead th {
+    color: #4D0000 !important;
+    background: #F9EEEE !important;
+    border-bottom: 1px solid #EBD9D9 !important;
+}
+
+.sgr-executive .table tbody td {
+    color: #444444;
+}
+
+.sgr-executive .table-hover tbody tr:hover {
+    background: #FFF8F6 !important;
+}
+
+/* Estados sin registros */
+.sgr-executive .sgr-empty {
+    color: #737373 !important;
+}
+
+.sgr-executive .sgr-empty strong {
+    color: #4D0000 !important;
+}
+
+/* Alertas */
+.sgr-executive .alert {
+    border-radius: 9px;
+}
+
+/* Enlaces y botones */
+.sgr-executive a {
+    transition: color .2s ease;
+}
+
+.sgr-executive .btn-primary {
+    background-color: #AD0000;
+    border-color: #AD0000;
+}
+
+.sgr-executive .btn-primary:hover {
+    background-color: #660000;
+    border-color: #660000;
+}
+
+/* Adaptación para tablets */
+@media (max-width: 991.98px) {
+    main#contenido:has(.sgr-executive) {
+        border-radius: 0;
+    }
+
+    .sgr-executive {
+        padding: 8px 5px 20px;
+    }
+}
+
+/* Adaptación para celulares */
+@media (max-width: 576px) {
+    main#contenido:has(.sgr-executive) > .d-flex.border-bottom {
+        padding: 12px !important;
+    }
+
+    .sgr-executive {
+        padding: 6px 2px 16px;
+    }
+
+    .sgr-executive .sgr-welcome {
+        padding: 15px !important;
+    }
+}
+
+/* Accesibilidad: movimiento reducido */
+@media (prefers-reduced-motion: reduce) {
+    .sgr-executive .sgr-kpi,
+    .sgr-executive .sgr-quick-link {
+        transition: none !important;
+    }
+}
+
+
+/* ==========================================================
+   TÍTULOS DEL DASHBOARD - FRANJAS ROJAS INSTITUCIONALES
+========================================================== */
+
+/* Título de cada sección */
+.sgr-executive .sgr-section-heading {
+    background: #AD0000 !important;
+    padding: 9px 13px !important;
+    margin: 10px 0 9px !important;
+    border-radius: 7px !important;
+    border-left: 4px solid #CC6600 !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, .08);
+}
+
+.sgr-executive .sgr-section-heading h3,
+.sgr-executive .sgr-section-heading h3 i,
+.sgr-executive .sgr-section-heading span {
+    color: #FFFFFF !important;
+}
+
+/* Títulos de los seis gráficos */
+.sgr-executive .sgr-chart-header {
+    background: #AD0000 !important;
+    border-bottom: 0 !important;
+    border-left: 3px solid #CC6600;
+    padding: 8px 10px !important;
+}
+
+.sgr-executive .sgr-chart-title,
+.sgr-executive .sgr-chart-subtitle,
+.sgr-executive .sgr-chart-icon {
+    color: #FFFFFF !important;
+}
+
+/* Títulos de las tablas inferiores */
+.sgr-executive .sgr-table-heading {
+    background: #AD0000 !important;
+    border-bottom: 0 !important;
+    border-left: 4px solid #CC6600;
+    padding: 9px 12px !important;
+}
+
+.sgr-executive .sgr-table-heading h3,
+.sgr-executive .sgr-table-heading h3 i,
+.sgr-executive .sgr-table-heading small,
+.sgr-executive .sgr-table-heading > i {
+    color: #FFFFFF !important;
+}
+
+/* Título principal de la página */
+main#contenido:has(.sgr-executive) > .d-flex.border-bottom {
+    border-left-color: #CC6600 !important;
+}
+
+main#contenido:has(.sgr-executive) > .d-flex h1 {
+    color: #4D0000 !important;
+}
+
+/* Bienvenida: mantener superficie blanca */
+.sgr-executive .sgr-welcome {
+    background: #FFFFFF !important;
+}
+
+
+/* ==========================================================
+   BIENVENIDA Y TARJETAS KPI - IDENTIDAD MUNICIPAL
+========================================================== */
+
+/* Bienvenida: ROOT y descripción */
+.sgr-executive .sgr-welcome {
+    background: #AD0000 !important;
+    color: #FFFFFF !important;
+    border: 0 !important;
+    border-left: 5px solid #CC6600 !important;
+    border-radius: 9px !important;
+    padding: 14px 17px !important;
+    box-shadow: 0 3px 9px rgba(0, 0, 0, .10);
+}
+
+.sgr-executive .sgr-welcome-tag,
+.sgr-executive .sgr-welcome h2,
+.sgr-executive .sgr-welcome p,
+.sgr-executive .sgr-welcome-date,
+.sgr-executive .sgr-welcome-date i {
+    color: #FFFFFF !important;
+}
+
+/* Cuatro tarjetas superiores */
+.sgr-executive .sgr-kpi {
+    background: #AD0000 !important;
+    color: #FFFFFF !important;
+    border: 0 !important;
+    border-left: 4px solid #CC6600 !important;
+    border-radius: 8px !important;
+    box-shadow: 0 2px 7px rgba(0, 0, 0, .09);
+    padding: 10px 12px !important;
+}
+
+.sgr-executive .sgr-kpi:hover {
+    background: #4D0000 !important;
+    color: #FFFFFF !important;
+    transform: translateY(-2px);
+}
+
+.sgr-executive .sgr-kpi-label,
+.sgr-executive .sgr-kpi-value,
+.sgr-executive .sgr-kpi-value.text-danger,
+.sgr-executive .sgr-kpi-icon {
+    color: #FFFFFF !important;
+}
+
+/* Mantener legibles los textos */
+.sgr-executive .sgr-kpi-label {
+    font-weight: 700 !important;
+}
+
+.sgr-executive .sgr-kpi-value {
+    font-weight: 900 !important;
+}
+
+
+/* ICONOS Y DETALLES DE BIENVENIDA Y TARJETAS KPI */
+
+.sgr-executive .sgr-kpi-icon,
+.sgr-executive .sgr-kpi i,
+.sgr-executive .sgr-welcome i,
+.sgr-executive .sgr-welcome-date i {
+    color: #FFFFFF !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+}
+
+/* Evitar que estilos de Bootstrap oculten los iconos */
+.sgr-executive .sgr-kpi .bi,
+.sgr-executive .sgr-welcome .bi {
+    color: #FFFFFF !important;
+    opacity: 1 !important;
+    filter: none !important;
+}
+
+/* Descripción y fecha */
+.sgr-executive .sgr-welcome p,
+.sgr-executive .sgr-welcome-date {
+    color: #FFFFFF !important;
+    opacity: 1 !important;
+}
+
+
+/* ICONOS KPI: SOLO EL DIBUJO BLANCO, SIN CUADRADOS */
+
+.sgr-executive .sgr-kpi-icon,
+.sgr-executive .sgr-kpi > i,
+.sgr-executive .sgr-kpi .bi {
+    color: #FFFFFF !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    outline: none !important;
+    filter: none !important;
+    opacity: 1 !important;
+}
+
+/* Eliminar fondos decorativos alrededor del icono */
+.sgr-executive .sgr-kpi-icon::before,
+.sgr-executive .sgr-kpi-icon::after {
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+
+/* ==========================================================
+   MODAL DE DETALLE INTERACTIVO DEL DASHBOARD
+========================================================== */
+
+.sgr-detail-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(35, 15, 15, .58);
+    backdrop-filter: blur(3px);
+}
+
+.sgr-detail-overlay.is-visible {
+    display: flex;
+}
+
+body.sgr-detail-open {
+    overflow: hidden;
+}
+
+.sgr-detail-modal {
+    width: min(1100px, 100%);
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: #FFFFFF;
+    border-radius: 14px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, .25);
+    animation: sgrDetailIn .2s ease-out;
+}
+
+@keyframes sgrDetailIn {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.sgr-detail-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 15px;
+    padding: 18px 22px;
+    color: #FFFFFF;
+    background: #AD0000;
+    border-left: 5px solid #CC6600;
+}
+
+.sgr-detail-eyebrow {
+    font-size: .68rem;
+    font-weight: 800;
+    letter-spacing: .08em;
+    opacity: .85;
+}
+
+.sgr-detail-header h2 {
+    margin: 4px 0;
+    color: #FFFFFF;
+    font-size: 1.2rem;
+    font-weight: 800;
+}
+
+.sgr-detail-header p {
+    margin: 0;
+    color: #FFFFFF;
+    font-size: .8rem;
+    opacity: .9;
+}
+
+.sgr-detail-close {
+    width: 36px;
+    height: 36px;
+    color: #FFFFFF;
+    background: transparent;
+    border: 1px solid rgba(255,255,255,.5);
+    border-radius: 8px;
+    font-size: 1.6rem;
+    line-height: 1;
+}
+
+.sgr-detail-summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 22px;
+    background: #FFF8F6;
+    border-bottom: 1px solid #EBD9D9;
+}
+
+.sgr-detail-summary strong {
+    display: block;
+    color: #AD0000;
+    font-size: 1.5rem;
+    font-weight: 900;
+}
+
+.sgr-detail-summary span {
+    color: #626262;
+    font-size: .8rem;
+}
+
+.sgr-detail-filter {
+    padding: 7px 10px;
+    color: #660000 !important;
+    background: #F9DCDC;
+    border-radius: 7px;
+    font-weight: 700;
+}
+
+.sgr-detail-content {
+    min-height: 180px;
+    padding: 15px 20px;
+    overflow: auto;
+}
+
+.sgr-detail-message {
+    display: flex;
+    min-height: 150px;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 10px;
+    color: #737373;
+    text-align: center;
+}
+
+.sgr-detail-message i {
+    color: #AD0000;
+    font-size: 2rem;
+}
+
+.sgr-detail-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 20px;
+    background: #FAFAF9;
+    border-top: 1px solid #E7E7E7;
+}
+
+.sgr-detail-footer span {
+    color: #737373;
+    font-size: .75rem;
+}
+
+@media (max-width: 700px) {
+    .sgr-detail-overlay {
+        padding: 8px;
+    }
+
+    .sgr-detail-modal {
+        max-height: 95vh;
+    }
+
+    .sgr-detail-header,
+    .sgr-detail-summary {
+        padding: 13px;
+    }
+
+    .sgr-detail-content {
+        padding: 10px;
+    }
+
+    .sgr-detail-footer {
+        padding: 10px 13px;
+    }
+}
+
+
+/* ==========================================================
+   PANEL DE CONTROL - ENCABEZADO INSTITUCIONAL
+   Fondo rojo municipal y texto blanco
+========================================================== */
+
+main#contenido:has(.sgr-executive) > .d-flex.border-bottom {
+    background: #AD0000 !important;
+    border: none !important;
+    border-left: 5px solid #CC6600 !important;
+    border-radius: 9px !important;
+    box-shadow: 0 3px 9px rgba(0, 0, 0, .10) !important;
+}
+
+main#contenido:has(.sgr-executive) > .d-flex.border-bottom h1,
+main#contenido:has(.sgr-executive) > .d-flex.border-bottom h1 *,
+main#contenido:has(.sgr-executive) > .d-flex.border-bottom .text-body-secondary {
+    color: #FFFFFF !important;
+}
+
+/* Mantener visibles los botones de acciones del encabezado */
+main#contenido:has(.sgr-executive) > .d-flex.border-bottom .btn {
+    color: #FFFFFF;
+}

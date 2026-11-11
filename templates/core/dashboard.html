@@ -1,256 +1,1289 @@
+
 {% extends "base.html" %}
 {% load ui_extras %}
 
-{% block title %}Inicio · SGR{% endblock %}
+{% block title %}Panel de control · SGR{% endblock %}
 {% block page_title %}Panel de control{% endblock %}
+
 {% block page_actions %}
-<span class="text-body-secondary small align-self-center"><i class="bi bi-calendar3 me-1" aria-hidden="true"></i>{{ hoy|date:"l j \d\e F \d\e Y" }}</span>
+<span class="small text-body-secondary">
+    <i class="bi bi-calendar3 me-1"></i>
+    {{ hoy|date:"d/m/Y" }}
+</span>
 {% endblock %}
 
 {% block content %}
 {% with d=datos %}
 
-{# ---------------------------------------------------------------- Avisos #}
-{% if sin_funcionario %}
-<div class="alert alert-warning d-flex align-items-start gap-2" role="alert">
-  <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>
-  <div>
-    Su usuario no tiene un funcionario asociado, por lo que no puede registrar ni medir actividades.
-    {% if user.is_superuser %}Desde el <a href="{% url 'admin:index' %}" class="alert-link">panel técnico</a> puede crear los funcionarios y enlazar los accesos.{% else %}Solicite al administrador que lo vincule.{% endif %}
-  </div>
-</div>
-{% endif %}
+<style>
+.sgr-executive {
+    --sgr-red: #AD0000;
+    --sgr-dark: #660000;
+    --sgr-border: #e5e7eb;
+    --sgr-muted: #68717d;
+    color: #252b32;
+    width: 100%;
+    min-width: 0;
+}
 
-<p class="lead mb-3">
-  Bienvenido/a, <strong>{{ sgr_funcionario.nombre|default:user.username }}</strong>.
-  {% if d.periodo %}<span class="text-body-secondary fs-6">Período vigente: {{ d.periodo }} ({{ d.periodo.dias_computables }} días).</span>{% endif %}
-</p>
+.sgr-executive .sgr-welcome {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    background: linear-gradient(110deg, #660000, #AD0000);
+    color: #fff;
+    padding: 8px 13px;
+    border-radius: 7px;
+    margin-bottom: 8px;
+}
 
-{% if d.periodo is None and not sin_funcionario %}
-<div class="alert alert-info" role="alert">
-  <i class="bi bi-info-circle me-1" aria-hidden="true"></i>
-  No hay un período de medición abierto para hoy, por lo que no se muestran indicadores.
-  {% if sgr_puede_medir %}<a class="alert-link" href="{% url 'measurement:periodo_create' %}">Crear un período</a>.{% endif %}
-</div>
-{% endif %}
+.sgr-executive .sgr-welcome h2 {
+    font-size: .85rem;
+    font-weight: 800;
+    margin: 0 0 2px;
+}
 
-{# ---------------------------------------------------- Mi avance (semáforo) #}
-{% with r=d.resumen_personal %}
-{% if r %}
-<section class="card shadow-sm mb-4" aria-labelledby="titulo-avance">
-  <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
-    <h2 class="h5 mb-0" id="titulo-avance">Mi avance en el período</h2>
-    <span>{% semaforo_badge r.semaforo %}</span>
-  </div>
-  <div class="card-body">
-    {% if r.filas %}
-      <div class="row g-3 align-items-center mb-3">
-        <div class="col-md-8">
-          <div class="progress position-relative sgr-progreso" role="progressbar" aria-label="Resultado ponderado"
-               aria-valuenow="{{ r.total_ponderado|ancho_pct }}" aria-valuemin="0" aria-valuemax="100">
-            <div class="progress-bar bg-{{ r.semaforo|semaforo_color }}" style="width: {{ r.total_ponderado|ancho_pct }}%"></div>
-            <span class="sgr-meta-marca" style="left: {{ r.meta_esperada|ancho_pct }}%" title="Meta esperada al día"></span>
-          </div>
-          <div class="small text-body-secondary mt-1">La marca vertical indica la meta esperada al día.</div>
+.sgr-executive .sgr-welcome p {
+    font-size: .61rem;
+    margin: 0;
+    opacity: .85;
+}
+
+.sgr-executive .sgr-welcome-tag {
+    display: block;
+    font-size: .49rem;
+    font-weight: 800;
+    letter-spacing: .07em;
+    margin-bottom: 3px;
+    opacity: .8;
+}
+
+.sgr-executive .sgr-welcome-date {
+    text-align: right;
+    font-size: .68rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+/* KPI */
+
+.sgr-executive .sgr-kpi-strip {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.sgr-executive .sgr-kpi {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    padding: 6px 8px;
+    background: #fff;
+    border: 1px solid var(--sgr-border);
+    border-left: 3px solid var(--sgr-red);
+    border-radius: 6px;
+    text-decoration: none;
+    color: inherit;
+    transition: .18s ease;
+}
+
+.sgr-executive .sgr-kpi:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 8px rgba(0,0,0,.07);
+    color: inherit;
+}
+
+.sgr-executive .sgr-kpi-label {
+    font-size: .55rem;
+    color: var(--sgr-muted);
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.sgr-executive .sgr-kpi-value {
+    font-size: 1rem;
+    line-height: 1.1;
+    font-weight: 900;
+    color: var(--sgr-dark);
+    margin-top: 3px;
+}
+
+.sgr-executive .sgr-kpi-icon {
+    color: var(--sgr-red);
+    font-size: .9rem;
+    flex-shrink: 0;
+}
+
+/* Accesos */
+
+.sgr-executive .sgr-quick-access {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-bottom: 8px;
+}
+
+.sgr-executive .sgr-quick-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 7px;
+    background: #fff;
+    border: 1px solid var(--sgr-border);
+    border-radius: 5px;
+    color: #444;
+    text-decoration: none;
+    font-size: .56rem;
+    font-weight: 700;
+}
+
+.sgr-executive .sgr-quick-link:hover {
+    color: var(--sgr-red);
+    border-color: #d8aaaa;
+}
+
+.sgr-executive .sgr-quick-link i {
+    color: var(--sgr-red);
+    font-size: .75rem;
+}
+
+/* Gráficos */
+
+.sgr-executive .sgr-section-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 4px 0 6px;
+}
+
+.sgr-executive .sgr-section-heading h3 {
+    font-size: .69rem;
+    color: var(--sgr-dark);
+    font-weight: 800;
+    margin: 0;
+}
+
+.sgr-executive .sgr-section-heading span {
+    font-size: .53rem;
+    color: var(--sgr-muted);
+}
+
+.sgr-executive .sgr-chart-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 7px;
+    margin-bottom: 8px;
+}
+
+.sgr-executive .sgr-chart-card {
+    min-width: 0;
+    background: #fff;
+    border: 1px solid var(--sgr-border);
+    border-radius: 6px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.035);
+    overflow: hidden;
+}
+
+.sgr-executive .sgr-chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 7px;
+    min-height: 31px;
+    border-bottom: 1px solid #edf0f2;
+}
+
+.sgr-executive .sgr-chart-title {
+    color: var(--sgr-dark);
+    font-size: .59rem;
+    font-weight: 800;
+    margin: 0;
+}
+
+.sgr-executive .sgr-chart-subtitle {
+    color: var(--sgr-muted);
+    font-size: .49rem;
+    margin-top: 1px;
+    line-height: 1.2;
+}
+
+.sgr-executive .sgr-chart-icon {
+    color: var(--sgr-red);
+    font-size: .78rem;
+    flex-shrink: 0;
+}
+
+.sgr-executive .sgr-chart-body {
+    height: 112px;
+    padding: 4px 6px 6px;
+    position: relative;
+}
+
+.sgr-executive .sgr-chart-body canvas {
+    max-width: 100%;
+    cursor: pointer;
+}
+
+.sgr-executive .sgr-empty {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    color: #9299a2;
+    padding: 4px;
+}
+
+.sgr-executive .sgr-empty i {
+    font-size: 1rem;
+    color: #c5c9ce;
+    margin-bottom: 2px;
+}
+
+.sgr-executive .sgr-empty strong {
+    color: #69717a;
+    font-size: .57rem;
+}
+
+.sgr-executive .sgr-empty p {
+    font-size: .49rem;
+    margin: 2px 0 0;
+    max-width: 190px;
+}
+
+/* Tablas */
+
+.sgr-executive .sgr-table-card {
+    background: #fff;
+    border: 1px solid var(--sgr-border);
+    border-radius: 6px;
+    overflow: hidden;
+    margin-top: 7px;
+}
+
+.sgr-executive .sgr-table-heading {
+    padding: 6px 9px;
+    border-bottom: 1px solid #edf0f2;
+}
+
+.sgr-executive .sgr-table-heading h3 {
+    font-size: .65rem;
+    font-weight: 800;
+    color: var(--sgr-dark);
+    margin: 0;
+}
+
+.sgr-executive .sgr-table-heading small {
+    font-size: .52rem;
+}
+
+.sgr-executive .table {
+    font-size: .57rem;
+    margin-bottom: 0;
+}
+
+.sgr-executive .table thead th {
+    color: #fff;
+    background: #660000;
+    border-color: #7c2929;
+    font-size: .53rem;
+    text-transform: uppercase;
+    padding: 5px 7px;
+    white-space: nowrap;
+}
+
+.sgr-executive .table tbody td {
+    padding: 4px 7px;
+    vertical-align: middle;
+}
+
+.sgr-executive .alert {
+    font-size: .62rem;
+    padding: 6px 9px;
+    margin-bottom: 6px;
+}
+
+/* Modal */
+
+.sgr-detail-modal .modal-header {
+    background: #660000;
+    color: #fff;
+}
+
+.sgr-detail-modal .modal-title {
+    font-size: .95rem;
+    font-weight: 800;
+}
+
+.sgr-detail-modal .btn-close {
+    filter: invert(1);
+}
+
+.sgr-detail-modal .table {
+    font-size: .8rem;
+}
+
+.sgr-detail-modal .table thead th {
+    background: #660000;
+    color: #fff;
+    white-space: nowrap;
+}
+
+.sgr-detail-modal .detail-loading {
+    padding: 35px 10px;
+    text-align: center;
+    color: #68717d;
+}
+
+.sgr-detail-modal .detail-empty {
+    padding: 30px 10px;
+    text-align: center;
+    color: #68717d;
+}
+
+@media (max-width: 900px) {
+    .sgr-executive .sgr-chart-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 576px) {
+    .sgr-executive .sgr-chart-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .sgr-executive .sgr-chart-body {
+        height: 155px;
+    }
+
+    .sgr-executive .sgr-kpi-strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .sgr-executive .sgr-welcome {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .sgr-executive .sgr-welcome-date {
+        text-align: left;
+    }
+}
+</style>
+
+<div class="sgr-executive">
+
+    {% if sin_funcionario %}
+    <div class="alert alert-warning d-flex align-items-center gap-2">
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        <div>
+            Tu usuario no tiene un funcionario asociado.
+            {% if user.is_superuser %}
+                Puedes vincularlo desde
+                <a href="{% url 'admin:index' %}" class="alert-link">el panel técnico</a>.
+            {% else %}
+                Solicita al administrador que realice la vinculación.
+            {% endif %}
         </div>
-        <div class="col-md-4">
-          <div class="d-flex justify-content-between"><span>Resultado ponderado</span><strong>{{ r.total_ponderado|porcentaje }}</strong></div>
-          <div class="d-flex justify-content-between"><span>Meta esperada al día</span><strong>{{ r.meta_esperada|porcentaje }}</strong></div>
-          {% if r.ajustes %}<div class="d-flex justify-content-between"><span>Ajustes</span><strong>{{ r.ajustes|porcentaje }}</strong></div>{% endif %}
-        </div>
-      </div>
-
-      <div class="table-responsive">
-        <table class="table table-sm align-middle mb-2">
-          <thead class="table-light">
-            <tr><th scope="col">Ítem</th><th scope="col" class="text-end">Avance / meta</th><th scope="col" class="text-end">Cumplimiento</th><th scope="col">Semáforo</th></tr>
-          </thead>
-          <tbody>
-            {% for fila in r.filas %}
-            <tr>
-              <td>{{ fila.item.nombre_item }}</td>
-              <td class="text-end">{{ fila.avance }} / {{ fila.meta.valor_objetivo }} {{ fila.meta.unidad }}</td>
-              <td class="text-end">{{ fila.cumplimiento|porcentaje }}</td>
-              <td>{% semaforo_badge fila.semaforo %}</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-      {% if not r.completa %}
-      <div class="alert alert-warning py-2 small mb-2" role="alert">
-        Sus ponderaciones suman {{ r.suma_ponderadores|porcentaje }}; deben sumar 100 % para que el resultado sea completo.
-      </div>
-      {% endif %}
-      <a class="btn btn-sm btn-outline-primary" href="{% url 'measurement:mi_desempeno' %}">Ver detalle de mi desempeño</a>
-    {% else %}
-      <p class="mb-0 text-body-secondary">Aún no tiene metas asignadas en este período. Consulte con su coordinación.</p>
+    </div>
     {% endif %}
-  </div>
-</section>
-{% endif %}
-{% endwith %}
 
-{# --------------------------------------------------------------- Contadores #}
-<div class="row g-3 mb-4">
-  {% if d.mis_actividades is not None %}
-  <div class="col-6 col-lg-3"><a class="card h-100 text-decoration-none sgr-kpi shadow-sm" href="{% url 'activities:actividad_list' %}">
-    <div class="card-body"><div class="small text-body-secondary">Mis actividades</div><div class="valor text-body">{{ d.mis_actividades }}</div></div></a></div>
-  {% endif %}
+    {% if not d.periodo and not sin_funcionario %}
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle me-1"></i>
+        No existe un período de medición vigente para la fecha actual.
+    </div>
+    {% endif %}
 
-  {% if d.evidencias_pendientes is not None %}{% if sgr_puede_validar or sgr_puede_supervisar %}
-  <div class="col-6 col-lg-3"><a class="card h-100 text-decoration-none sgr-kpi shadow-sm"
-      href="{% if sgr_puede_validar %}{% url 'activities:validacion_bandeja' %}{% else %}{% url 'activities:actividad_list' %}?estado=En+revisi%C3%B3n{% endif %}">
-    <div class="card-body"><div class="small text-body-secondary">Evidencias pendientes</div>
-      <div class="valor {% if d.evidencias_pendientes %}text-warning-emphasis{% else %}text-body{% endif %}">{{ d.evidencias_pendientes }}</div></div></a></div>
-  {% endif %}{% endif %}
-
-  {% if d.compromisos_vencidos is not None %}
-  <div class="col-6 col-lg-3"><a class="card h-100 text-decoration-none sgr-kpi shadow-sm {% if d.compromisos_vencidos %}sgr-vencido{% endif %}"
-      href="{% url 'agenda:compromiso_list' %}?plazo=vencido">
-    <div class="card-body"><div class="small text-body-secondary">Compromisos vencidos</div>
-      <div class="valor {% if d.compromisos_vencidos %}text-danger{% else %}text-body{% endif %}">{{ d.compromisos_vencidos }}</div></div></a></div>
-  <div class="col-6 col-lg-3"><a class="card h-100 text-decoration-none sgr-kpi shadow-sm" href="{% url 'agenda:compromiso_list' %}?plazo=por_vencer">
-    <div class="card-body"><div class="small text-body-secondary">Por vencer (próx. días)</div><div class="valor text-body">{{ d.compromisos_por_vencer }}</div></div></a></div>
-  {% endif %}
-
-  {% if d.total_funcionarios is not None and sgr_puede_supervisar %}
-  <div class="col-6 col-lg-3"><a class="card h-100 text-decoration-none sgr-kpi shadow-sm" href="{% url 'organizations:funcionario_list' %}">
-    <div class="card-body"><div class="small text-body-secondary">Funcionarios en mi ámbito</div><div class="valor text-body">{{ d.total_funcionarios }}</div></div></a></div>
-  {% endif %}
-  {% if d.total_delegaciones is not None %}
-  <div class="col-6 col-lg-3"><a class="card h-100 text-decoration-none sgr-kpi shadow-sm" href="{% url 'organizations:delegacion_list' %}">
-    <div class="card-body"><div class="small text-body-secondary">Delegaciones</div><div class="valor text-body">{{ d.total_delegaciones }}</div></div></a></div>
-  {% endif %}
-</div>
-
-{# ----------------------------------------- Estado de la agenda y del equipo #}
-<div class="row g-4 mb-4">
-  {% if d.compromisos_por_estado is not None %}
-  <div class="col-lg-5">
-    <section class="card shadow-sm h-100" aria-labelledby="titulo-agenda">
-      <div class="card-header"><h2 class="h6 mb-0" id="titulo-agenda">Agenda colectiva por estado</h2></div>
-      <ul class="list-group list-group-flush">
-        {% for estado, total in d.compromisos_por_estado.items %}
-        <li class="list-group-item d-flex justify-content-between align-items-center">{% estado_badge estado %}<strong>{{ total }}</strong></li>
-        {% empty %}
-        <li class="list-group-item text-body-secondary">No hay compromisos registrados.</li>
-        {% endfor %}
-      </ul>
-      <div class="card-footer bg-transparent"><a href="{% url 'agenda:resumen' %}" class="small">Ver resumen completo</a></div>
-    </section>
-  </div>
-  {% endif %}
-
-  {% with e=d.resumen_equipo %}
-  {% if e %}
-  <div class="col-lg-7">
-    <section class="card shadow-sm h-100" aria-labelledby="titulo-equipo">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <h2 class="h6 mb-0" id="titulo-equipo">Semáforo del equipo</h2>
-        {% if e.semaforo %}{% semaforo_badge e.semaforo %}{% endif %}
-      </div>
-      <div class="card-body">
-        {% if e.total_funcionarios %}
-        <div class="d-flex flex-wrap gap-4 mb-3">
-          <div><span class="sgr-dot verde" aria-hidden="true"></span><strong>{{ e.conteo|get_item:"Verde" }}</strong> en verde</div>
-          <div><span class="sgr-dot ambar" aria-hidden="true"></span><strong>{{ e.conteo|get_item:"Ámbar" }}</strong> en ámbar</div>
-          <div><span class="sgr-dot rojo" aria-hidden="true"></span><strong>{{ e.conteo|get_item:"Rojo" }}</strong> en rojo</div>
+    {% if d.compromisos_vencidos %}
+    <div class="alert alert-danger d-flex align-items-center gap-2">
+        <i class="bi bi-exclamation-octagon-fill"></i>
+        <div>
+            Existen <strong>{{ d.compromisos_vencidos }}</strong>
+            compromisos vencidos que requieren atención.
         </div>
-        <div class="small mb-2">Promedio {{ e.promedio|porcentaje }} · meta esperada al día {{ e.meta_esperada|porcentaje }}</div>
-        {% if e.bajo_umbral %}
-        <div class="small fw-semibold mb-1">Bajo el umbral colectivo ({{ sgr_parametros.umbral_colectivo|floatformat:0 }} %):</div>
-        <ul class="small mb-2">
-          {% for f in e.bajo_umbral|slice:":5" %}
-          <li><a href="{% url 'measurement:desempeno_funcionario' f.funcionario.pk %}">{{ f.funcionario.nombre }}</a> — {{ f.total_ponderado|porcentaje }}</li>
-          {% endfor %}
-        </ul>
-        {% endif %}
-        {% else %}
-        <p class="text-body-secondary mb-0">No hay funcionarios activos en su ámbito.</p>
-        {% endif %}
-      </div>
-      <div class="card-footer bg-transparent"><a href="{% url 'measurement:semaforo' %}" class="small">Ver tablero de delegación</a></div>
+        <a href="{% url 'agenda:compromiso_list' %}"
+           class="btn btn-sm btn-outline-danger ms-auto">
+            Revisar agenda
+        </a>
+    </div>
+    {% endif %}
+
+    <section class="sgr-welcome">
+        <div>
+            <span class="sgr-welcome-tag">SISTEMA DE GESTIÓN DE RESULTADOS</span>
+            <h2>
+                Bienvenido/a,
+                {{ sgr_funcionario.nombre|default:user.username }}
+            </h2>
+            <p>Panel de seguimiento y gestión municipal.</p>
+        </div>
+
+        <div class="sgr-welcome-date">
+            <i class="bi bi-calendar3 me-1"></i>
+            {{ hoy|date:"d/m/Y" }}
+        </div>
     </section>
-  </div>
-  {% endif %}
-  {% endwith %}
+
+    <!-- KPI -->
+
+    <div class="sgr-kpi-strip">
+
+        <a href="{% url 'activities:actividad_list' %}" class="sgr-kpi">
+            <div>
+                <div class="sgr-kpi-label">Mis actividades</div>
+                <div class="sgr-kpi-value">
+                    {{ d.mis_actividades|default:0 }}
+                </div>
+            </div>
+            <i class="bi bi-journal-check sgr-kpi-icon"></i>
+        </a>
+
+        {% if sgr_puede_validar or sgr_puede_supervisar %}
+        <a href="{% url 'activities:validacion_bandeja' %}" class="sgr-kpi">
+            <div>
+                <div class="sgr-kpi-label">Evidencias pendientes</div>
+                <div class="sgr-kpi-value">
+                    {{ d.evidencias_pendientes|default:0 }}
+                </div>
+            </div>
+            <i class="bi bi-file-earmark-check sgr-kpi-icon"></i>
+        </a>
+        {% endif %}
+
+        <a href="{% url 'agenda:compromiso_list' %}" class="sgr-kpi">
+            <div>
+                <div class="sgr-kpi-label">Compromisos vencidos</div>
+                <div class="sgr-kpi-value {% if d.compromisos_vencidos %}text-danger{% endif %}">
+                    {{ d.compromisos_vencidos|default:0 }}
+                </div>
+            </div>
+            <i class="bi bi-calendar-x sgr-kpi-icon"></i>
+        </a>
+
+        <a href="{% url 'agenda:compromiso_list' %}" class="sgr-kpi">
+            <div>
+                <div class="sgr-kpi-label">Por vencer</div>
+                <div class="sgr-kpi-value">
+                    {{ d.compromisos_por_vencer|default:0 }}
+                </div>
+            </div>
+            <i class="bi bi-calendar-event sgr-kpi-icon"></i>
+        </a>
+
+    </div>
+
+    <!-- ACCESOS -->
+
+    <div class="sgr-quick-access">
+
+        {% if sgr_funcionario %}
+        <a href="{% url 'measurement:mi_desempeno' %}"
+           class="sgr-quick-link">
+            <i class="bi bi-person-check"></i>
+            Mi desempeño
+        </a>
+        {% endif %}
+
+        <a href="{% url 'activities:actividad_list' %}"
+           class="sgr-quick-link">
+            <i class="bi bi-journal-check"></i>
+            Actividades
+        </a>
+
+        <a href="{% url 'agenda:compromiso_list' %}"
+           class="sgr-quick-link">
+            <i class="bi bi-calendar-event"></i>
+            Agenda colectiva
+        </a>
+
+        {% if sgr_puede_supervisar %}
+        <a href="{% url 'measurement:semaforo' %}"
+           class="sgr-quick-link">
+            <i class="bi bi-stoplights"></i>
+            Semáforo
+        </a>
+        {% endif %}
+
+        {% if sgr_puede_validar or sgr_puede_supervisar or user.is_superuser %}
+        <a href="{% url 'activities:validacion_bandeja' %}"
+           class="sgr-quick-link">
+            <i class="bi bi-file-earmark-check"></i>
+            Validaciones
+        </a>
+        {% endif %}
+
+        {% if user.is_superuser %}
+        <a href="{% url 'admin:index' %}"
+           class="sgr-quick-link">
+            <i class="bi bi-gear"></i>
+            Panel técnico
+        </a>
+        {% endif %}
+
+    </div>
+
+    <!-- GRÁFICOS -->
+
+    <div class="sgr-section-heading">
+        <h3>
+            <i class="bi bi-bar-chart-line me-1"></i>
+            Indicadores de gestión
+        </h3>
+        <span><i class="bi bi-hand-index-thumb me-1"></i>Selecciona un gráfico para ver sus registros</span>
+    </div>
+
+    <div class="sgr-chart-grid">
+
+        {% if d.grafico_personal.labels or user.is_superuser %}
+        <section class="sgr-chart-card">
+            <div class="sgr-chart-header">
+                <div>
+                    <h3 class="sgr-chart-title">Cumplimiento por indicador</h3>
+                    <div class="sgr-chart-subtitle">Porcentaje de metas · Seleccionable</div>
+                </div>
+                <i class="bi bi-bar-chart-line sgr-chart-icon"></i>
+            </div>
+            <div class="sgr-chart-body">
+                {% if d.grafico_personal.labels %}
+                    <canvas id="graficoPersonal"></canvas>
+                {% else %}
+                    <div class="sgr-empty">
+                        <i class="bi bi-bar-chart"></i>
+                        <strong>Sin datos disponibles</strong>
+                        <p>Se requieren metas e indicadores registrados.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </section>
+        {% endif %}
+
+        {% if sgr_puede_supervisar or user.is_superuser %}
+        <section class="sgr-chart-card">
+            <div class="sgr-chart-header">
+                <div>
+                    <h3 class="sgr-chart-title">Semáforo de desempeño</h3>
+                    <div class="sgr-chart-subtitle">Distribución del equipo · Seleccionable</div>
+                </div>
+                <i class="bi bi-pie-chart sgr-chart-icon"></i>
+            </div>
+            <div class="sgr-chart-body">
+                {% if d.grafico_semaforo.labels and d.grafico_semaforo.values %}
+                    <canvas id="graficoSemaforo"></canvas>
+                {% else %}
+                    <div class="sgr-empty">
+                        <i class="bi bi-pie-chart"></i>
+                        <strong>Sin datos disponibles</strong>
+                        <p>Se requiere período vigente y metas.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </section>
+        {% endif %}
+
+        {% if sgr_puede_supervisar or user.is_superuser %}
+        <section class="sgr-chart-card">
+            <div class="sgr-chart-header">
+                <div>
+                    <h3 class="sgr-chart-title">Cumplimiento por delegación</h3>
+                    <div class="sgr-chart-subtitle">Promedio de cumplimiento · Seleccionable</div>
+                </div>
+                <i class="bi bi-diagram-3 sgr-chart-icon"></i>
+            </div>
+            <div class="sgr-chart-body">
+                {% if d.grafico_delegaciones.labels %}
+                    <canvas id="graficoDelegaciones"></canvas>
+                {% else %}
+                    <div class="sgr-empty">
+                        <i class="bi bi-diagram-3"></i>
+                        <strong>Sin datos disponibles</strong>
+                        <p>Se necesitan delegaciones y metas.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </section>
+        {% endif %}
+
+        {% if d.grafico_agenda.labels or user.is_superuser %}
+        <section class="sgr-chart-card">
+            <div class="sgr-chart-header">
+                <div>
+                    <h3 class="sgr-chart-title">Compromisos por estado</h3>
+                    <div class="sgr-chart-subtitle">Distribución de agenda · Seleccionable</div>
+                </div>
+                <i class="bi bi-calendar2-check sgr-chart-icon"></i>
+            </div>
+            <div class="sgr-chart-body">
+                {% if d.grafico_agenda.labels %}
+                    <canvas id="graficoAgenda"></canvas>
+                {% else %}
+                    <div class="sgr-empty">
+                        <i class="bi bi-calendar2-check"></i>
+                        <strong>Sin datos disponibles</strong>
+                        <p>Aún no hay compromisos registrados.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </section>
+        {% endif %}
+
+        {% if d.grafico_evolucion.labels or user.is_superuser %}
+        <section class="sgr-chart-card">
+            <div class="sgr-chart-header">
+                <div>
+                    <h3 class="sgr-chart-title">Evolución mensual</h3>
+                    <div class="sgr-chart-subtitle">Actividades registradas · Seleccionable</div>
+                </div>
+                <i class="bi bi-graph-up-arrow sgr-chart-icon"></i>
+            </div>
+            <div class="sgr-chart-body">
+                {% if d.grafico_evolucion.labels %}
+                    <canvas id="graficoEvolucion"></canvas>
+                {% else %}
+                    <div class="sgr-empty">
+                        <i class="bi bi-graph-up-arrow"></i>
+                        <strong>Sin datos disponibles</strong>
+                        <p>Se mostrará al registrar actividades.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </section>
+        {% endif %}
+
+        {% if sgr_puede_validar or sgr_puede_supervisar or user.is_superuser %}
+        <section class="sgr-chart-card">
+            <div class="sgr-chart-header">
+                <div>
+                    <h3 class="sgr-chart-title">Estado de evidencias</h3>
+                    <div class="sgr-chart-subtitle">Revisión y validación · Seleccionable</div>
+                </div>
+                <i class="bi bi-file-earmark-bar-graph sgr-chart-icon"></i>
+            </div>
+            <div class="sgr-chart-body">
+                {% if d.grafico_evidencias.labels %}
+                    <canvas id="graficoEvidencias"></canvas>
+                {% else %}
+                    <div class="sgr-empty">
+                        <i class="bi bi-file-earmark-bar-graph"></i>
+                        <strong>Sin datos disponibles</strong>
+                        <p>Todavía no hay evidencias para mostrar.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </section>
+        {% endif %}
+
+    </div>
+
+    <!-- AUDITORÍA -->
+
+    {% if d.ultimas_operaciones %}
+    <section class="sgr-table-card">
+        <div class="sgr-table-heading d-flex justify-content-between align-items-center">
+            <div>
+                <h3>
+                    <i class="bi bi-clock-history me-1"></i>
+                    Últimos registros y operaciones
+                </h3>
+                <small class="text-body-secondary">
+                    Actividad reciente en los módulos autorizados
+                </small>
+            </div>
+            <i class="bi bi-journal-text text-danger"></i>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Fecha y hora</th>
+                        <th>Módulo</th>
+                        <th>Operación</th>
+                        <th>Registro afectado</th>
+                        <th>Responsable</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for operacion in d.ultimas_operaciones %}
+                    <tr>
+                        <td class="text-nowrap">
+                            {{ operacion.fecha|date:"d/m/Y H:i" }}
+                        </td>
+                        <td>{{ operacion.modulo }}</td>
+                        <td>{{ operacion.evento }}</td>
+                        <td>{{ operacion.id_entidad_afectada|default:"—" }}</td>
+                        <td>{{ operacion.responsable_nombre }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    {% endif %}
+
+    <!-- COMPROMISOS VENCIDOS -->
+
+    {% if d.lista_vencidos %}
+    <section class="sgr-table-card">
+        <div class="sgr-table-heading d-flex justify-content-between align-items-center">
+            <div>
+                <h3>
+                    <i class="bi bi-exclamation-circle me-1"></i>
+                    Compromisos vencidos
+                </h3>
+                <small class="text-body-secondary">
+                    Registros que requieren seguimiento
+                </small>
+            </div>
+            <i class="bi bi-calendar-x text-danger"></i>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Responsable</th>
+                        <th>Delegación</th>
+                        <th>Fecha comprometida</th>
+                        <th>Estado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for compromiso in d.lista_vencidos %}
+                    <tr>
+                        <td>
+                            {% if compromiso.funcionario %}
+                                {{ compromiso.funcionario.nombre }}
+                            {% else %}
+                                Sin responsable
+                            {% endif %}
+                        </td>
+                        <td>{{ compromiso.delegacion|default:"Sin delegación" }}</td>
+                        <td>{{ compromiso.fecha_comprometida|date:"d/m/Y" }}</td>
+                        <td>{% estado_badge compromiso.estado %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    {% endif %}
+
 </div>
 
-{# ----------------------------------------------------- Compromisos vencidos #}
-{% if d.lista_vencidos %}
-<section class="card shadow-sm mb-4 border-danger-subtle" aria-labelledby="titulo-vencidos">
-  <div class="card-header bg-danger-subtle"><h2 class="h6 mb-0 text-danger-emphasis" id="titulo-vencidos"><i class="bi bi-exclamation-octagon me-1" aria-hidden="true"></i>Compromisos vencidos sin cierre</h2></div>
-  <div class="table-responsive">
-    <table class="table table-hover align-middle mb-0">
-      <thead class="table-light"><tr><th scope="col">Solicitante</th><th scope="col">Territorio</th><th scope="col">Responsable</th><th scope="col">Fecha comprometida</th><th scope="col">Atraso</th><th scope="col">Estado</th></tr></thead>
-      <tbody>
-        {% for c in d.lista_vencidos %}
-        <tr>
-          <td><a href="{% url 'agenda:compromiso_detail' c.pk %}">{{ c.solicitante }}</a></td>
-          <td>{{ c.territorio }}</td>
-          <td>{{ c.funcionario.nombre }}</td>
-          <td>{{ c.fecha_comprometida|date:"d/m/Y" }}</td>
-          <td class="text-danger">{{ c.fecha_comprometida|timesince:hoy }}</td>
-          <td>{% estado_badge c.estado %}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</section>
-{% endif %}
+<!-- MODAL DE DETALLES -->
 
-{# --------------------------------------------------------- Accesos rápidos #}
-{% if sgr_funcionario or user.is_superuser %}
-<h2 class="h5 mt-4 mb-3">Mi trabajo</h2>
-<div class="row g-3 mb-4">
-  {% if sgr_funcionario %}
-    {% url 'measurement:mi_desempeno' as u %}{% include "partials/_tarjeta.html" with icon="bi-person-check" title="Mi desempeño" text="Metas, avance, cumplimiento y semáforo." url=u %}
-  {% endif %}
-  {% if sgr_puede_registrar %}
-    {% url 'activities:actividad_create' as u %}{% include "partials/_tarjeta.html" with icon="bi-journal-plus" title="Registrar actividad" text="Ingrese una actividad, solicitud o problema atendido." url=u %}
-    {% url 'agenda:compromiso_create' as u %}{% include "partials/_tarjeta.html" with icon="bi-calendar-plus" title="Nuevo compromiso" text="Agregue un compromiso futuro a la agenda colectiva." url=u %}
-  {% endif %}
-  {% url 'activities:actividad_list' as u %}{% include "partials/_tarjeta.html" with icon="bi-journal-check" title="Actividades" text="Historial, evidencias y estado de validación." url=u %}
-  {% url 'agenda:compromiso_list' as u %}{% include "partials/_tarjeta.html" with icon="bi-calendar-event" title="Agenda colectiva" text="Compromisos del equipo, plazos y responsables." url=u badge=d.compromisos_vencidos %}
-  {% if sgr_puede_registrar or sgr_es_transversal %}
-    {% url 'social:caso_list' as u %}{% include "partials/_tarjeta.html" with icon="bi-people" title="Atención social" text="Casos y gestiones de personas usuarias." url=u %}
-  {% endif %}
-  {% if user.is_superuser %}
-    {% url 'admin:index' as u %}{% include "partials/_tarjeta.html" with icon="bi-shield-lock-fill" title="Panel técnico" text="Django Admin: usuarios y datos de base." url=u %}
-  {% endif %}
-</div>
-{% endif %}
+<div class="modal fade sgr-detail-modal"
+     id="dashboardDetailModal"
+     tabindex="-1"
+     aria-labelledby="dashboardDetailTitle"
+     aria-hidden="true">
 
-{% if sgr_puede_validar %}
-<h2 class="h5 mt-4 mb-3">Verificación</h2>
-<div class="row g-3 mb-4">
-  {% url 'activities:validacion_bandeja' as u %}{% include "partials/_tarjeta.html" with icon="bi-patch-check" title="Validación de evidencias" text="Apruebe, rechace o solicite corrección." url=u badge=d.evidencias_pendientes %}
-</div>
-{% endif %}
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
 
-{% if sgr_puede_supervisar %}
-<h2 class="h5 mt-4 mb-3">Supervisión y medición</h2>
-<div class="row g-3 mb-4">
-  {% url 'measurement:semaforo' as u %}{% include "partials/_tarjeta.html" with icon="bi-stoplights" title="Semáforo de delegación" text="Avance real versus esperado por funcionario." url=u %}
-  {% url 'agenda:resumen' as u %}{% include "partials/_tarjeta.html" with icon="bi-pie-chart" title="Resumen de agenda" text="Compromisos por funcionario y estado." url=u %}
-  {% url 'social:estadisticas' as u %}{% include "partials/_tarjeta.html" with icon="bi-bar-chart" title="Estadísticas sociales" text="Atenciones realizadas por tipo y mes." url=u %}
-  {% url 'measurement:meta_list' as u %}{% include "partials/_tarjeta.html" with icon="bi-bullseye" title="Metas y ponderaciones" text="Objetivos por funcionario y período." url=u %}
-  {% url 'measurement:periodo_list' as u %}{% include "partials/_tarjeta.html" with icon="bi-calendar-range" title="Períodos" text="Abrir, cerrar y consultar períodos." url=u %}
-  {% url 'measurement:ajuste_list' as u %}{% include "partials/_tarjeta.html" with icon="bi-plus-slash-minus" title="Incentivos y penalizaciones" text="Ajustes al resultado ponderado." url=u %}
+            <div class="modal-header">
+                <div>
+                    <h5 class="modal-title" id="dashboardDetailTitle">
+                        Detalle del indicador
+                    </h5>
+                    <small class="text-white-50">
+                        Registros relacionados con la selección
+                    </small>
+                </div>
+
+                <button type="button"
+                        class="btn-close"
+                        data-bs-dismiss="modal"
+                        aria-label="Cerrar">
+                </button>
+            </div>
+
+            <div class="modal-body">
+
+                <div id="dashboardDetailLoading" class="detail-loading">
+                    <div class="spinner-border text-danger" role="status"></div>
+                    <p class="mt-2 mb-0">Cargando registros...</p>
+                </div>
+
+                <div id="dashboardDetailEmpty"
+                     class="detail-empty d-none">
+                    <i class="bi bi-inbox fs-2"></i>
+                    <p class="mb-0 mt-2">No existen registros para esta selección.</p>
+                </div>
+
+                <div id="dashboardDetailError"
+                     class="alert alert-danger d-none">
+                    No fue posible cargar los registros.
+                </div>
+
+                <div id="dashboardDetailContent"
+                     class="table-responsive d-none">
+
+                    <table class="table table-hover align-middle">
+                        <thead>
+                            <tr>
+                                <th>Registro</th>
+                                <th>Responsable</th>
+                                <th>Fecha</th>
+                                <th>Estado</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="dashboardDetailRows"></tbody>
+                    </table>
+
+                    <small class="text-muted">
+                        Se muestran hasta 100 registros relacionados.
+                    </small>
+                </div>
+
+            </div>
+
+            <div class="modal-footer">
+                <button type="button"
+                        class="btn btn-outline-secondary btn-sm"
+                        data-bs-dismiss="modal">
+                    Cerrar
+                </button>
+            </div>
+
+        </div>
+    </div>
 </div>
 
-<h2 class="h5 mt-4 mb-3">Organización</h2>
-<div class="row g-3 mb-4">
-  {% url 'organizations:funcionario_list' as u %}{% include "partials/_tarjeta.html" with icon="bi-person-vcard" title="Funcionarios" text="Personas, cargos, delegaciones y roles." url=u %}
-  {% url 'organizations:delegacion_list' as u %}{% include "partials/_tarjeta.html" with icon="bi-diagram-3" title="Delegaciones" text="Unidades organizacionales." url=u %}
-  {% url 'organizations:cargo_list' as u %}{% include "partials/_tarjeta.html" with icon="bi-briefcase" title="Cargos y funciones" text="Ítems medibles de cada cargo." url=u %}
-  {% url 'organizations:rol_list' as u %}{% include "partials/_tarjeta.html" with icon="bi-shield-lock" title="Roles" text="Perfiles de acceso." url=u %}
-  {% url 'catalogs:catalogo_list' as u %}{% include "partials/_tarjeta.html" with icon="bi-list-ul" title="Catálogos" text="Actividades, servicios y atenciones por área." url=u %}
-  {% url 'audit:auditoria_list' as u %}{% if u %}{% include "partials/_tarjeta.html" with icon="bi-clipboard-data" title="Auditoría" text="Quién cambió qué dato y cuándo." url=u %}{% endif %}
-</div>
-{% endif %}
+<!-- DATOS DE LOS GRÁFICOS -->
+
+{{ d.grafico_personal|json_script:"datosPersonal" }}
+{{ d.grafico_semaforo|json_script:"datosSemaforo" }}
+{{ d.grafico_delegaciones|json_script:"datosDelegaciones" }}
+{{ d.grafico_agenda|json_script:"datosAgenda" }}
+{{ d.grafico_evolucion|json_script:"datosEvolucion" }}
+{{ d.grafico_evidencias|json_script:"datosEvidencias" }}
 
 {% endwith %}
+{% endblock %}
+
+{% block extra_js %}
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+
+    if (typeof Chart === "undefined") {
+        console.error("No se pudo cargar Chart.js.");
+        return;
+    }
+
+    const ROJO = "#AD0000";
+    const ROJO_OSCURO = "#660000";
+    const ROJO_CLARO = "#E08080";
+    const NARANJA = "#CC6600";
+    const GRIS = "#B3B3B3";
+
+    const COLORES = [
+        ROJO,
+        ROJO_OSCURO,
+        ROJO_CLARO,
+        NARANJA,
+        GRIS,
+        "#7A0000"
+    ];
+
+    const COLORES_SEMAFORO = [
+        "#198754",
+        "#F2A900",
+        "#DC3545"
+    ];
+
+    const URL_DETALLE = "{% url 'dashboard_detalle' %}";
+
+    function obtenerDatos(id) {
+        const elemento = document.getElementById(id);
+
+        if (!elemento) return null;
+
+        try {
+            return JSON.parse(elemento.textContent);
+        } catch (error) {
+            console.error("Error leyendo datos:", id, error);
+            return null;
+        }
+    }
+
+    function opcionesBase() {
+        return {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: "nearest",
+                intersect: true
+            },
+            plugins: {
+                legend: {
+                    position: "bottom",
+                    labels: {
+                        usePointStyle: true,
+                        padding: 6,
+                        boxWidth: 6,
+                        font: { size: 8 }
+                    }
+                },
+                tooltip: {
+                    backgroundColor: "#333333",
+                    titleFont: { size: 9 },
+                    bodyFont: { size: 8 },
+                    padding: 7,
+                    cornerRadius: 5
+                }
+            }
+        };
+    }
+
+    /* MODAL */
+
+    const modalElemento = document.getElementById("dashboardDetailModal");
+
+    const modalDetalle = modalElemento && window.bootstrap
+        ? new bootstrap.Modal(modalElemento)
+        : null;
+
+    const loading = document.getElementById("dashboardDetailLoading");
+    const empty = document.getElementById("dashboardDetailEmpty");
+    const errorBox = document.getElementById("dashboardDetailError");
+    const contenido = document.getElementById("dashboardDetailContent");
+    const filas = document.getElementById("dashboardDetailRows");
+    const titulo = document.getElementById("dashboardDetailTitle");
+
+    function ocultarEstados() {
+        loading.classList.add("d-none");
+        empty.classList.add("d-none");
+        errorBox.classList.add("d-none");
+        contenido.classList.add("d-none");
+    }
+
+    async function abrirDetalle(tipo, etiqueta, indice = null) {
+
+        if (!modalDetalle) {
+            console.error("Bootstrap Modal no está disponible.");
+            return;
+        }
+
+        titulo.textContent = etiqueta;
+        filas.innerHTML = "";
+
+        ocultarEstados();
+        loading.classList.remove("d-none");
+
+        modalDetalle.show();
+
+        const parametros = new URLSearchParams({
+            tipo: tipo,
+            etiqueta: etiqueta
+        });
+
+        if (indice !== null) {
+            parametros.set("indice", indice);
+        }
+
+        try {
+            const respuesta = await fetch(
+                URL_DETALLE + "?" + parametros.toString(),
+                {
+                    method: "GET",
+                    headers: {
+                        "X-Requested-With": "XMLHttpRequest"
+                    }
+                }
+            );
+
+            const resultado = await respuesta.json();
+
+            if (!respuesta.ok) {
+                throw new Error(
+                    resultado.error || "Error al consultar los registros."
+                );
+            }
+
+            ocultarEstados();
+
+            if (!resultado.filas || resultado.filas.length === 0) {
+                empty.classList.remove("d-none");
+                return;
+            }
+
+            resultado.filas.forEach(function (fila) {
+
+                const tr = document.createElement("tr");
+
+                [
+                    fila.registro,
+                    fila.responsable,
+                    fila.fecha,
+                    fila.estado
+                ].forEach(function (valor) {
+
+                    const td = document.createElement("td");
+                    td.textContent = valor || "—";
+                    tr.appendChild(td);
+
+                });
+
+                const tdAccion = document.createElement("td");
+
+                if (fila.url) {
+                    const enlace = document.createElement("a");
+                    enlace.href = fila.url;
+                    enlace.className = "btn btn-sm btn-outline-danger";
+                    enlace.textContent = "Ver";
+                    tdAccion.appendChild(enlace);
+                }
+
+                tr.appendChild(tdAccion);
+                filas.appendChild(tr);
+
+            });
+
+            contenido.classList.remove("d-none");
+
+        } catch (error) {
+
+            console.error("Error al abrir detalle:", error);
+
+            ocultarEstados();
+            errorBox.textContent = error.message;
+            errorBox.classList.remove("d-none");
+
+        }
+    }
+
+    /* FUNCIÓN PARA SELECCIONAR ELEMENTOS */
+
+    function eventoSeleccion(tipo, indiceMensual = false) {
+
+        return function (evento, elementos, grafico) {
+
+            if (!elementos || elementos.length === 0) {
+                return;
+            }
+
+            const indice = elementos[0].index;
+            const etiqueta = grafico.data.labels[indice];
+
+            abrirDetalle(
+                tipo,
+                etiqueta,
+                indiceMensual ? indice : null
+            );
+        };
+    }
+
+    /* GRÁFICOS DE BARRAS */
+
+    function crearBarras(id, datos, horizontal = false, tipo = "") {
+
+        const canvas = document.getElementById(id);
+
+        if (!canvas || !datos || !datos.labels || !datos.labels.length) {
+            return;
+        }
+
+        new Chart(canvas, {
+            type: "bar",
+            data: {
+                labels: datos.labels,
+                datasets: [{
+                    label: "Cumplimiento",
+                    data: datos.values,
+                    backgroundColor: COLORES,
+                    borderRadius: 3,
+                    borderSkipped: false,
+                    maxBarThickness: 18
+                }]
+            },
+            options: {
+                ...opcionesBase(),
+                indexAxis: horizontal ? "y" : "x",
+
+                onClick: eventoSeleccion(tipo),
+
+                plugins: {
+                    ...opcionesBase().plugins,
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return " " + context.raw + "%";
+                            }
+                        }
+                    }
+                },
+
+                scales: horizontal ? {
+                    x: {
+                        beginAtZero: true,
+                        max: 100,
+                        grid: { color: "rgba(0,0,0,.06)" },
+                        ticks: {
+                            font: { size: 7 },
+                            callback: value => value + "%"
+                        }
+                    },
+                    y: {
+                        grid: { display: false },
+                        ticks: { font: { size: 7 } }
+                    }
+                } : {
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: "rgba(0,0,0,.06)" },
+                        ticks: { font: { size: 7 } }
+                    },
+                    x: {
+                        grid: { display: false },
+                        ticks: { font: { size: 7 } }
+                    }
+                }
+            }
+        });
+    }
+
+    /* GRÁFICOS DE DONA */
+
+    function crearDona(id, datos, colores = COLORES, tipo = "") {
+
+        const canvas = document.getElementById(id);
+
+        if (!canvas || !datos || !datos.labels || !datos.labels.length) {
+            return;
+        }
+
+        new Chart(canvas, {
+            type: "doughnut",
+            data: {
+                labels: datos.labels,
+                datasets: [{
+                    data: datos.values,
+                    backgroundColor: colores,
+                    borderColor: "#FFFFFF",
+                    borderWidth: 2,
+                    hoverOffset: 5
+                }]
+            },
+            options: {
+                ...opcionesBase(),
+                cutout: "65%",
+                onClick: eventoSeleccion(tipo)
+            }
+        });
+    }
+
+    /* EVOLUCIÓN MENSUAL */
+
+    function crearLinea(id, datos) {
+
+        const canvas = document.getElementById(id);
+
+        if (!canvas || !datos || !datos.labels || !datos.labels.length) {
+            return;
+        }
+
+        new Chart(canvas, {
+            type: "line",
+            data: {
+                labels: datos.labels,
+                datasets: [{
+                    label: "Actividades",
+                    data: datos.values,
+                    borderColor: ROJO,
+                    backgroundColor: "rgba(173,0,0,.10)",
+                    fill: true,
+                    tension: .35,
+                    pointRadius: 4,
+                    pointHoverRadius: 6,
+                    pointBackgroundColor: ROJO,
+                    pointBorderColor: "#FFFFFF",
+                    pointBorderWidth: 1
+                }]
+            },
+            options: {
+                ...opcionesBase(),
+
+                onClick: eventoSeleccion("evolucion", true),
+
+                plugins: {
+                    ...opcionesBase().plugins,
+                    legend: { display: false }
+                },
+
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: "rgba(0,0,0,.06)" },
+                        ticks: {
+                            precision: 0,
+                            font: { size: 7 }
+                        }
+                    },
+                    x: {
+                        grid: { display: false },
+                        ticks: { font: { size: 7 } }
+                    }
+                }
+            }
+        });
+    }
+
+    /* INICIALIZACIÓN DE LOS SEIS GRÁFICOS */
+
+    crearBarras(
+        "graficoPersonal",
+        obtenerDatos("datosPersonal"),
+        true,
+        "personal"
+    );
+
+    crearDona(
+        "graficoSemaforo",
+        obtenerDatos("datosSemaforo"),
+        COLORES_SEMAFORO,
+        "semaforo"
+    );
+
+    crearBarras(
+        "graficoDelegaciones",
+        obtenerDatos("datosDelegaciones"),
+        false,
+        "delegaciones"
+    );
+
+    crearDona(
+        "graficoAgenda",
+        obtenerDatos("datosAgenda"),
+        COLORES,
+        "agenda"
+    );
+
+    crearLinea(
+        "graficoEvolucion",
+        obtenerDatos("datosEvolucion")
+    );
+
+    crearDona(
+        "graficoEvidencias",
+        obtenerDatos("datosEvidencias"),
+        COLORES,
+        "evidencias"
+    );
+
+});
+</script>
+
 {% endblock %}

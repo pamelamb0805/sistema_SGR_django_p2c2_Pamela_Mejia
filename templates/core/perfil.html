@@ -1,0 +1,206 @@
+
+{% extends "base.html" %}
+
+{% block title %}Mi perfil · SGR{% endblock %}
+
+{% block page_title %}
+Mi perfil
+{% endblock %}
+
+{% block page_actions %}
+<a href="{% url 'perfil_editar' %}" class="btn btn-primary">
+    <i class="bi bi-pencil-square me-1"></i>
+    Editar perfil
+</a>
+{% endblock %}
+
+{% block content %}
+
+<div class="container-fluid px-0">
+
+    <div class="card border-0 shadow-sm">
+
+        <div class="card-body p-4">
+
+            <!-- ENCABEZADO DEL PERFIL -->
+            <div class="row align-items-center g-4">
+
+                <div class="col-md-3 text-center">
+
+                    {% if usuario_perfil.foto_perfil %}
+                        <img
+                            src="{{ usuario_perfil.foto_perfil.url }}"
+                            alt="Fotografía de perfil"
+                            class="rounded-circle shadow-sm"
+                            style="
+                                width: 150px;
+                                height: 150px;
+                                object-fit: cover;
+                                border: 4px solid #f1f1f1;
+                            "
+                        >
+                    {% else %}
+                        <div
+                            class="rounded-circle bg-light d-flex align-items-center justify-content-center mx-auto shadow-sm"
+                            style="width:150px;height:150px;"
+                        >
+                            <i
+                                class="bi bi-person-circle text-secondary"
+                                style="font-size:6rem;"
+                            ></i>
+                        </div>
+                    {% endif %}
+
+                </div>
+
+                <div class="col-md-9">
+
+                    <h2 class="h4 fw-bold mb-1">
+
+                        {% if funcionario_perfil %}
+                            {{ funcionario_perfil.nombre }}
+                        {% else %}
+                            {{ usuario_perfil.username }}
+                        {% endif %}
+
+                    </h2>
+
+                    <p class="text-body-secondary mb-3">
+                        {{ sgr_rol_principal|default:"Usuario del sistema" }}
+                    </p>
+
+                    <span class="badge text-bg-success">
+                        <i class="bi bi-check-circle me-1"></i>
+                        Cuenta de acceso
+                    </span>
+
+                </div>
+
+            </div>
+
+            <hr class="my-4">
+
+            <!-- INFORMACIÓN DE LA CUENTA -->
+            <div class="mb-3">
+
+                <h3 class="h6 fw-bold">
+                    <i class="bi bi-person-vcard me-2"></i>
+                    Información de la cuenta
+                </h3>
+
+                <p class="text-body-secondary small mb-0">
+                    Datos asociados a tu usuario dentro del Sistema de Gestión de Resultados.
+                </p>
+
+            </div>
+
+            <div class="row g-3">
+
+                <div class="col-md-6">
+
+                    <label class="form-label text-body-secondary">
+                        Nombre de usuario
+                    </label>
+
+                    <div class="form-control bg-light">
+                        {{ usuario_perfil.username }}
+                    </div>
+
+                </div>
+
+                <div class="col-md-6">
+
+                    <label class="form-label text-body-secondary">
+                        Correo electrónico
+                    </label>
+
+                    <div class="form-control bg-light">
+                        {{ usuario_perfil.email|default:"No registrado" }}
+                    </div>
+
+                </div>
+
+                {% if funcionario_perfil %}
+
+                    <div class="col-md-6">
+
+                        <label class="form-label text-body-secondary">
+                            Funcionario
+                        </label>
+
+                        <div class="form-control bg-light">
+                            {{ funcionario_perfil.nombre }}
+                        </div>
+
+                    </div>
+
+                    <div class="col-md-6">
+
+                        <label class="form-label text-body-secondary">
+                            Cargo
+                        </label>
+
+                        <div class="form-control bg-light">
+                            {{ funcionario_perfil.cargo }}
+                        </div>
+
+                    </div>
+
+                    <div class="col-md-6">
+
+                        <label class="form-label text-body-secondary">
+                            Delegación
+                        </label>
+
+                        <div class="form-control bg-light">
+                            {{ funcionario_perfil.delegacion }}
+                        </div>
+
+                    </div>
+
+                {% endif %}
+
+                <div class="col-md-6">
+
+                    <label class="form-label text-body-secondary">
+                        Fecha de creación
+                    </label>
+
+                    <div class="form-control bg-light">
+                        {{ usuario_perfil.fecha_creacion|date:"d/m/Y H:i" }}
+                    </div>
+
+                </div>
+
+            </div>
+
+            <hr class="my-4">
+
+            <!-- ACCIONES -->
+            <div class="d-flex flex-wrap justify-content-end gap-2">
+
+                <a
+                    href="{% url 'dashboard' %}"
+                    class="btn btn-outline-secondary"
+                >
+                    <i class="bi bi-arrow-left me-1"></i>
+                    Volver al inicio
+                </a>
+
+                <a
+                    href="{% url 'perfil_editar' %}"
+                    class="btn btn-primary"
+                >
+                    <i class="bi bi-pencil-square me-1"></i>
+                    Editar perfil
+                </a>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+{% endblock %}

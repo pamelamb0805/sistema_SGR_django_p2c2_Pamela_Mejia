@@ -1,7 +1,9 @@
+
 from django.contrib.auth.views import LogoutView
 from django.urls import path
 
 from . import views
+from .dashboard_details import dashboard_detalle
 
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
@@ -10,19 +12,16 @@ urlpatterns = [
 
     path("registro/", views.registro, name="registro"),
 
+    path("recuperar-clave/", views.recuperar_clave, name="recuperar_clave"),
+    path("validar-codigo/", views.validar_codigo, name="validar_codigo"),
+    path("nueva-clave/", views.nueva_clave, name="nueva_clave"),
+
+    # Perfil del usuario autenticado
+    path("perfil/", views.perfil, name="perfil"),
+    path("perfil/editar/", views.perfil_editar, name="perfil_editar"),
     path(
-        "recuperar-clave/",
-        views.recuperar_clave,
-        name="recuperar_clave",
-    ),
-    path(
-        "validar-codigo/",
-        views.validar_codigo,
-        name="validar_codigo",
-    ),
-    path(
-        "nueva-clave/",
-        views.nueva_clave,
-        name="nueva_clave",
-    ),
+    "dashboard/detalle/",
+    dashboard_detalle,
+    name="dashboard_detalle",
+),
 ]

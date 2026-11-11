@@ -8,6 +8,7 @@ from core.forms import BootstrapFormMixin
 from .models import Cargo, Delegacion, Funcionario, ItemMedible, Rol, Usuario
 
 from django.core.exceptions import ValidationError
+from django.core.exceptions import ValidationError
 
 class DelegacionForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
@@ -373,3 +374,59 @@ class UsuarioAdminForm(BootstrapFormMixin, forms.ModelForm):
             self.save_m2m()
 
         return usuario
+
+
+class PerfilUsuarioForm(BootstrapFormMixin, forms.ModelForm):
+
+    class Meta:
+        model = Usuario
+        fields = ["email", "foto_perfil"]
+
+        labels = {
+            "email": "Correo electrónico",
+            "foto_perfil": "Fotografía de perfil",
+        }
+
+        widgets = {
+            "email": forms.EmailInput(attrs={
+                "placeholder": "correo@ejemplo.cl",
+                "autocomplete": "email",
+            }),
+            "foto_perfil": forms.ClearableFileInput(attrs={
+                "accept": "image/jpeg,image/png,image/webp",
+            }),
+        }
+
+    def clean_email(self):
+        email = (self.cleaned_data.get("email") or "").strip().lower()
+
+        duplicados = Usuario.objects.filter(
+            email__iexact=email
+        ).exclude(pk=self.instance.pk)
+
+        if email and duplicados.exists():
+            raise ValidationError(
+                "Ese correo ya está asociado a otra cuenta."
+            )
+
+        return email
+
+    def clean_foto_perfil(self):
+        imagen = self.cleaned_data.get("foto_perfil")
+
+        if not imagen:
+            return imagen
+
+        if imagen.size > 3 * 1024 * 1024:
+            raise ValidationError(
+                "La fotografía no puede superar los 3 MB."
+            )
+
+        extensiones = (".jpg", ".jpeg", ".png", ".webp")
+
+        if not imagen.name.lower().endswith(extensiones):
+            raise ValidationError(
+                "Utiliza una imagen JPG, JPEG, PNG o WEBP."
+            )
+
+        return imagen

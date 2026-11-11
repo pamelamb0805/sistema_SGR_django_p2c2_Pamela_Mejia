@@ -224,40 +224,57 @@ class UsuarioManager(BaseUserManager):
         extra.setdefault("is_superuser", True)
         return self.create_user(username, password, **extra)
 
-
 class Usuario(AbstractBaseUser, PermissionsMixin):
     username = models.CharField(max_length=150, unique=True)
-    password = models.CharField("contraseña", max_length=128, db_column="contrasenia")
-    funcionario = models.OneToOneField(
-        Funcionario, on_delete=models.PROTECT, db_column="id_funcionario",
-        related_name="usuario", null=True, blank=True,
+
+    password = models.CharField(
+        "contraseña",
+        max_length=128,
+        db_column="contrasenia",
     )
+
+    funcionario = models.OneToOneField(
+        Funcionario,
+        on_delete=models.PROTECT,
+        db_column="id_funcionario",
+        related_name="usuario",
+        null=True,
+        blank=True,
+    )
+
     fecha_creacion = models.DateTimeField(auto_now_add=True)
+
+    email = models.EmailField(
+        "correo electrónico",
+        max_length=254,
+        unique=True,
+        null=True,
+        blank=True,
+    )
+
+    delegaciones_autorizadas = models.ManyToManyField(
+        Delegacion,
+        blank=True,
+        related_name="usuarios_autorizados",
+        verbose_name="delegaciones autorizadas",
+    )
+
+    activo_acceso = models.BooleanField(
+        "Acceso habilitado",
+        default=True,
+    )
+
+    foto_perfil = models.ImageField(
+        upload_to="perfiles/",
+        blank=True,
+        null=True,
+        verbose_name="Fotografía de perfil",
+    )
 
     objects = UsuarioManager()
 
     USERNAME_FIELD = "username"
     REQUIRED_FIELDS = []
-
-    email = models.EmailField(
-    "correo electrónico",
-    max_length=254,
-    unique=True,
-    null=True,
-    blank=True,
-    )
-
-    delegaciones_autorizadas = models.ManyToManyField(
-    Delegacion,
-    blank=True,
-    related_name="usuarios_autorizados",
-    verbose_name="delegaciones autorizadas",
-    )
-
-    activo_acceso = models.BooleanField(
-    "Acceso habilitado",
-    default=True,
-    )
 
     class Meta:
         db_table = "usuario_acceso"
@@ -269,11 +286,9 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
 
     @property
     def is_active(self):
-        # ROOT puede existir sin funcionario, pero debe poder deshabilitarse.
         if not self.activo_acceso:
             return False
 
-        # Las cuentas normales necesitan un funcionario activo.
         if self.is_superuser:
             return True
 
