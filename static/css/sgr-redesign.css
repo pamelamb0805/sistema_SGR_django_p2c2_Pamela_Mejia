@@ -804,3 +804,143 @@ footer {
         break-inside: avoid;
     }
 }
+
+
+/* ==========================================================
+   DASHBOARD SGR - FONDO ROJO OSCURO DOMINANTE
+   Solo afecta al panel de control
+========================================================== */
+
+/* Fondo de toda el área principal del dashboard */
+main#contenido:has(.sgr-executive) {
+    background:
+        radial-gradient(
+            circle at 85% 5%,
+            #660000 0,
+            #4D0000 42%,
+            #330000 100%
+        ) !important;
+    color: #FFFFFF !important;
+    border-radius: 18px 0 0 0;
+}
+
+/* Encabezado superior de la página */
+main#contenido:has(.sgr-executive) > .d-flex.border-bottom {
+    border-color: rgba(255,255,255,.20) !important;
+}
+
+main#contenido:has(.sgr-executive) > .d-flex h1 {
+    color: #FFFFFF !important;
+}
+
+main#contenido:has(.sgr-executive) > .d-flex .text-body-secondary {
+    color: #F2B5B5 !important;
+}
+
+/* Contenedor del dashboard */
+.sgr-executive {
+    padding: 12px 10px 20px;
+    color: #FFFFFF;
+}
+
+/* Títulos de las secciones */
+.sgr-executive .sgr-section-heading h3 {
+    color: #FFFFFF !important;
+}
+
+.sgr-executive .sgr-section-heading span {
+    color: #F2B5B5 !important;
+}
+
+/* Cabecera de bienvenida */
+.sgr-executive .sgr-welcome {
+    background: linear-gradient(
+        110deg,
+        #330000,
+        #7A0000,
+        #AD0000
+    );
+    border: 1px solid rgba(255,255,255,.16);
+    box-shadow: 0 5px 16px rgba(0,0,0,.20);
+}
+
+/* Tarjetas de indicadores */
+.sgr-executive .sgr-kpi {
+    background: #FFFFFF !important;
+    border-left: 4px solid #CC6600 !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,.16);
+}
+
+.sgr-executive .sgr-kpi:hover {
+    box-shadow: 0 7px 18px rgba(0,0,0,.24);
+}
+
+/* Accesos directos */
+.sgr-executive .sgr-quick-link {
+    background: #FFFFFF;
+    border: 1px solid #F2B5B5;
+    color: #4D0000;
+    box-shadow: 0 2px 7px rgba(0,0,0,.12);
+}
+
+.sgr-executive .sgr-quick-link:hover {
+    color: #AD0000;
+    background: #F9DCDC;
+    border-color: #CC6600;
+}
+
+/* Gráficos: superficies blancas para facilitar la lectura */
+.sgr-executive .sgr-chart-card {
+    background: #FFFFFF;
+    border: 1px solid #F2B5B5;
+    border-top: 3px solid #CC6600;
+    border-radius: 9px;
+    box-shadow: 0 5px 15px rgba(0,0,0,.17);
+}
+
+/* Últimos registros y compromisos */
+.sgr-executive .sgr-table-card {
+    background: #FFFFFF;
+    border: 1px solid #F2B5B5;
+    border-top: 3px solid #CC6600;
+    border-radius: 9px;
+    box-shadow: 0 5px 15px rgba(0,0,0,.17);
+}
+
+/* Estados vacíos */
+.sgr-executive .sgr-empty {
+    color: #737C7B;
+}
+
+.sgr-executive .sgr-empty strong {
+    color: #4D0000;
+}
+
+/* Alertas conservan sus colores semánticos */
+.sgr-executive .alert {
+    border-radius: 8px;
+}
+
+/* Adaptación móvil */
+@media (max-width: 991.98px) {
+    main#contenido:has(.sgr-executive) {
+        border-radius: 0;
+    }
+}
+
+@media (max-width: 576px) {
+    .sgr-executive {
+        padding: 8px 2px 16px;
+    }
+}
+
+/* TÍTULO PANEL DE CONTROL: BLANCO INSTITUCIONAL */
+main#contenido:has(.sgr-executive) > .d-flex h1,
+main#contenido:has(.sgr-executive) > .d-flex h1 * {
+    color: #FFFFFF !important;
+}
+
+/* Texto secundario debajo del título */
+main#contenido:has(.sgr-executive) > .d-flex .text-body-secondary {
+    color: #F2B5B5 !important;
+}
