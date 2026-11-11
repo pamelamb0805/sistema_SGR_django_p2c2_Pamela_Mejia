@@ -22,9 +22,8 @@
     <link rel="stylesheet"
           href="{% static 'css/sgr.css' %}?v=20261111-1">
 
-    <!-- Corrección: etiqueta link cerrada correctamente -->
     <link rel="stylesheet"
-      href="{% static 'css/sgr-redesign.css' %}?v=20261111-4">
+          href="{% static 'css/sgr-redesign.css' %}?v=20261111-4">
 
     {% block extra_css %}{% endblock %}
 </head>
@@ -428,7 +427,20 @@
                 </h1>
 
                 <div class="btn-toolbar gap-2">
+
+                    {% if request.resolver_match.app_name == "activities" or request.resolver_match.app_name == "agenda" or request.resolver_match.app_name == "social" or request.resolver_match.app_name == "measurement" or request.resolver_match.app_name == "organizations" or request.resolver_match.app_name == "catalogs" or request.resolver_match.app_name == "audit" %}
+
+                    <a href="{% url 'dashboard' %}"
+                    class="btn btn-sm fw-semibold text-white shadow-sm"
+                    style="background-color: #b02a37; border: 1px solid #b02a37;">
+                        <i class="bi bi-arrow-left me-1"></i>
+                        Volver al Panel de Control
+                    </a>
+
+                    {% endif %}
+
                     {% block page_actions %}{% endblock %}
+
                 </div>
             </div>
 
