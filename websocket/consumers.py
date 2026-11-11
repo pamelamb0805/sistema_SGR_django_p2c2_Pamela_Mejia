@@ -11,7 +11,8 @@ from core.mixins import (
 class SGRConsumer(AsyncJsonWebsocketConsumer):
     """
     Conexión WebSocket del SGR.
-    Restringe las notificaciones al ámbito autorizado del usuario.
+    Restringe las notificaciones de cada delegación al ámbito
+    autorizado del usuario y permite recibir eventos globales.
     """
 
     async def connect(self):
@@ -21,16 +22,17 @@ class SGRConsumer(AsyncJsonWebsocketConsumer):
             await self.close(code=4401)
             return
 
-        activo, transversal, delegaciones = await self.obtener_ambito(usuario)
+        activo, transversal, delegaciones = await self.obtener_ambito(
+            usuario
+        )
 
         if not activo or (not transversal and not delegaciones):
             await self.close(code=4403)
             return
 
-        self.grupos = []
-
-        if transversal:
-            self.grupos.append("sgr_global")
+        self.grupos = [
+            "sgr_global",
+        ]
 
         self.grupos.extend(
             f"sgr_delegacion_{delegacion_id}"

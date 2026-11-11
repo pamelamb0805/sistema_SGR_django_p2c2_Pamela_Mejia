@@ -30,12 +30,14 @@ def obtener_delegacion_id(objeto, profundidad=0):
     if delegacion_id:
         return delegacion_id
 
+    # Relaciones necesarias para recorrer las entidades del SGR.
     relaciones = (
         "funcionario",
         "usuario",
         "actividad",
         "evidencia",
         "compromiso",
+        "meta",
     )
 
     for relacion in relaciones:
@@ -93,9 +95,7 @@ def publish_crud_event(
     if delegacion_id:
         grupos.append(f"sgr_delegacion_{delegacion_id}")
 
-        # La creación/modificación de una delegación también
-        # debe llegar al grupo de supervisión global.
-        if objeto._meta.model_name == "delegacion":
+        if modelo_es_delegacion(objeto):
             grupos.append("sgr_global")
     else:
         grupos.append("sgr_global")
@@ -116,3 +116,8 @@ def publish_crud_event(
             "No se pudo publicar el evento CRUD del módulo %s.",
             module,
         )
+
+
+def modelo_es_delegacion(objeto):
+    """Identifica si el registro corresponde a una delegación."""
+    return objeto._meta.model_name == "delegacion"

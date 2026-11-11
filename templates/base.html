@@ -22,9 +22,10 @@
     <link rel="stylesheet"
           href="{% static 'css/sgr.css' %}?v=20261111-1">
 
+    <!-- Corrección: etiqueta link cerrada correctamente -->
     <link rel="stylesheet"
-          href="{% static 'css/sgr-redesign.css' %}?v=20261111-2"
-          
+          href="{% static 'css/sgr-redesign.css' %}?v=20261111-3">
+
     {% block extra_css %}{% endblock %}
 </head>
 
@@ -462,7 +463,7 @@
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.10.8/dist/sweetalert2.all.min.js"></script>
 
 <script src="{% static 'js/alerts.js' %}"></script>
-<script src="{% static 'js/sgr-websocket.js' %}?v=20261111-1"></script>
+<script src="{% static 'js/sgr-websocket.js' %}?v=20261111-2"></script>
 
 {% block extra_js %}{% endblock %}
 
