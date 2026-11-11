@@ -10,7 +10,7 @@
     }
 
     const moduloActual = body.dataset.sgrModule || "";
-    const ruta = `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws/crud/`;
+    const ruta = `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws/sgr/`;
 
     let socket = null;
     let reintento = 1000;
