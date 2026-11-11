@@ -10,6 +10,14 @@ urlpatterns = [
     path("nuevo/", views.CasoCreateView.as_view(), name="caso_create"),
     path("estadisticas/", views.estadisticas, name="estadisticas"),
 
+
+    path(
+        "estadisticas/exportar-excel/",
+        views.exportar_estadisticas_excel,
+        name="estadisticas_exportar_excel",
+    ),
+
+
     path(
     "exportar-excel/",
     views.exportar_casos_excel,

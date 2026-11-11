@@ -556,3 +556,225 @@ def estadisticas(request):
         "estadisticas": estadisticas_atenciones(qs), "hoy": timezone.localdate(),
         "delegaciones": Delegacion.objects.all() if es_transversal(request.user) else [],
     })
+
+
+def exportar_estadisticas_excel(request):
+    """Exporta estadísticas sociales respetando filtros y permisos."""
+
+    if not request.user.is_authenticated:
+        return redirect("login")
+
+    if not tiene_rol(request.user, *ROLES_SOCIAL):
+        return denegar_acceso(request)
+
+    filtros = request.GET
+    gestiones = gestiones_visibles(request.user)
+
+    # Aplicar exactamente los filtros del informe.
+    for campo, filtro in (
+        ("fecha_desde", "fecha__gte"),
+        ("fecha_hasta", "fecha__lte"),
+        ("delegacion", "usuario__delegacion_id"),
+    ):
+        valor = filtros.get(campo, "").strip()
+
+        if valor and (
+            campo != "delegacion" or es_transversal(request.user)
+        ):
+            gestiones = gestiones.filter(**{filtro: valor})
+
+    # Las estadísticas consideran únicamente gestiones realizadas.
+    realizadas = (
+        gestiones.filter(
+            estado=AtencionSocial.ESTADO_REALIZADA
+        )
+        .select_related(
+            "usuario",
+            "tipo_atencion",
+            "subatencion",
+            "funcionario",
+            "delegacion",
+        )
+        .order_by("fecha", "usuario_id", "numero_gestion")
+    )
+
+    resumen = estadisticas_atenciones(gestiones)
+
+    libro = Workbook()
+
+    # --------------------------------------------------
+    # HOJA 1: RESUMEN GENERAL
+    # --------------------------------------------------
+    hoja = libro.active
+    hoja.title = "Resumen"
+
+    hoja.append(["ESTADÍSTICAS DE ATENCIÓN SOCIAL"])
+    hoja.append(["Indicador", "Total"])
+    hoja.append([
+        "Gestiones realizadas",
+        resumen["total_gestiones"],
+    ])
+    hoja.append([
+        "Personas atendidas",
+        resumen["total_personas"],
+    ])
+
+    hoja.append([])
+    hoja.append(["Filtros aplicados", "Valor"])
+    hoja.append([
+        "Fecha desde",
+        filtros.get("fecha_desde") or "Todas",
+    ])
+    hoja.append([
+        "Fecha hasta",
+        filtros.get("fecha_hasta") or "Todas",
+    ])
+
+    delegacion_id = filtros.get("delegacion", "").strip()
+
+    if delegacion_id and es_transversal(request.user):
+        nombre_delegacion = (
+            Delegacion.objects.filter(pk=delegacion_id)
+            .values_list("nombre", flat=True)
+            .first()
+        )
+        hoja.append([
+            "Delegación",
+            nombre_delegacion or "No encontrada",
+        ])
+    else:
+        hoja.append([
+            "Delegación",
+            "Todas las delegaciones autorizadas",
+        ])
+
+    # --------------------------------------------------
+    # HOJA 2: POR TIPO DE ATENCIÓN
+    # --------------------------------------------------
+    hoja = libro.create_sheet("Por tipo")
+    hoja.append(["Tipo de atención", "Total"])
+
+    for fila in resumen["por_tipo"]:
+        hoja.append([
+            fila["tipo_atencion__nombre"] or "Sin especificar",
+            fila["total"],
+        ])
+
+    # --------------------------------------------------
+    # HOJA 3: POR SUBATENCIÓN
+    # --------------------------------------------------
+    hoja = libro.create_sheet("Por subatención")
+    hoja.append(["Subatención", "Total"])
+
+    for fila in resumen["por_subatencion"]:
+        hoja.append([
+            fila["subatencion__nombre"] or "Sin especificar",
+            fila["total"],
+        ])
+
+    # --------------------------------------------------
+    # HOJA 4: POR DELEGACIÓN
+    # --------------------------------------------------
+    hoja = libro.create_sheet("Por delegación")
+    hoja.append(["Delegación", "Total"])
+
+    for fila in resumen["por_delegacion"]:
+        hoja.append([
+            fila["delegacion__nombre"] or "Sin especificar",
+            fila["total"],
+        ])
+
+    # --------------------------------------------------
+    # HOJA 5: POR MES
+    # --------------------------------------------------
+    hoja = libro.create_sheet("Por mes")
+    hoja.append(["Mes", "Total"])
+
+    for fila in resumen["por_mes"]:
+        mes = fila["mes"]
+
+        hoja.append([
+            mes.strftime("%m/%Y") if mes else "",
+            fila["total"],
+        ])
+
+    # --------------------------------------------------
+    # HOJA 6: DETALLE DE GESTIONES
+    # --------------------------------------------------
+    hoja = libro.create_sheet("Detalle")
+
+    hoja.append([
+        "N.º de caso",
+        "Persona atendida",
+        "Territorio",
+        "N.º de gestión",
+        "Tipo de atención",
+        "Subatención",
+        "Descripción",
+        "Fecha de atención",
+        "Fecha de registro",
+        "Funcionario responsable",
+        "Delegación",
+        "Resultado",
+    ])
+
+    for gestion in realizadas:
+        fecha_registro = gestion.fecha_registro
+
+        if fecha_registro and timezone.is_aware(fecha_registro):
+            fecha_registro = timezone.localtime(
+                fecha_registro
+            ).replace(tzinfo=None)
+
+        hoja.append([
+            gestion.usuario_id,
+            gestion.usuario.nombre,
+            gestion.usuario.territorio,
+            gestion.numero_gestion,
+            gestion.tipo_atencion.nombre,
+            gestion.subatencion.nombre,
+            gestion.descripcion,
+            gestion.fecha,
+            fecha_registro,
+            str(gestion.funcionario),
+            gestion.delegacion.nombre,
+            gestion.resultado,
+        ])
+
+    # --------------------------------------------------
+    # FORMATO DE LAS HOJAS
+    # --------------------------------------------------
+    for hoja in libro.worksheets:
+        hoja.freeze_panes = "A2"
+
+        if hoja.title != "Resumen":
+            hoja.auto_filter.ref = hoja.dimensions
+
+        for columna in hoja.columns:
+            ancho = max(
+                (
+                    len(str(celda.value or ""))
+                    for celda in columna
+                ),
+                default=10,
+            )
+
+            hoja.column_dimensions[
+                columna[0].column_letter
+            ].width = min(max(ancho + 3, 12), 50)
+
+    respuesta = HttpResponse(
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        )
+    )
+
+    respuesta["Content-Disposition"] = (
+        'attachment; filename="estadisticas_sociales.xlsx"'
+    )
+    respuesta["Cache-Control"] = "private, no-store"
+
+    libro.save(respuesta)
+
+    return respuesta

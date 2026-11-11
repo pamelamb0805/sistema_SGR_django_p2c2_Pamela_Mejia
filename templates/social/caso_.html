@@ -737,8 +737,19 @@
                         Aplicar filtros
                     </button>
 
-                    <a class="btn btn-outline-secondary" href="{% url 'social:estadisticas' %}">
+                    <a
+                        class="btn btn-outline-secondary"
+                        href="{% url 'social:estadisticas' %}"
+                    >
                         Limpiar
+                    </a>
+
+                    <a
+                        class="btn btn-outline-success"
+                        href="{% url 'social:estadisticas_exportar_excel' %}?{{ request.GET.urlencode }}"
+                    >
+                        <i class="bi bi-file-earmark-excel me-1" aria-hidden="true"></i>
+                        Exportar Excel
                     </a>
                 </div>
             </form>
