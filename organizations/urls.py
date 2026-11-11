@@ -163,4 +163,17 @@ urlpatterns = [
         views.exportar_items_excel,
         name="item_exportar_excel",
     ),
-]
+
+
+    path(
+        "funcionarios/exportar-excel/",
+        views.exportar_funcionarios_excel,
+        name="funcionario_exportar_excel",
+    ),
+    path(
+        "cargos/exportar-excel/",
+        views.exportar_cargos_excel,
+        name="cargo_exportar_excel",
+    ),
+
+    ]

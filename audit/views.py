@@ -18,6 +18,7 @@ from .services import (
     ROLES_AUDITORIA, comparar_valores, escribir_csv, filtrar_auditoria,
 )
 
+from openpyxl import Workbook
 
 class AuditoriaMixin(RolRequeridoMixin):
     roles_permitidos = ROLES_AUDITORIA
@@ -81,16 +82,95 @@ class AuditoriaDetailView(AuditoriaMixin, ModoMixin, DetailView):
         return contexto
 
 
+
 class AuditoriaExportarView(AuditoriaMixin, FiltrosMixin, View):
-    """CSV con los mismos filtros de la pantalla, fecha de generación y encabezados legibles (RF-033)."""
+    """Exporta el informe de auditoría en Excel (RF-033, RF-036)."""
+
     http_method_names = ["get"]
 
     def get(self, request):
-        qs = self.filtrar()
+        queryset = self.filtrar()
         funcionario = get_funcionario(request.user)
-        respuesta = HttpResponse(content_type="text/csv; charset=utf-8")
-        respuesta["Content-Disposition"] = f'attachment; filename="auditoria_{timezone.localtime():%Y%m%d_%H%M}.csv"'
+
+        libro = Workbook()
+        hoja = libro.active
+        hoja.title = "Auditoría"
+
+        def celda_segura(valor):
+            texto = "" if valor is None else str(valor)
+
+            if texto[:1] in ("=", "+", "-", "@", "\t", "\r"):
+                return "'" + texto
+
+            return texto
+
+        hoja.append(["Informe de auditoría del SGR"])
+        hoja.append([
+            "Generado",
+            timezone.localtime().strftime("%d/%m/%Y %H:%M:%S"),
+        ])
+        hoja.append([
+            "Generado por",
+            celda_segura(
+                funcionario.nombre
+                if funcionario
+                else request.user.get_username()
+            ),
+        ])
+        hoja.append([
+            "Filtros aplicados",
+            celda_segura(
+                "; ".join(self.filtros_aplicados)
+                or "Sin filtros"
+            ),
+        ])
+        hoja.append([])
+
+        hoja.append([
+            "ID",
+            "Fecha y hora",
+            "Usuario responsable",
+            "Evento",
+            "Entidad afectada",
+            "ID de entidad",
+            "Valor anterior",
+            "Valor nuevo",
+        ])
+
+        for evento in queryset.select_related(
+            "funcionario"
+        ).iterator():
+
+            hoja.append([
+                evento.pk,
+                timezone.localtime(
+                    evento.fecha
+                ).strftime("%d/%m/%Y %H:%M:%S"),
+                celda_segura(
+                    evento.funcionario.nombre
+                    if evento.funcionario
+                    else "Sistema / técnico"
+                ),
+                celda_segura(evento.evento),
+                celda_segura(evento.entidad_afectada),
+                evento.id_entidad_afectada,
+                celda_segura(evento.valor_anterior),
+                celda_segura(evento.valor_nuevo),
+            ])
+
+        respuesta = HttpResponse(
+            content_type=(
+                "application/vnd.openxmlformats-officedocument."
+                "spreadsheetml.sheet"
+            )
+        )
+
+        respuesta["Content-Disposition"] = (
+            f'attachment; filename="auditoria_'
+            f'{timezone.localtime():%Y%m%d_%H%M}.xlsx"'
+        )
+
         respuesta["Cache-Control"] = "private, no-store"
-        escribir_csv(respuesta, qs, self.filtros_aplicados,
-                     generado_por=funcionario.nombre if funcionario else request.user.get_username())
+
+        libro.save(respuesta)
         return respuesta

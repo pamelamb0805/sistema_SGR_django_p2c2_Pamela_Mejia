@@ -10,6 +10,14 @@
 {% block page_actions %}
     {% if modo == "lista" or not modo %}
         <a
+            class="btn btn-outline-success"
+            href="{% url 'organizations:funcionario_exportar_excel' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}"
+        >
+            <i class="bi bi-file-earmark-excel me-1"></i>
+            Exportar Excel
+        </a>
+
+        <a
             class="btn btn-primary"
             href="{% url 'organizations:funcionario_create' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}"
         >

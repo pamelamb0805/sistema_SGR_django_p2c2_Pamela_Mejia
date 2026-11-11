@@ -366,3 +366,105 @@ def exportar_compromisos_excel(request):
     )
     libro.save(respuesta)
     return respuesta
+
+
+@login_required
+def exportar_resumen_colectivo_excel(request):
+    """Exporta el resumen colectivo completo con los filtros aplicados."""
+
+    g = request.GET
+    visibles = compromisos_visibles(request.user)
+
+    periodo = None
+
+    if g.get("periodo", "").isdigit():
+        periodo = Periodo.objects.filter(
+            pk=g["periodo"]
+        ).first()
+    elif "periodo" not in g:
+        periodo = Periodo.objects.vigente()
+
+    filtros = g.copy()
+
+    if periodo:
+        filtros["periodo"] = str(periodo.pk)
+
+    queryset = _filtrar(
+        visibles.prefetch_related("historial"),
+        filtros,
+    )
+
+    resumen = CRUDCompromiso.resumen_colectivo(queryset)
+
+    libro = Workbook()
+    hoja = libro.active
+    hoja.title = "Resumen agenda"
+
+    hoja.append(["Resumen de agenda colectiva"])
+    hoja.append([
+        "Generado",
+        timezone.localtime().strftime("%d/%m/%Y %H:%M"),
+    ])
+    hoja.append([
+        "Período",
+        str(periodo) if periodo else "Todos",
+    ])
+    hoja.append([])
+
+    estados = resumen["estados"]
+
+    hoja.append(
+        ["Funcionario"]
+        + estados
+        + [
+            "Total",
+            "Realizados",
+            "% realizado",
+            "% pendiente",
+        ]
+    )
+
+    for fila in resumen["filas"]:
+        hoja.append(
+            [fila["nombre"]]
+            + [
+                fila["por_estado"].get(estado, 0)
+                for estado in estados
+            ]
+            + [
+                fila["total"],
+                fila["realizados"],
+                float(fila["pct_realizado"]),
+                float(fila["pct_pendiente"]),
+            ]
+        )
+
+    total = resumen["total"]
+
+    hoja.append(
+        ["TOTAL"]
+        + [
+            total["por_estado"].get(estado, 0)
+            for estado in estados
+        ]
+        + [
+            total["total"],
+            total["realizados"],
+            float(total["pct_realizado"]),
+            float(total["pct_pendiente"]),
+        ]
+    )
+
+    respuesta = HttpResponse(
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        )
+    )
+    respuesta["Content-Disposition"] = (
+        'attachment; filename="resumen_agenda.xlsx"'
+    )
+    respuesta["Cache-Control"] = "private, no-store"
+
+    libro.save(respuesta)
+    return respuesta

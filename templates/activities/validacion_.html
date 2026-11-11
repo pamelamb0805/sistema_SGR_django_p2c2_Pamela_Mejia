@@ -1,8 +1,17 @@
-
 {% extends "base.html" %}
 
 {% block title %}Validación de evidencias · SGR{% endblock %}
 {% block page_title %}{{ titulo|default:"Validación de evidencias" }}{% endblock %}
+
+{% block page_actions %}
+    {% if modo != "form" %}
+        <a class="btn btn-outline-success"
+           href="{% url 'activities:validacion_exportar_excel' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}">
+            <i class="bi bi-file-earmark-excel me-1"></i>
+            Exportar Excel
+        </a>
+    {% endif %}
+{% endblock %}
 
 {% block content %}
 

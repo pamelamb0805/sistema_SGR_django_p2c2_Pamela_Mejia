@@ -19,4 +19,10 @@ urlpatterns = [
     views.exportar_compromisos_excel,
     name="compromiso_exportar_excel",
     ),
+
+    path(
+    "resumen/exportar-excel/",
+    views.exportar_resumen_colectivo_excel,
+    name="resumen_exportar_excel",
+    ),
 ]

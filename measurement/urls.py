@@ -36,4 +36,22 @@ urlpatterns = [
     views.exportar_metas_excel,
     name="meta_exportar_excel",
     ),  
+
+
+    path(
+        "periodos/exportar-excel/",
+        views.exportar_periodos_excel,
+        name="periodo_exportar_excel",
+    ),
+    path(
+        "ajustes/exportar-excel/",
+        views.exportar_ajustes_excel,
+        name="ajuste_exportar_excel",
+    ),
+    path(
+        "semaforo/exportar-excel/",
+        views.exportar_semaforo_excel,
+        name="semaforo_exportar_excel",
+    ),
+
 ]

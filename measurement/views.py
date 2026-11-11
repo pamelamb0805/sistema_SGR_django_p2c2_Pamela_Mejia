@@ -606,3 +606,277 @@ def exportar_metas_excel(request):
     )
     libro.save(respuesta)
     return respuesta
+
+
+@login_required
+def exportar_periodos_excel(request):
+    """Exporta todos los períodos que coinciden con los filtros."""
+
+    if not tiene_rol(request.user, *ROLES_SUPERVISION):
+        return HttpResponse("No autorizado", status=403)
+
+    queryset = Periodo.objects.all()
+    filtros = request.GET
+
+    estado = filtros.get("estado", "").strip()
+    if estado in dict(Periodo.ESTADOS):
+        queryset = queryset.filter(estado=estado)
+
+    fecha_desde = filtros.get("fecha_desde", "").strip()
+    if fecha_desde:
+        queryset = queryset.filter(fecha_termino__gte=fecha_desde)
+
+    fecha_hasta = filtros.get("fecha_hasta", "").strip()
+    if fecha_hasta:
+        queryset = queryset.filter(fecha_inicio__lte=fecha_hasta)
+
+    q = filtros.get("q", "").strip()
+    if q:
+        from datetime import datetime
+
+        fecha_busqueda = None
+
+        for formato in ("%d/%m/%Y", "%Y-%m-%d"):
+            try:
+                fecha_busqueda = datetime.strptime(q, formato).date()
+                break
+            except ValueError:
+                continue
+
+        if fecha_busqueda:
+            queryset = queryset.filter(
+                Q(fecha_inicio=fecha_busqueda)
+                | Q(fecha_termino=fecha_busqueda)
+            )
+        else:
+            queryset = queryset.none()
+
+    libro = Workbook()
+    hoja = libro.active
+    hoja.title = "Períodos"
+
+    hoja.append(["Informe de períodos de medición"])
+    hoja.append([
+        "Generado",
+        timezone.localtime().strftime("%d/%m/%Y %H:%M"),
+    ])
+    hoja.append([])
+    hoja.append([
+        "ID",
+        "Fecha de inicio",
+        "Fecha de término",
+        "Días computables",
+        "Estado",
+        "Versión de parámetros",
+    ])
+
+    for periodo in queryset.order_by("-fecha_inicio"):
+        hoja.append([
+            periodo.pk,
+            periodo.fecha_inicio.strftime("%d/%m/%Y"),
+            periodo.fecha_termino.strftime("%d/%m/%Y"),
+            periodo.dias_computables,
+            periodo.estado,
+            periodo.version_parametros,
+        ])
+
+    respuesta = HttpResponse(
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        )
+    )
+    respuesta["Content-Disposition"] = (
+        'attachment; filename="periodos_filtrados.xlsx"'
+    )
+    respuesta["Cache-Control"] = "private, no-store"
+    libro.save(respuesta)
+    return respuesta
+
+
+@login_required
+def exportar_ajustes_excel(request):
+    """Exporta incentivos y penalizaciones dentro del ámbito autorizado."""
+
+    if not tiene_rol(request.user, *ROLES_SUPERVISION):
+        return HttpResponse("No autorizado", status=403)
+
+    queryset = filtrar_por_ambito(
+        Ajuste.objects.select_related(
+            "periodo",
+            "funcionario",
+            "funcionario__delegacion",
+            "meta",
+            "meta__item",
+        ),
+        request.user,
+        "funcionario__delegacion_id",
+    )
+
+    filtros = request.GET
+
+    periodo = filtros.get("periodo", "").strip()
+    if periodo:
+        queryset = queryset.filter(periodo_id=periodo)
+
+    funcionario = filtros.get("funcionario", "").strip()
+    if funcionario:
+        queryset = queryset.filter(funcionario_id=funcionario)
+
+    efecto = filtros.get("efecto", "").strip()
+    if efecto in dict(Ajuste.EFECTOS):
+        queryset = queryset.filter(efecto=efecto)
+
+    q = filtros.get("q", "").strip()
+    if q:
+        queryset = queryset.filter(
+            Q(motivo__icontains=q)
+            | Q(funcionario__nombre__icontains=q)
+            | Q(meta__item__nombre_item__icontains=q)
+        )
+
+    libro = Workbook()
+    hoja = libro.active
+    hoja.title = "Incentivos y penalizaciones"
+
+    hoja.append(["Informe de incentivos y penalizaciones"])
+    hoja.append([
+        "Generado",
+        timezone.localtime().strftime("%d/%m/%Y %H:%M"),
+    ])
+    hoja.append([])
+    hoja.append([
+        "ID",
+        "Funcionario",
+        "Delegación",
+        "Período",
+        "Efecto",
+        "Valor",
+        "Puntos con signo",
+        "Motivo",
+        "Ítem asociado",
+    ])
+
+    for ajuste in queryset.order_by("-id_ajuste"):
+        hoja.append([
+            ajuste.pk,
+            ajuste.funcionario.nombre,
+            ajuste.funcionario.delegacion.nombre,
+            str(ajuste.periodo),
+            ajuste.efecto,
+            float(ajuste.valor),
+            float(ajuste.puntos),
+            ajuste.motivo,
+            ajuste.meta.item.nombre_item if ajuste.meta else "",
+        ])
+
+    respuesta = HttpResponse(
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        )
+    )
+    respuesta["Content-Disposition"] = (
+        'attachment; filename="incentivos_penalizaciones.xlsx"'
+    )
+    respuesta["Cache-Control"] = "private, no-store"
+    libro.save(respuesta)
+    return respuesta
+
+
+@login_required
+def exportar_semaforo_excel(request):
+    """Exporta el semáforo completo de la delegación o ámbito autorizado."""
+
+    if not tiene_rol(request.user, *ROLES_SUPERVISION):
+        return HttpResponse("No autorizado", status=403)
+
+    periodo = _periodo_seleccionado(request)
+
+    if periodo is None:
+        return HttpResponse(
+            "No existe un período disponible para generar el informe.",
+            status=400,
+        )
+
+    funcionarios = filtrar_por_ambito(
+        Funcionario.objects.filter(
+            estado=Funcionario.ESTADO_ACTIVO
+        ).select_related("cargo", "delegacion"),
+        request.user,
+        "delegacion_id",
+    )
+
+    delegacion_sel = request.GET.get("delegacion", "")
+
+    if delegacion_sel and es_transversal(request.user):
+        funcionarios = funcionarios.filter(
+            delegacion_id=delegacion_sel
+        )
+
+    resumen = CalculoIndicadores.resumen_delegacion(
+        funcionarios,
+        periodo,
+    )
+
+    libro = Workbook()
+    hoja = libro.active
+    hoja.title = "Semáforo"
+
+    hoja.append(["Semáforo de delegación"])
+    hoja.append([
+        "Generado",
+        timezone.localtime().strftime("%d/%m/%Y %H:%M"),
+    ])
+    hoja.append(["Período", str(periodo)])
+    hoja.append([
+        "Meta esperada al día",
+        float(resumen["meta_esperada"]),
+    ])
+    hoja.append(["Promedio ponderado", float(resumen["promedio"])])
+    hoja.append(["Resultado general", resumen["semaforo"]])
+    hoja.append(["Funcionarios evaluados", resumen["total_funcionarios"]])
+    hoja.append([])
+    hoja.append([
+        "Funcionario",
+        "Delegación",
+        "Cargo",
+        "Resultado ponderado",
+        "Ajustes",
+        "Resultado total",
+        "Meta esperada",
+        "Semáforo",
+        "Suma ponderadores",
+        "Configuración completa",
+        "Bajo umbral",
+    ])
+
+    for fila in resumen["filas"]:
+        funcionario = fila["funcionario"]
+
+        hoja.append([
+            funcionario.nombre,
+            funcionario.delegacion.nombre,
+            funcionario.cargo.nombre_cargo,
+            float(fila["total_ponderado"]),
+            float(fila["ajustes"]),
+            float(fila["resultado_total"]),
+            float(fila["meta_esperada"]),
+            fila["semaforo"],
+            float(fila["suma_ponderadores"]),
+            "Sí" if fila["completa"] else "No",
+            "Sí" if fila["bajo_umbral"] else "No",
+        ])
+
+    respuesta = HttpResponse(
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        )
+    )
+    respuesta["Content-Disposition"] = (
+        'attachment; filename="semaforo_delegacion.xlsx"'
+    )
+    respuesta["Cache-Control"] = "private, no-store"
+    libro.save(respuesta)
+    return respuesta

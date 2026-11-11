@@ -33,6 +33,7 @@ from django.db.models import Q
 from django.http import HttpResponse
 from openpyxl import Workbook
 from core.pagination import PageSizeMixin
+from django.utils import timezone
 
 TIPOS_MIME = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "pdf": "application/pdf"}
 
@@ -494,5 +495,116 @@ def exportar_actividades_excel(request):
     respuesta["Content-Disposition"] = (
         'attachment; filename="actividades_filtradas.xlsx"'
     )
+    libro.save(respuesta)
+    return respuesta
+
+
+@login_required
+def exportar_validaciones_excel(request):
+    """Exporta todas las evidencias pendientes dentro del ámbito autorizado."""
+
+    if not tiene_rol(request.user, *ROLES_VALIDACION):
+        return HttpResponse("No autorizado", status=403)
+
+    funcionario = get_funcionario(request.user)
+
+    queryset = evidencias_visibles(request.user).filter(
+        estado_revision=Evidencia.ESTADO_PENDIENTE
+    )
+
+    if funcionario is not None:
+        queryset = queryset.exclude(
+            actividad__funcionario=funcionario
+        )
+    else:
+        queryset = queryset.none()
+
+    filtros = request.GET
+
+    if filtros.get("funcionario"):
+        queryset = queryset.filter(
+            actividad__funcionario_id=filtros["funcionario"]
+        )
+
+    if filtros.get("item"):
+        queryset = queryset.filter(
+            actividad__item_id=filtros["item"]
+        )
+
+    if filtros.get("fecha_desde"):
+        queryset = queryset.filter(
+            fecha_carga__date__gte=filtros["fecha_desde"]
+        )
+
+    if filtros.get("fecha_hasta"):
+        queryset = queryset.filter(
+            fecha_carga__date__lte=filtros["fecha_hasta"]
+        )
+
+    q = filtros.get("q", "").strip()
+
+    if q:
+        queryset = queryset.filter(
+            Q(codigo_evidencia__icontains=q)
+            | Q(actividad__accion__icontains=q)
+            | Q(actividad__funcionario__nombre__icontains=q)
+            | Q(actividad__item__nombre_item__icontains=q)
+        )
+
+    queryset = queryset.select_related(
+        "actividad",
+        "actividad__funcionario",
+        "actividad__item",
+    ).order_by("fecha_carga")
+
+    libro = Workbook()
+    hoja = libro.active
+    hoja.title = "Validación evidencias"
+
+    hoja.append(["Informe de validación de evidencias"])
+    hoja.append([
+        "Generado",
+        timezone.localtime().strftime("%d/%m/%Y %H:%M"),
+    ])
+    hoja.append([])
+    hoja.append([
+        "Código evidencia",
+        "Actividad",
+        "Funcionario",
+        "Ítem medible",
+        "Fecha de carga",
+        "Estado",
+        "Archivo",
+    ])
+
+    for evidencia in queryset.iterator():
+        actividad = evidencia.actividad
+
+        hoja.append([
+            evidencia.codigo_evidencia,
+            actividad.codigo,
+            actividad.funcionario.nombre,
+            actividad.item.nombre_item,
+            timezone.localtime(evidencia.fecha_carga).strftime(
+                "%d/%m/%Y %H:%M"
+            ),
+            evidencia.estado_revision,
+            (
+            f"{evidencia.codigo_evidencia}.{evidencia.extension}"
+            if evidencia.archivo_vinculo else ""
+            ),
+        ])
+
+    respuesta = HttpResponse(
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        )
+    )
+    respuesta["Content-Disposition"] = (
+        'attachment; filename="validacion_evidencias.xlsx"'
+    )
+    respuesta["Cache-Control"] = "private, no-store"
+
     libro.save(respuesta)
     return respuesta

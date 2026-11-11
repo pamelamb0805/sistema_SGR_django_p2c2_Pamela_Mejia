@@ -26,4 +26,10 @@ urlpatterns = [
     views.exportar_actividades_excel,
     name="actividad_exportar_excel",
     ),
+
+    path(
+    "validaciones/exportar-excel/",
+    views.exportar_validaciones_excel,
+    name="validacion_exportar_excel",
+),
 ]

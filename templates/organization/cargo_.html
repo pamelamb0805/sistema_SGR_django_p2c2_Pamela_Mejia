@@ -10,6 +10,14 @@
 {% block page_actions %}
     {% if modo == "lista" or not modo %}
         <a
+            class="btn btn-outline-success"
+            href="{% url 'organizations:cargo_exportar_excel' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}"
+        >
+            <i class="bi bi-file-earmark-excel me-1"></i>
+            Exportar Excel
+        </a>
+
+        <a
             class="btn btn-primary"
             href="{% url 'organizations:cargo_create' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}"
         >
@@ -66,8 +74,10 @@
             <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
                 <h3 class="h6 mb-0">Ítems asociados</h3>
 
-                <a class="btn btn-outline-success btn-sm"
-                href="{% url 'organizations:item_exportar_excel' cargo.pk %}">
+                <a
+                    class="btn btn-outline-success btn-sm"
+                    href="{% url 'organizations:item_exportar_excel' cargo.pk %}"
+                >
                     <i class="bi bi-file-earmark-excel me-1"></i>
                     Exportar Excel
                 </a>
@@ -98,12 +108,17 @@
                                         {% endif %}
                                     </td>
                                     <td class="text-end">
-                                        <form method="post"
+                                        <form
+                                            method="post"
                                             action="{% url 'organizations:item_toggle' item.pk %}"
-                                            class="d-inline">
+                                            class="d-inline"
+                                        >
                                             {% csrf_token %}
-                                            <button class="btn btn-sm btn-outline-secondary"
-                                                    type="submit">
+
+                                            <button
+                                                class="btn btn-sm btn-outline-secondary"
+                                                type="submit"
+                                            >
                                                 Cambiar vigencia
                                             </button>
                                         </form>
@@ -111,8 +126,10 @@
                                 </tr>
                             {% empty %}
                                 <tr>
-                                    <td colspan="4"
-                                        class="text-center text-body-secondary py-4">
+                                    <td
+                                        colspan="4"
+                                        class="text-center text-body-secondary py-4"
+                                    >
                                         No hay ítems asociados a este cargo.
                                     </td>
                                 </tr>
@@ -125,9 +142,11 @@
 
                 <h3 class="h6 mb-3">Agregar ítem</h3>
 
-                <form method="post"
+                <form
+                    method="post"
                     action="{% url 'organizations:item_create' cargo.pk %}"
-                    novalidate>
+                    novalidate
+                >
                     {% csrf_token %}
 
                     {% if item_form.non_field_errors %}
@@ -138,7 +157,10 @@
 
                     {% for field in item_form %}
                         <div class="mb-3">
-                            <label class="form-label" for="{{ field.id_for_label }}">
+                            <label
+                                class="form-label"
+                                for="{{ field.id_for_label }}"
+                            >
                                 {{ field.label }}
                                 {% if field.field.required %}*{% endif %}
                             </label>
@@ -146,11 +168,15 @@
                             {{ field }}
 
                             {% if field.help_text %}
-                                <div class="form-text">{{ field.help_text }}</div>
+                                <div class="form-text">
+                                    {{ field.help_text }}
+                                </div>
                             {% endif %}
 
                             {% for error in field.errors %}
-                                <div class="text-danger small">{{ error }}</div>
+                                <div class="text-danger small">
+                                    {{ error }}
+                                </div>
                             {% endfor %}
                         </div>
                     {% endfor %}
@@ -162,6 +188,7 @@
                 </form>
             </div>
         </div>
+
     {# LISTADO PRINCIPAL #}
     {% else %}
 

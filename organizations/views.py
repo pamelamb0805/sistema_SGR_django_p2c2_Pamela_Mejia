@@ -33,6 +33,7 @@ from core.mixins import (
     tiene_rol,
 )
 from core.pagination import PageSizeMixin
+from django.utils import timezone
 
 # ---------------------------------------------------------------------------
 # Bloques reutilizables
@@ -911,5 +912,182 @@ def exportar_items_excel(request, pk):
     respuesta["Content-Disposition"] = (
         f'attachment; filename="items_cargo_{cargo.pk}.xlsx"'
     )
+    libro.save(respuesta)
+    return respuesta
+
+
+@login_required
+def exportar_funcionarios_excel(request):
+    """Exporta funcionarios visibles para el usuario y aplica los filtros."""
+
+    if not tiene_rol(request.user, *ROLES_SUPERVISION):
+        return HttpResponse("No autorizado", status=403)
+
+    queryset = filtrar_por_ambito(
+        Funcionario.objects.select_related(
+            "cargo",
+            "delegacion",
+        ).prefetch_related("funcionario_roles__rol"),
+        request.user,
+        "delegacion_id",
+    )
+
+    g = request.GET
+
+    q = g.get("q", "").strip()
+    if q:
+        queryset = queryset.filter(
+            Q(nombre__icontains=q)
+            | Q(identificador_institucional__icontains=q)
+        )
+
+    if g.get("delegacion"):
+        queryset = queryset.filter(
+            delegacion_id=g["delegacion"]
+        )
+
+    if g.get("cargo"):
+        queryset = queryset.filter(
+            cargo_id=g["cargo"]
+        )
+
+    if g.get("estado"):
+        queryset = queryset.filter(
+            estado=g["estado"]
+        )
+
+    libro = Workbook()
+    hoja = libro.active
+    hoja.title = "Funcionarios"
+
+    hoja.append(["Informe de funcionarios"])
+    hoja.append([
+        "Generado",
+        timezone.localtime().strftime("%d/%m/%Y %H:%M"),
+    ])
+    hoja.append([])
+    hoja.append([
+        "Identificador institucional",
+        "Nombre",
+        "Cargo",
+        "Delegación",
+        "Estado",
+        "Roles",
+    ])
+
+    for funcionario in queryset.order_by("nombre"):
+        roles = ", ".join(
+            funcionario.funcionario_roles.values_list(
+                "rol__nombre_rol",
+                flat=True,
+            )
+        )
+
+        hoja.append([
+            funcionario.identificador_institucional,
+            funcionario.nombre,
+            funcionario.cargo.nombre_cargo,
+            funcionario.delegacion.nombre,
+            funcionario.estado,
+            roles,
+        ])
+
+    respuesta = HttpResponse(
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        )
+    )
+    respuesta["Content-Disposition"] = (
+        'attachment; filename="funcionarios_filtrados.xlsx"'
+    )
+    respuesta["Cache-Control"] = "private, no-store"
+    libro.save(respuesta)
+    return respuesta
+
+
+@login_required
+def exportar_cargos_excel(request):
+    """Exporta cargos y sus funciones (ítems medibles)."""
+
+    if not tiene_rol(request.user, *ROLES_SUPERVISION):
+        return HttpResponse("No autorizado", status=403)
+
+    cargos = Cargo.objects.prefetch_related("items")
+
+    q = request.GET.get("q", "").strip()
+    if q:
+        cargos = cargos.filter(
+            nombre_cargo__icontains=q
+        )
+
+    libro = Workbook()
+
+    hoja_cargos = libro.active
+    hoja_cargos.title = "Cargos"
+
+    hoja_cargos.append(["Informe de cargos"])
+    hoja_cargos.append([
+        "Generado",
+        timezone.localtime().strftime("%d/%m/%Y %H:%M"),
+    ])
+    hoja_cargos.append([])
+    hoja_cargos.append([
+        "ID",
+        "Nombre del cargo",
+        "Vigencia desde",
+        "Vigencia hasta",
+        "Vigente actualmente",
+    ])
+
+    for cargo in cargos.order_by("nombre_cargo"):
+        hoja_cargos.append([
+            cargo.pk,
+            cargo.nombre_cargo,
+            cargo.vigencia_desde.strftime("%d/%m/%Y")
+            if cargo.vigencia_desde else "",
+            cargo.vigencia_hasta.strftime("%d/%m/%Y")
+            if cargo.vigencia_hasta else "Indefinida",
+            "Sí" if cargo.vigente else "No",
+        ])
+
+    hoja_items = libro.create_sheet("Funciones")
+
+    hoja_items.append([
+        "Código",
+        "Cargo",
+        "Nombre de la función",
+        "Descripción",
+        "Tipo",
+        "Vigencia",
+    ])
+
+    items = ItemMedible.objects.filter(
+        cargo__in=cargos
+    ).select_related("cargo").order_by(
+        "cargo__nombre_cargo",
+        "nombre_item",
+    )
+
+    for item in items:
+        hoja_items.append([
+            item.codigo,
+            item.cargo.nombre_cargo,
+            item.nombre_item,
+            item.descripcion,
+            item.tipo,
+            "Vigente" if item.vigencia else "No vigente",
+        ])
+
+    respuesta = HttpResponse(
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        )
+    )
+    respuesta["Content-Disposition"] = (
+        'attachment; filename="cargos_y_funciones.xlsx"'
+    )
+    respuesta["Cache-Control"] = "private, no-store"
     libro.save(respuesta)
     return respuesta

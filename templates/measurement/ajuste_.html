@@ -1,16 +1,29 @@
-
 {% extends "base.html" %}
 
 {% block title %}{{ titulo|default:"Incentivos y penalizaciones" }}{% endblock %}
 {% block page_title %}{{ titulo|default:"Incentivos y penalizaciones" }}{% endblock %}
 
 {% block page_actions %}
-    {% if modo == "lista" and puede_editar %}
-        <a href="{% url 'measurement:ajuste_create' %}" class="btn btn-primary">
-            <i class="bi bi-plus-circle"></i> Registrar ajuste
-        </a>
+    {% if modo == "lista" %}
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{% url 'measurement:ajuste_exportar_excel' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}"
+               class="btn btn-outline-success">
+                <i class="bi bi-file-earmark-excel me-1"></i>
+                Exportar Excel
+            </a>
+
+            {% if puede_editar %}
+                <a href="{% url 'measurement:ajuste_create' %}"
+                   class="btn btn-primary">
+                    <i class="bi bi-plus-circle"></i>
+                    Registrar ajuste
+                </a>
+            {% endif %}
+        </div>
+
     {% elif modo == "form" %}
-        <a href="{% url 'measurement:ajuste_list' %}" class="btn btn-outline-secondary">
+        <a href="{% url 'measurement:ajuste_list' %}"
+           class="btn btn-outline-secondary">
             Volver al listado
         </a>
     {% endif %}
@@ -22,14 +35,16 @@
 
     <div class="card shadow-sm">
         <div class="card-header">
-            <h5 class="mb-0">{{ titulo|default:"Registrar ajuste" }}</h5>
+            <h5 class="mb-0">
+                {{ titulo|default:"Registrar ajuste" }}
+            </h5>
         </div>
 
         <div class="card-body">
             <div class="alert alert-info">
                 <i class="bi bi-info-circle"></i>
-                Registra un incentivo o una penalización asociado a un funcionario y a un período abierto.
-                La meta es opcional.
+                Registra un incentivo o una penalización asociado a un
+                funcionario y a un período abierto. La meta es opcional.
             </div>
 
             <form method="post" novalidate>
@@ -44,18 +59,24 @@
                 <div class="row">
                     {% for field in form %}
                         <div class="col-md-6 mb-3">
-                            <label for="{{ field.id_for_label }}" class="form-label">
+                            <label for="{{ field.id_for_label }}"
+                                   class="form-label">
                                 {{ field.label }}
+                                {% if field.field.required %}*{% endif %}
                             </label>
 
                             {{ field }}
 
                             {% if field.help_text %}
-                                <div class="form-text">{{ field.help_text }}</div>
+                                <div class="form-text">
+                                    {{ field.help_text }}
+                                </div>
                             {% endif %}
 
                             {% for error in field.errors %}
-                                <div class="text-danger small">{{ error }}</div>
+                                <div class="text-danger small">
+                                    {{ error }}
+                                </div>
                             {% endfor %}
                         </div>
                     {% endfor %}
@@ -63,7 +84,12 @@
 
                 <button type="submit" class="btn btn-primary">
                     <i class="bi bi-check-circle"></i>
-                    {% if object %}Guardar cambios{% else %}Guardar ajuste{% endif %}
+
+                    {% if object %}
+                        Guardar cambios
+                    {% else %}
+                        Guardar ajuste
+                    {% endif %}
                 </button>
 
                 <a href="{% url 'measurement:ajuste_list' %}"
@@ -85,16 +111,28 @@
             <form method="get" class="row g-3 align-items-end">
 
                 <div class="col-md-4">
-                    <label for="q" class="form-label">Buscar</label>
-                    <input type="text" name="q" id="q" class="form-control"
+                    <label for="q" class="form-label">
+                        Buscar
+                    </label>
+
+                    <input type="text"
+                           name="q"
+                           id="q"
+                           class="form-control"
                            value="{{ q }}"
                            placeholder="Motivo, funcionario o ítem">
                 </div>
 
                 <div class="col-md-3">
-                    <label for="periodo" class="form-label">Período</label>
-                    <select name="periodo" id="periodo" class="form-select">
+                    <label for="periodo" class="form-label">
+                        Período
+                    </label>
+
+                    <select name="periodo"
+                            id="periodo"
+                            class="form-select">
                         <option value="">Todos los períodos</option>
+
                         {% for periodo in periodos %}
                             <option value="{{ periodo.pk }}"
                                 {% if periodo_sel|stringformat:"s" == periodo.pk|stringformat:"s" %}
@@ -110,9 +148,15 @@
                 </div>
 
                 <div class="col-md-3">
-                    <label for="funcionario" class="form-label">Funcionario</label>
-                    <select name="funcionario" id="funcionario" class="form-select">
+                    <label for="funcionario" class="form-label">
+                        Funcionario
+                    </label>
+
+                    <select name="funcionario"
+                            id="funcionario"
+                            class="form-select">
                         <option value="">Todos</option>
+
                         {% for funcionario in funcionarios %}
                             <option value="{{ funcionario.pk }}"
                                 {% if funcionario_sel|stringformat:"s" == funcionario.pk|stringformat:"s" %}
@@ -125,13 +169,20 @@
                 </div>
 
                 <div class="col-md-2">
-                    <label for="efecto" class="form-label">Tipo de ajuste</label>
-                    <select name="efecto" id="efecto" class="form-select">
+                    <label for="efecto" class="form-label">
+                        Tipo de ajuste
+                    </label>
+
+                    <select name="efecto"
+                            id="efecto"
+                            class="form-select">
                         <option value="">Todos</option>
+
                         <option value="Positivo"
                             {% if efecto_sel == "Positivo" %}selected{% endif %}>
                             Incentivo
                         </option>
+
                         <option value="Negativo"
                             {% if efecto_sel == "Negativo" %}selected{% endif %}>
                             Penalización
@@ -139,9 +190,10 @@
                     </select>
                 </div>
 
-                <div class="col-12 d-flex gap-2">
+                <div class="col-12 d-flex flex-wrap gap-2">
                     <button type="submit" class="btn btn-primary">
-                        <i class="bi bi-search"></i> Buscar y filtrar
+                        <i class="bi bi-search"></i>
+                        Buscar y filtrar
                     </button>
 
                     <a href="{% url 'measurement:ajuste_list' %}"
@@ -154,14 +206,16 @@
     </div>
 
     <div class="card shadow-sm">
-        <div class="card-header d-flex justify-content-between align-items-center">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h5 class="mb-0">Ajustes registrados</h5>
+
             <span class="text-muted small">
                 Resultados: {{ total_resultados }}
             </span>
         </div>
 
         <div class="card-body">
+
             {% if ajustes %}
                 <div class="table-responsive">
                     <table class="table table-hover align-middle">
@@ -180,7 +234,9 @@
                         <tbody>
                             {% for ajuste in ajustes %}
                                 <tr>
-                                    <td>{{ ajuste.funcionario.nombre }}</td>
+                                    <td>
+                                        {{ ajuste.funcionario.nombre }}
+                                    </td>
 
                                     <td>
                                         {{ ajuste.periodo.fecha_inicio|date:"d/m/Y" }}
@@ -229,7 +285,8 @@
 
                                             <a href="{% url 'measurement:ajuste_update' ajuste.pk %}"
                                                class="btn btn-sm btn-outline-primary">
-                                                <i class="bi bi-pencil"></i> Editar
+                                                <i class="bi bi-pencil"></i>
+                                                Editar
                                             </a>
 
                                             <form method="post"
@@ -240,7 +297,8 @@
                                                 <button type="submit"
                                                         class="btn btn-sm btn-outline-danger"
                                                         onclick="return confirm('¿Estás segura de eliminar este ajuste?');">
-                                                    <i class="bi bi-trash"></i> Eliminar
+                                                    <i class="bi bi-trash"></i>
+                                                    Eliminar
                                                 </button>
                                             </form>
 
