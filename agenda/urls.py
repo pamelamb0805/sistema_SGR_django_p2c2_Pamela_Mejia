@@ -13,4 +13,10 @@ urlpatterns = [
     path("<int:pk>/estado/", views.CompromisoEstadoView.as_view(), name="compromiso_estado"),
     path("<int:pk>/reasignar/", views.CompromisoReasignarView.as_view(), name="compromiso_reasignar"),
     path("<int:pk>/historial/", views.CompromisoHistorialView.as_view(), name="historial"),
+
+    path(
+    "exportar-excel/",
+    views.exportar_compromisos_excel,
+    name="compromiso_exportar_excel",
+    ),
 ]

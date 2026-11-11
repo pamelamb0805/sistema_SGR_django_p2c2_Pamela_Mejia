@@ -30,6 +30,9 @@ from .forms import AjusteForm, MetaForm, PeriodoForm, ReabrirPeriodoForm
 from .models import Ajuste, Meta as MetaModel, Periodo
 from .services import CalculoIndicadores, CRUDAjuste, CRUDMeta, CRUDPeriodo
 
+from django.db.models import Q
+from django.http import HttpResponse
+from openpyxl import Workbook
 
 class LecturaMixin(RolRequeridoMixin):
     roles_permitidos = ROLES_SUPERVISION
@@ -171,25 +174,50 @@ class MetaListView(LecturaMixin, AmbitoDelegacionMixin, ModoMixin, ListView):
     roles_edicion = ROLES_MEDICION
 
     def get_queryset(self):
-        qs = super().get_queryset().select_related("periodo", "funcionario", "item", "cargo")
+        qs = super().get_queryset().select_related(
+            "periodo", "funcionario", "item", "cargo"
+        )
         g = self.request.GET
-        for campo, filtro in (("periodo", "periodo_id"), ("funcionario", "funcionario_id"),
-                              ("cargo", "cargo_id"), ("item", "item_id")):
+
+        for campo, filtro in (
+            ("periodo", "periodo_id"),
+            ("funcionario", "funcionario_id"),
+            ("cargo", "cargo_id"),
+            ("item", "item_id"),
+        ):
             if g.get(campo):
                 qs = qs.filter(**{filtro: g[campo]})
+
+        q = g.get("q", "").strip()
+        if q:
+            qs = qs.filter(
+                Q(item__nombre_item__icontains=q)
+                | Q(funcionario__nombre__icontains=q)
+                | Q(cargo__nombre_cargo__icontains=q)
+            )
+
         return qs
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
         g = self.request.GET
+
         contexto.update(
-            periodos=Periodo.objects.all(), cargos=Cargo.objects.all(),
-            funcionarios=filtrar_por_ambito(Funcionario.objects.all(), self.request.user, "delegacion_id"),
-            periodo_sel=g.get("periodo", ""), funcionario_sel=g.get("funcionario", ""),
+            periodos=Periodo.objects.all(),
+            cargos=Cargo.objects.all(),
+            funcionarios=filtrar_por_ambito(
+                Funcionario.objects.all(),
+                self.request.user,
+                "delegacion_id",
+            ),
+            periodo_sel=g.get("periodo", ""),
+            funcionario_sel=g.get("funcionario", ""),
             cargo_sel=g.get("cargo", ""),
+            item_sel=g.get("item", ""),
+            q=g.get("q", ""),
+            total_resultados=self.get_queryset().count(),
         )
         return contexto
-
 
 class MetaFormMixin(MedicionMixin, ModoMixin, GuardarMixin):
     model = MetaModel
@@ -335,3 +363,81 @@ def semaforo(request):
         "resumen": resumen, "delegaciones": Delegacion.objects.all() if es_transversal(request.user) else [],
         "delegacion_sel": delegacion_sel, "hoy": timezone.localdate(),
     })
+
+@login_required
+def exportar_metas_excel(request):
+    if not tiene_rol(request.user, *ROLES_SUPERVISION):
+        return HttpResponse("No autorizado", status=403)
+
+    queryset = filtrar_por_ambito(
+        MetaModel.objects.select_related(
+            "periodo", "funcionario", "funcionario__delegacion",
+            "cargo", "item",
+        ),
+        request.user,
+        "funcionario__delegacion_id",
+    )
+
+    g = request.GET
+
+    for campo, filtro in (
+        ("periodo", "periodo_id"),
+        ("funcionario", "funcionario_id"),
+        ("cargo", "cargo_id"),
+        ("item", "item_id"),
+    ):
+        if g.get(campo):
+            queryset = queryset.filter(**{filtro: g[campo]})
+
+    q = g.get("q", "").strip()
+    if q:
+        queryset = queryset.filter(
+            Q(item__nombre_item__icontains=q)
+            | Q(funcionario__nombre__icontains=q)
+            | Q(cargo__nombre_cargo__icontains=q)
+        )
+
+    libro = Workbook()
+    hoja = libro.active
+    hoja.title = "Metas"
+
+    hoja.append([
+        "Período",
+        "Funcionario",
+        "Delegación",
+        "Cargo",
+        "Ítem medible",
+        "Objetivo",
+        "Unidad",
+        "Ponderación (%)",
+        "Umbral mínimo (%)",
+        "Máximo computable (%)",
+    ])
+
+    for meta in queryset.order_by(
+        "periodo", "funcionario__nombre", "item__nombre_item"
+    ):
+        hoja.append([
+            str(meta.periodo),
+            meta.funcionario.nombre,
+            meta.funcionario.delegacion.nombre,
+            meta.cargo.nombre_cargo,
+            meta.item.nombre_item,
+            float(meta.valor_objetivo),
+            meta.unidad,
+            float(meta.ponderador),
+            float(meta.umbral_minimo),
+            float(meta.maximo_computable),
+        ])
+
+    respuesta = HttpResponse(
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        )
+    )
+    respuesta["Content-Disposition"] = (
+        'attachment; filename="metas_filtradas.xlsx"'
+    )
+    libro.save(respuesta)
+    return respuesta

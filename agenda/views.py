@@ -28,6 +28,8 @@ from .services import (
     CRUDCompromiso, CRUDHistorialTransiciones, supervisa, compromisos_visibles, puede_gestionar,
 )
 
+from django.http import HttpResponse
+from openpyxl import Workbook
 
 def _filtrar(qs, g):
     """Filtros de la agenda (HU-12, RF-032): responsable, estado, territorio, fechas, período, plazo."""
@@ -239,3 +241,64 @@ def resumen_colectivo(request):
         "resumen": CRUDCompromiso.resumen_colectivo(qs),
         "plazos": CRUDCompromiso.controlar_plazos(queryset=qs), "hoy": timezone.localdate(),
     })
+
+@login_required
+def exportar_compromisos_excel(request):
+    queryset = compromisos_visibles(request.user).prefetch_related(
+        "historial"
+    )
+    queryset = _filtrar(queryset, request.GET)
+
+    libro = Workbook()
+    hoja = libro.active
+    hoja.title = "Compromisos"
+
+    hoja.append([
+        "Identificador",
+        "Fecha comprometida",
+        "Solicitante",
+        "Origen",
+        "Territorio",
+        "Responsable",
+        "Delegación",
+        "Ítem medible",
+        "Período",
+        "Área de apoyo",
+        "Estado",
+        "Plazo",
+        "Observación",
+    ])
+
+    for compromiso in queryset.order_by(
+        "fecha_comprometida", "id_compromiso"
+    ):
+        hoja.append([
+            compromiso.pk,
+            compromiso.fecha_comprometida.strftime("%d/%m/%Y"),
+            compromiso.solicitante,
+            compromiso.origen,
+            compromiso.territorio,
+            compromiso.funcionario.nombre,
+            compromiso.delegacion.nombre,
+            (
+                compromiso.item_medible.nombre_item
+                if compromiso.item_medible else ""
+            ),
+            str(compromiso.periodo or ""),
+            compromiso.area_apoyo,
+            compromiso.estado,
+            compromiso.plazo,
+            compromiso.observacion,
+        ])
+
+    respuesta = HttpResponse(
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        )
+    )
+    respuesta["Content-Disposition"] = (
+        'attachment; filename="compromisos_filtrados.xlsx"'
+    )
+    libro.save(respuesta)
+    return respuesta

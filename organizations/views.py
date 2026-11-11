@@ -810,3 +810,48 @@ def exportar_usuarios_excel(request):
         ],
         filas,
     )
+
+@login_required
+def exportar_items_excel(request, pk):
+    if not tiene_rol(request.user, *ROLES_SUPERVISION):
+        return HttpResponse("No autorizado", status=403)
+
+    cargo = get_object_or_404(Cargo, pk=pk)
+    items = ItemMedible.objects.filter(
+        cargo=cargo
+    ).order_by("nombre_item")
+
+    libro = Workbook()
+    hoja = libro.active
+    hoja.title = "Ítems medibles"
+
+    hoja.append([
+        "Código",
+        "Cargo",
+        "Nombre del ítem",
+        "Descripción",
+        "Tipo",
+        "Vigencia",
+    ])
+
+    for item in items:
+        hoja.append([
+            item.codigo,
+            cargo.nombre_cargo,
+            item.nombre_item,
+            item.descripcion,
+            item.tipo,
+            "Vigente" if item.vigencia else "No vigente",
+        ])
+
+    respuesta = HttpResponse(
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        )
+    )
+    respuesta["Content-Disposition"] = (
+        f'attachment; filename="items_cargo_{cargo.pk}.xlsx"'
+    )
+    libro.save(respuesta)
+    return respuesta

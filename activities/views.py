@@ -28,6 +28,11 @@ from .services import (
     CRUDActividad, CRUDEvidencia, CRUDValidacion, actividades_visibles, buscar_por_codigo, evidencias_visibles,
 )
 
+from django.contrib.auth.decorators import login_required
+from django.db.models import Q
+from django.http import HttpResponse
+from openpyxl import Workbook
+
 TIPOS_MIME = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "pdf": "application/pdf"}
 
 
@@ -307,3 +312,71 @@ class ValidacionCreateView(VerificadorMixin, ModoMixin, GuardarMixin, FormView):
             Validacion.DECISION_RECHAZADA: "Evidencia rechazada: la actividad no aporta al avance.",
             Validacion.DECISION_CORRECCION: "Se solicitó corrección al funcionario.",
         }[decision]
+
+@login_required
+def exportar_actividades_excel(request):
+    queryset = actividades_visibles(request.user)
+    g = request.GET
+
+    for campo, filtro in (
+        ("estado", "estado"),
+        ("tipo_registro", "tipo_registro"),
+        ("item", "item_id"),
+        ("periodo", "periodo_id"),
+        ("funcionario", "funcionario_id"),
+        ("fecha_desde", "fecha__gte"),
+        ("fecha_hasta", "fecha__lte"),
+    ):
+        if g.get(campo):
+            queryset = queryset.filter(**{filtro: g[campo]})
+
+    q = g.get("q", "").strip()
+    if q:
+        queryset = queryset.filter(
+            Q(accion__icontains=q) | Q(contacto__icontains=q)
+        )
+
+    libro = Workbook()
+    hoja = libro.active
+    hoja.title = "Actividades"
+
+    hoja.append([
+        "Código",
+        "Fecha",
+        "Tipo",
+        "Funcionario",
+        "Delegación",
+        "Ítem medible",
+        "Actividad o servicio",
+        "Acción ejecutada",
+        "Contacto",
+        "Estado",
+        "Período",
+    ])
+
+    for actividad in queryset.order_by("-fecha", "-id_actividad"):
+        hoja.append([
+            actividad.codigo,
+            actividad.fecha.strftime("%d/%m/%Y"),
+            actividad.tipo_registro,
+            actividad.funcionario.nombre,
+            actividad.funcionario.delegacion.nombre,
+            actividad.item.nombre_item,
+            str(actividad.catalogo),
+            actividad.accion,
+            actividad.contacto,
+            actividad.estado,
+            str(actividad.periodo),
+        ])
+
+    respuesta = HttpResponse(
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        )
+    )
+    respuesta["Content-Disposition"] = (
+        'attachment; filename="actividades_filtradas.xlsx"'
+    )
+    libro.save(respuesta)
+    return respuesta

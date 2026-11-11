@@ -157,4 +157,10 @@ urlpatterns = [
         views.exportar_usuarios_excel,
         name="usuario_exportar_excel",
     ),
+
+        path(
+        "cargos/<int:pk>/items/exportar-excel/",
+        views.exportar_items_excel,
+        name="item_exportar_excel",
+    ),
 ]

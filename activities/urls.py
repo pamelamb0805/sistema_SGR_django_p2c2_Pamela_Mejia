@@ -20,4 +20,10 @@ urlpatterns = [
     # Validación
     path("validaciones/", views.ValidacionBandejaView.as_view(), name="validacion_bandeja"),
     path("evidencias/<int:pk>/validar/", views.ValidacionCreateView.as_view(), name="validacion_create"),
+
+    path(
+    "exportar-excel/",
+    views.exportar_actividades_excel,
+    name="actividad_exportar_excel",
+    ),
 ]

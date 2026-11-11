@@ -29,4 +29,10 @@ urlpatterns = [
     path("mi-desempeno/", views.mi_desempeno, name="mi_desempeno"),
     path("desempeno/<int:pk>/", views.desempeno_funcionario, name="desempeno_funcionario"),
     path("semaforo/", views.semaforo, name="semaforo"),
+
+    path(
+    "metas/exportar-excel/",
+    views.exportar_metas_excel,
+    name="meta_exportar_excel",
+    ),  
 ]
