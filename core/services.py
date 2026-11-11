@@ -68,15 +68,36 @@ def mensaje_validacion(exc):
     return " ".join(exc.messages)
 
 
-def _notificar_crud(entidad, accion, actor, instancia):
+
+def _notificar_crud(
+    entidad,
+    accion,
+    actor,
+    instancia,
+    object_id=None,
+    object_label=None,
+    delegacion_id=None,
+):
     """
     Programa la publicación después de confirmar la transacción.
-    Si Channels no está disponible, no interrumpe el CRUD.
+    Conserva los datos del registro incluso cuando se elimina.
     """
     modulo = _MODULOS_CRUD.get(str(entidad).lower())
 
     if not modulo or instancia is None:
         return
+
+    identificador = (
+        object_id
+        if object_id is not None
+        else instancia.pk
+    )
+
+    etiqueta = (
+        object_label
+        if object_label
+        else str(instancia)
+    )
 
     def publicar():
         try:
@@ -87,7 +108,11 @@ def _notificar_crud(entidad, accion, actor, instancia):
                 action=accion,
                 actor=actor,
                 objeto=instancia,
+                object_id=identificador,
+                object_label=etiqueta,
+                delegacion_id=delegacion_id,
             )
+
         except Exception:
             import logging
 
@@ -143,12 +168,23 @@ def guardar(instancia, actor, entidad):
     return instancia
 
 
+
 def eliminar(instancia, actor, entidad, mensaje_en_uso):
     """
     Elimina un registro respetando las relaciones protegidas.
-    La notificación se programa únicamente si la eliminación tiene éxito.
+    Conserva sus datos para notificar correctamente la eliminación.
     """
     pk = instancia.pk
+    etiqueta = str(instancia)
+
+    try:
+        from websocket.services import obtener_delegacion_id
+
+        delegacion_id = obtener_delegacion_id(instancia)
+
+    except Exception:
+        delegacion_id = None
+
     anterior = snapshot(instancia)
 
     try:
@@ -169,6 +205,9 @@ def eliminar(instancia, actor, entidad, mensaje_en_uso):
                 "eliminar",
                 actor,
                 instancia,
+                object_id=pk,
+                object_label=etiqueta,
+                delegacion_id=delegacion_id,
             )
 
     except (ProtectedError, IntegrityError):
