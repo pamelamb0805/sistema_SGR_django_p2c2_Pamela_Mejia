@@ -1418,10 +1418,13 @@ main#contenido:has(.sgr-executive) > .d-flex.border-bottom .btn {
 
 
 /* CORRECCIÓN: MENÚ LATERAL INTERACTIVO */
+/* ==========================================================
+   CORRECCIÓN DEFINITIVA DE DISTRIBUCIÓN DEL MENÚ LATERAL
+========================================================== */
+
 #sgr-sidebar {
-    position: relative;
-    z-index: 1040;
     pointer-events: auto !important;
+    z-index: 1040;
 }
 
 #sgr-sidebar .offcanvas-body,
@@ -1433,15 +1436,31 @@ main#contenido:has(.sgr-executive) > .d-flex.border-bottom .btn {
 
 #sgr-sidebar .nav-link {
     position: relative;
-    z-index: 1041;
     cursor: pointer;
+    z-index: 2;
 }
 
+/* DISTRIBUCIÓN EN ESCRITORIO */
 @media (min-width: 992px) {
+
     #sgr-sidebar {
-        position: sticky;
+        position: sticky !important;
         top: 68px;
+        flex: 0 0 16.666667% !important;
+        width: 16.666667% !important;
+        max-width: 16.666667% !important;
         height: calc(100vh - 68px);
         overflow-y: auto;
+        visibility: visible !important;
+        transform: none !important;
+    }
+
+    main#contenido {
+        position: relative;
+        z-index: 1;
+        flex: 0 0 83.333333% !important;
+        width: 83.333333% !important;
+        max-width: 83.333333% !important;
+        margin-left: 0 !important;
     }
 }
