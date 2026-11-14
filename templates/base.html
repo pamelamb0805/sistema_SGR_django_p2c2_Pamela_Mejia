@@ -204,15 +204,19 @@
 
             <i class="bi bi-bell-fill fs-5"></i>
 
-            <span id="sgrNotificationCount"
-                  class="sgr-notification-badge"
-                  aria-live="polite"
-                  hidden>0</span>
+            <span
+                id="sgrNotificationCount"
+                class="sgr-notification-badge"
+                aria-live="polite"
+                {% if not sgr_notificaciones_no_leidas %}hidden{% endif %}>
+                {{ sgr_notificaciones_no_leidas }}
+            </span>
         </button>
 
-        <div id="sgrNotificationMenu"
-             class="dropdown-menu dropdown-menu-end shadow sgr-notification-menu"
-             aria-labelledby="sgrNotificationDropdown">
+        <div
+            id="sgrNotificationMenu"
+            class="dropdown-menu dropdown-menu-end shadow sgr-notification-menu"
+            aria-labelledby="sgrNotificationDropdown">
 
             <div class="sgr-notification-header">
                 <div>
@@ -220,21 +224,31 @@
                         <i class="bi bi-bell me-1"></i>
                         Notificaciones
                     </div>
-                    <small class="text-body-secondary">Actividad reciente del sistema</small>
+                    <small class="text-body-secondary">
+                        Actividad reciente del sistema
+                    </small>
                 </div>
 
-                <button type="button"
-                        id="sgrMarkNotificationsRead"
-                        class="btn btn-sm btn-outline-secondary">
+                <button
+                    type="button"
+                    id="sgrMarkNotificationsRead"
+                    class="btn btn-sm btn-outline-secondary"
+                    data-mark-read-url="{% url 'audit:notificaciones_marcar_leidas' %}">
                     Marcar leídas
                 </button>
             </div>
 
+            <form id="sgrNotificationCsrf" class="d-none">
+                {% csrf_token %}
+            </form>
+
             <div id="sgrNotificationList" class="sgr-notification-list">
 
-                {% for operacion in sgr_notificaciones %}
-                <div class="sgr-notification-item sgr-notification-unread"
-                    data-notification-id="{{ operacion.id_auditoria }}">
+                {% for notificacion in sgr_notificaciones %}
+                {% with operacion=notificacion.operacion %}
+                <div
+                    class="sgr-notification-item{% if not notificacion.leida %} sgr-notification-unread{% endif %}"
+                    data-notification-id="{{ notificacion.id_notificacion }}">
 
                     <div class="d-flex align-items-start gap-2">
                         <i class="bi bi-activity text-primary mt-1"></i>
@@ -260,11 +274,12 @@
 
                             <span class="sgr-notification-date">
                                 <i class="bi bi-clock me-1"></i>
-                                {{ operacion.fecha|date:"d/m/Y H:i" }}
+                                {{ notificacion.fecha_creacion|date:"d/m/Y H:i" }}
                             </span>
                         </div>
                     </div>
                 </div>
+                {% endwith %}
                 {% empty %}
                 <div id="sgrNotificationEmpty" class="sgr-notification-empty">
                     <i class="bi bi-bell-slash fs-3 d-block mb-2"></i>
@@ -275,6 +290,7 @@
             </div>
         </div>
     </div>
+
 
     <!-- PERFIL -->
     <div class="dropdown me-2 me-lg-3">

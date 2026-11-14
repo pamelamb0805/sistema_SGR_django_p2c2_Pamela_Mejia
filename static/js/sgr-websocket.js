@@ -93,20 +93,74 @@
     // MARCAR COMO LEÍDAS
     // ---------------------------------------------------------
 
-    function marcarLeidas() {
-        if (!listaNotificaciones) {
+    async function marcarLeidas() {
+        if (!listaNotificaciones || !botonMarcarLeidas) {
             return;
         }
 
-        listaNotificaciones
-            .querySelectorAll(".sgr-notification-unread")
-            .forEach((elemento) => {
-                elemento.classList.remove(
-                    "sgr-notification-unread"
-                );
+        const url = botonMarcarLeidas.dataset.markReadUrl;
+
+        const csrfToken = document.querySelector(
+            '#sgrNotificationCsrf input[name="csrfmiddlewaretoken"]'
+        )?.value;
+
+        if (!url || !csrfToken) {
+            console.error(
+                "[SGR] No se encontró la URL o el token CSRF."
+            );
+            return;
+        }
+
+        botonMarcarLeidas.disabled = true;
+
+        try {
+            const respuesta = await fetch(url, {
+                method: "POST",
+                credentials: "same-origin",
+                headers: {
+                    "X-CSRFToken": csrfToken,
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Accept": "application/json"
+                }
             });
 
-        actualizarContador();
+            if (!respuesta.ok) {
+                throw new Error(
+                    `Error HTTP ${respuesta.status}`
+                );
+            }
+
+            const resultado = await respuesta.json();
+
+            if (!resultado.ok) {
+                throw new Error(
+                    "El servidor no confirmó la operación."
+                );
+            }
+
+            listaNotificaciones
+                .querySelectorAll(".sgr-notification-unread")
+                .forEach((elemento) => {
+                    elemento.classList.remove(
+                        "sgr-notification-unread"
+                    );
+                });
+
+            if (contadorNotificaciones) {
+                contadorNotificaciones.textContent = "0";
+                contadorNotificaciones.hidden = true;
+                contadorNotificaciones.classList.add("d-none");
+            }
+
+        } catch (error) {
+            console.error(
+                "[SGR] No se pudieron marcar las notificaciones.",
+                error
+            );
+
+        } finally {
+            botonMarcarLeidas.disabled = false;
+        }
     }
 
     if (botonMarcarLeidas) {

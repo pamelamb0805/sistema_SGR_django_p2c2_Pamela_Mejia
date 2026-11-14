@@ -12,7 +12,10 @@ from django.db.models import ProtectedError
 from django.forms.models import model_to_dict
 
 from .exceptions import ReglaNegocioError
-
+from django.contrib.auth.decorators import login_required
+from django.http import JsonResponse
+from django.utils import timezone
+from django.views.decorators.http import require_POST
 
 _EXCLUIDOS = [
     "password",
@@ -258,3 +261,31 @@ def eliminar(instancia, actor, entidad, mensaje_en_uso):
         raise ReglaNegocioError(mensaje_en_uso)
 
     return True
+
+@login_required
+@require_POST
+def marcar_notificaciones_leidas(request):
+    """
+    Marca como leídas únicamente las notificaciones pendientes
+    del usuario autenticado.
+    """
+    from .models import Notificacion
+
+    actualizadas = Notificacion.objects.filter(
+        usuario=request.user,
+        leida=False,
+    ).update(
+        leida=True,
+        fecha_lectura=timezone.now(),
+    )
+
+    pendientes = Notificacion.objects.filter(
+        usuario=request.user,
+        leida=False,
+    ).count()
+
+    return JsonResponse({
+        "ok": True,
+        "actualizadas": actualizadas,
+        "pendientes": pendientes,
+    })

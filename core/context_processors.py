@@ -13,6 +13,7 @@ def sgr_context(request):
             "semaforo_ambar": settings.SGR_SEMAFORO_AMBAR,
         },
         "sgr_notificaciones": [],
+        "sgr_notificaciones_no_leidas": 0,
     }
 
     user = request.user
@@ -49,25 +50,26 @@ def sgr_context(request):
         ),
     })
 
-    # Últimas 15 operaciones visibles para el usuario.
     try:
-        from audit.models import Auditoria
+        from audit.models import Notificacion
 
-        operaciones = Auditoria.objects.select_related(
-            "funcionario",
-            "funcionario__delegacion",
-        ).all()
-
-        operaciones = m.filtrar_por_ambito(
-            operaciones,
-            user,
-            "funcionario__delegacion_id",
+        notificaciones = Notificacion.objects.filter(
+            usuario=user,
+        ).select_related(
+            "auditoria",
+            "auditoria__funcionario",
+            "auditoria__funcionario__delegacion",
+            "delegacion",
+        ).order_by(
+            "-fecha_creacion",
+            "-id_notificacion",
         )
 
-        operaciones = operaciones.order_by(
-            "-fecha",
-            "-id_auditoria",
-        )[:15]
+        contexto["sgr_notificaciones_no_leidas"] = (
+            notificaciones.filter(leida=False).count()
+        )
+
+        notificaciones = notificaciones[:15]
 
         nombres_modulos = {
             "actividad": "Actividades",
@@ -102,7 +104,11 @@ def sgr_context(request):
             "LOGOUT": "Cerró sesión",
         }
 
-        for operacion in operaciones:
+        resultado = []
+
+        for notificacion in notificaciones:
+            operacion = notificacion.auditoria
+
             entidad = (
                 operacion.entidad_afectada or ""
             ).strip()
@@ -127,11 +133,8 @@ def sgr_context(request):
             )
 
             operacion.delegacion_display = (
-                operacion.funcionario.delegacion.nombre
-                if (
-                    operacion.funcionario_id
-                    and operacion.funcionario.delegacion_id
-                )
+                notificacion.delegacion.nombre
+                if notificacion.delegacion_id
                 else "General"
             )
 
@@ -142,10 +145,13 @@ def sgr_context(request):
                 else entidad.replace("_", " ").capitalize()
             )
 
-        contexto["sgr_notificaciones"] = operaciones
+            notificacion.operacion = operacion
+            resultado.append(notificacion)
+
+        contexto["sgr_notificaciones"] = resultado
 
     except Exception:
-        # Un fallo en las notificaciones no debe impedir cargar la página.
         contexto["sgr_notificaciones"] = []
+        contexto["sgr_notificaciones_no_leidas"] = 0
 
     return contexto
