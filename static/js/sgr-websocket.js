@@ -68,24 +68,26 @@
     // ---------------------------------------------------------
 
     function actualizarContador() {
-        if (!listaNotificaciones || !contadorNotificaciones) {
-            return;
-        }
-
-        const pendientes = listaNotificaciones.querySelectorAll(
-            ".sgr-notification-unread"
-        ).length;
-
-        if (pendientes > 0) {
-            contadorNotificaciones.textContent =
-                pendientes > 99 ? "99+" : pendientes;
-
-            contadorNotificaciones.classList.remove("d-none");
-        } else {
-            contadorNotificaciones.textContent = "0";
-            contadorNotificaciones.classList.add("d-none");
-        }
+    if (!listaNotificaciones || !contadorNotificaciones) {
+        return;
     }
+
+    const pendientes = listaNotificaciones.querySelectorAll(
+        ".sgr-notification-unread"
+    ).length;
+
+    if (pendientes > 0) {
+        contadorNotificaciones.textContent =
+            pendientes > 99 ? "99+" : pendientes;
+
+        contadorNotificaciones.hidden = false;
+        contadorNotificaciones.classList.remove("d-none");
+    } else {
+        contadorNotificaciones.textContent = "0";
+        contadorNotificaciones.hidden = true;
+        contadorNotificaciones.classList.add("d-none");
+    }
+}
 
     // ---------------------------------------------------------
     // MARCAR COMO LEÍDAS

@@ -233,8 +233,8 @@
             <div id="sgrNotificationList" class="sgr-notification-list">
 
                 {% for operacion in sgr_notificaciones %}
-                <div class="sgr-notification-item"
-                     data-notification-id="{{ operacion.id_auditoria }}">
+                <div class="sgr-notification-item sgr-notification-unread"
+                    data-notification-id="{{ operacion.id_auditoria }}">
 
                     <div class="d-flex align-items-start gap-2">
                         <i class="bi bi-activity text-primary mt-1"></i>
