@@ -1,7 +1,8 @@
 
 """
 Servicios compartidos para guardar y eliminar registros del SGR.
-Mantiene validación, transacciones, auditoría y notificaciones WebSocket.
+Mantiene validación, transacciones, auditoría, notificaciones
+persistentes y publicación WebSocket.
 """
 import json
 
@@ -11,10 +12,8 @@ from django.db.models import ProtectedError
 from django.forms.models import model_to_dict
 
 from .exceptions import ReglaNegocioError
-from .mixins import auditar
 
 
-# Campos que nunca deben quedar registrados en snapshots.
 _EXCLUIDOS = [
     "password",
     "groups",
@@ -23,7 +22,6 @@ _EXCLUIDOS = [
 ]
 
 
-# Entidad de auditoría -> módulo que recibirá el evento.
 _MODULOS_CRUD = {
     "delegacion": "organizations",
     "cargo": "organizations",
@@ -68,7 +66,6 @@ def mensaje_validacion(exc):
     return " ".join(exc.messages)
 
 
-
 def _notificar_crud(
     entidad,
     accion,
@@ -79,8 +76,8 @@ def _notificar_crud(
     delegacion_id=None,
 ):
     """
-    Programa la publicación después de confirmar la transacción.
-    Conserva los datos del registro incluso cuando se elimina.
+    Publica el evento WebSocket solamente después
+    de confirmar la transacción.
     """
     modulo = _MODULOS_CRUD.get(str(entidad).lower())
 
@@ -124,58 +121,106 @@ def _notificar_crud(
     transaction.on_commit(publicar)
 
 
+def _registrar_operacion(
+    actor,
+    evento,
+    entidad,
+    id_entidad,
+    valor_anterior,
+    valor_nuevo,
+    delegacion_id,
+):
+    """
+    Registra la auditoría y crea las notificaciones
+    dentro de la transacción de la operación.
+    """
+    from audit.services import (
+        registrar_evento,
+        crear_notificaciones,
+    )
+
+    auditoria = registrar_evento(
+        usuario=actor,
+        evento=evento,
+        entidad=entidad,
+        id_entidad=id_entidad,
+        valor_anterior=valor_anterior,
+        valor_nuevo=valor_nuevo,
+    )
+
+    crear_notificaciones(
+        auditoria,
+        delegacion_id=delegacion_id,
+    )
+
+    return auditoria
+
+
 def guardar(instancia, actor, entidad):
     """
-    Crea o modifica un registro con validación, transacción,
-    auditoría y notificación en tiempo real.
+    Crea o modifica un registro con validación, auditoría,
+    notificaciones persistentes y publicación en tiempo real.
     """
     try:
         instancia.full_clean()
     except ValidationError as exc:
         raise ReglaNegocioError(mensaje_validacion(exc))
 
-    with transaction.atomic():
-        creado = instancia.pk is None
+    try:
+        with transaction.atomic():
+            creado = instancia.pk is None
 
-        anterior = (
-            None
-            if creado
-            else snapshot(
-                type(instancia).objects.select_for_update().get(
-                    pk=instancia.pk
+            anterior = (
+                None
+                if creado
+                else snapshot(
+                    type(instancia).objects.select_for_update().get(
+                        pk=instancia.pk
+                    )
                 )
             )
-        )
 
-        instancia.save()
+            instancia.save()
 
-        auditar(
-            actor,
-            "CREAR" if creado else "MODIFICAR",
-            entidad,
-            instancia.pk,
-            anterior,
-            snapshot(instancia),
-        )
+            from websocket.services import obtener_delegacion_id
 
-        _notificar_crud(
-            entidad,
-            "crear" if creado else "actualizar",
-            actor,
-            instancia,
+            delegacion_id = obtener_delegacion_id(instancia)
+
+            _registrar_operacion(
+                actor=actor,
+                evento="CREAR" if creado else "MODIFICAR",
+                entidad=entidad,
+                id_entidad=instancia.pk,
+                valor_anterior=anterior,
+                valor_nuevo=snapshot(instancia),
+                delegacion_id=delegacion_id,
+            )
+
+            _notificar_crud(
+                entidad,
+                "crear" if creado else "actualizar",
+                actor,
+                instancia,
+                delegacion_id=delegacion_id,
+            )
+
+    except (ProtectedError, IntegrityError):
+        raise ReglaNegocioError(
+            "No se pudo guardar el registro porque existe una relación "
+            "o restricción que impide la operación."
         )
 
     return instancia
 
 
-
 def eliminar(instancia, actor, entidad, mensaje_en_uso):
     """
-    Elimina un registro respetando las relaciones protegidas.
-    Conserva sus datos para notificar correctamente la eliminación.
+    Elimina un registro conservando su auditoría,
+    notificaciones y publicación WebSocket.
     """
     pk = instancia.pk
     etiqueta = str(instancia)
+    anterior = snapshot(instancia)
 
     try:
         from websocket.services import obtener_delegacion_id
@@ -185,19 +230,18 @@ def eliminar(instancia, actor, entidad, mensaje_en_uso):
     except Exception:
         delegacion_id = None
 
-    anterior = snapshot(instancia)
-
     try:
         with transaction.atomic():
             instancia.delete()
 
-            auditar(
-                actor,
-                "ELIMINAR",
-                entidad,
-                pk,
-                anterior,
-                None,
+            _registrar_operacion(
+                actor=actor,
+                evento="ELIMINAR",
+                entidad=entidad,
+                id_entidad=pk,
+                valor_anterior=anterior,
+                valor_nuevo=None,
+                delegacion_id=delegacion_id,
             )
 
             _notificar_crud(

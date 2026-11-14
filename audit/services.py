@@ -15,6 +15,8 @@ from django.utils import timezone
 from core.mixins import ROLES_TRANSVERSALES, tiene_rol
 
 from .models import Auditoria
+from .models import Auditoria, Notificacion
+
 
 # Quién puede consultar la auditoría: Administrador y Coordinador (auditoría del sistema).
 ROLES_AUDITORIA = ROLES_TRANSVERSALES
@@ -46,6 +48,127 @@ def registrar_evento(usuario=None, evento="", entidad="", id_entidad=0, valor_an
         valor_anterior=_como_texto(valor_anterior), valor_nuevo=_como_texto(valor_nuevo),
         funcionario=funcionario)
 
+def crear_notificaciones(auditoria, delegacion_id=None):
+    """
+    Crea una notificación individual para cada usuario activo
+    autorizado a recibir eventos del módulo auditado.
+
+    Respeta los mismos roles y ámbitos territoriales del WebSocket.
+    """
+    from django.contrib.auth import get_user_model
+
+    from core.mixins import (
+        es_transversal,
+        get_delegaciones_autorizadas_ids,
+        get_roles,
+    )
+
+    permisos_modulo = {
+        "organizations": {"Administrador"},
+        "catalogs": {"Administrador"},
+        "measurement": {"Administrador", "Coordinador"},
+        "activities": {
+            "Administrador",
+            "Coordinador",
+            "Delegado",
+            "Funcionario",
+            "Verificador",
+        },
+        "agenda": {
+            "Administrador",
+            "Coordinador",
+            "Delegado",
+            "Funcionario",
+        },
+        "social": {
+            "Administrador",
+            "Coordinador",
+            "Delegado",
+            "Funcionario",
+        },
+    }
+
+    entidad = (auditoria.entidad_afectada or "").lower()
+
+    modulos = {
+        "delegacion": "organizations",
+        "cargo": "organizations",
+        "item_medible": "organizations",
+        "rol": "organizations",
+        "funcionario": "organizations",
+        "usuario": "organizations",
+        "catalogo": "catalogs",
+        "periodo": "measurement",
+        "meta": "measurement",
+        "ajuste": "measurement",
+        "indicador": "measurement",
+        "actividad": "activities",
+        "evidencia": "activities",
+        "validacion": "activities",
+        "compromiso": "agenda",
+        "usuario_social": "social",
+        "caso": "social",
+        "atencion_social": "social",
+        "gestion": "social",
+    }
+
+    modulo = modulos.get(entidad)
+
+    if not modulo:
+        return 0
+
+    roles_permitidos = permisos_modulo.get(modulo, set())
+
+    if not roles_permitidos:
+        return 0
+
+    Usuario = get_user_model()
+
+    usuarios = Usuario.objects.filter(
+        activo_acceso=True,
+    ).select_related(
+        "funcionario",
+        "funcionario__delegacion",
+    ).prefetch_related(
+        "funcionario__roles",
+        "delegaciones_autorizadas",
+    )
+
+    notificaciones = []
+
+    for usuario in usuarios:
+        if not usuario.is_active:
+            continue
+
+        roles = get_roles(usuario)
+
+        if not roles.intersection(roles_permitidos):
+            continue
+
+        if delegacion_id:
+            if not es_transversal(usuario):
+                autorizadas = set(
+                    get_delegaciones_autorizadas_ids(usuario)
+                )
+
+                if delegacion_id not in autorizadas:
+                    continue
+
+        notificaciones.append(
+            Notificacion(
+                usuario=usuario,
+                auditoria=auditoria,
+                delegacion_id=delegacion_id,
+            )
+        )
+
+    if notificaciones:
+        Notificacion.objects.bulk_create(
+            notificaciones,
+            ignore_conflicts=True,
+        )
+
+    return len(notificaciones)
 
 def mostrar_historial_por_entidad(entidad, id_entidad):
     return Auditoria.objects.filter(entidad_afectada=entidad, id_entidad_afectada=id_entidad) \
