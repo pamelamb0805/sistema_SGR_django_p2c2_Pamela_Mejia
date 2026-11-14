@@ -13,6 +13,8 @@ from django.db import models
 from django.utils import timezone
 
 from organizations.models import Funcionario
+from django.conf import settings
+
 
 EVENTO_INTENTO_ALTERACION = "INTENTO_ALTERACION_AUDITORIA"
 
@@ -74,3 +76,88 @@ class Auditoria(models.Model):
     def delete(self, *args, **kwargs):
         self._registrar_intento("eliminar", self)
         raise ValidationError("Los eventos de auditoría no pueden eliminarse.")
+
+class Notificacion(models.Model):
+    """
+    Notificación persistente asociada a un evento de auditoría.
+
+    Cada usuario tiene su propio estado de lectura.
+    La notificación no desaparece al cerrar sesión ni recargar la página.
+    """
+
+    id_notificacion = models.AutoField(primary_key=True)
+
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="notificaciones",
+        verbose_name="Usuario destinatario",
+    )
+
+    auditoria = models.ForeignKey(
+        Auditoria,
+        on_delete=models.PROTECT,
+        related_name="notificaciones",
+        verbose_name="Evento de auditoría",
+    )
+
+    delegacion = models.ForeignKey(
+        "organizations.Delegacion",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="notificaciones",
+        verbose_name="Delegación relacionada",
+    )
+
+    leida = models.BooleanField(
+        default=False,
+        db_index=True,
+        verbose_name="Leída",
+    )
+
+    fecha_creacion = models.DateTimeField(
+        auto_now_add=True,
+        db_index=True,
+        verbose_name="Fecha de creación",
+    )
+
+    fecha_lectura = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Fecha de lectura",
+    )
+
+    class Meta:
+        db_table = "notificacion_usuario"
+
+        ordering = [
+            "-fecha_creacion",
+            "-id_notificacion",
+        ]
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=["usuario", "auditoria"],
+                name="uq_notificacion_usuario_auditoria",
+            ),
+        ]
+
+        indexes = [
+            models.Index(
+                fields=["usuario", "leida", "fecha_creacion"],
+                name="ix_notif_usuario_leida",
+            ),
+        ]
+
+        verbose_name = "notificación"
+        verbose_name_plural = "notificaciones"
+
+    def __str__(self):
+        estado = "Leída" if self.leida else "Pendiente"
+
+        return (
+            f"{self.usuario} · "
+            f"Auditoría #{self.auditoria_id} · "
+            f"{estado}"
+        )
