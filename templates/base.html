@@ -604,47 +604,6 @@
 <script src="{% static 'js/alerts.js' %}"></script>
 <script src="{% static 'js/sgr-websocket.js' %}?v=20261111-4"></script>
 
-<!-- APERTURA MANUAL DE NOTIFICACIONES -->
-<script>
-document.addEventListener("DOMContentLoaded", function () {
-    const boton = document.getElementById("sgrNotificationDropdown");
-    const menu = document.getElementById("sgrNotificationMenu");
-
-    if (!boton || !menu) return;
-
-    function cerrarNotificaciones() {
-        menu.classList.remove("show");
-        boton.setAttribute("aria-expanded", "false");
-    }
-
-    boton.addEventListener("click", function (event) {
-        event.preventDefault();
-        event.stopPropagation();
-
-        const abierto = menu.classList.contains("show");
-
-        if (abierto) {
-            cerrarNotificaciones();
-        } else {
-            menu.classList.add("show");
-            boton.setAttribute("aria-expanded", "true");
-        }
-    });
-
-    document.addEventListener("click", function (event) {
-        if (!menu.contains(event.target) && !boton.contains(event.target)) {
-            cerrarNotificaciones();
-        }
-    });
-
-    document.addEventListener("keydown", function (event) {
-        if (event.key === "Escape") {
-            cerrarNotificaciones();
-        }
-    });
-});
-</script>
-
 {% block extra_js %}{% endblock %}
 
 </body>
