@@ -1710,199 +1710,195 @@ class CalculoIndicadores:
 
 
 
-    @staticmethod
-    def resumen_delegacion(
-        funcionarios,
-        periodo,
-        fecha=None,
-    ):
-        """
-        Consolida resultados e indicadores de actividad reciente por funcionario.
 
-        RF-029:
-        - Responsables, resultados, avance, meta esperada y semáforo.
-        - Promedio y resultado global.
+@staticmethod
+def resumen_delegacion(
+    funcionarios,
+    periodo,
+    fecha=None,
+):
+    """
+    Consolida resultados e indicadores de actividad reciente por funcionario.
 
-        RF-030:
-        - Fecha del último registro válido.
-        - Días transcurridos desde el último registro.
-        - Cantidad de registros válidos del período.
-        - Promedio diario de registros válidos.
-        """
-        from django.db.models import Count, Max
-        from activities.models import Actividad
+    RF-029:
+    - Responsables, resultados, avance, meta esperada y semáforo.
+    - Promedio y resultado global.
 
-        filas = [
-            CalculoIndicadores.resumen_funcionario(
-                funcionario,
-                periodo,
-                fecha,
-            )
-            for funcionario in funcionarios
-        ]
+    RF-030:
+    - Fecha del último ingreso válido.
+    - Días sin ingreso.
+    - Cantidad de registros válidos.
+    - Promedio diario de registros válidos.
+    """
+    from django.db.models import Count, Max
+    from activities.models import Actividad
 
-        cerrado = not periodo.abierto
-
-        fecha_calculo = (
-            periodo.fecha_termino
-            if cerrado
-            else (fecha or timezone.localdate())
+    filas = [
+        CalculoIndicadores.resumen_funcionario(
+            funcionario,
+            periodo,
+            fecha,
         )
+        for funcionario in funcionarios
+    ]
 
-        fecha_calculo = min(
-            fecha_calculo,
-            periodo.fecha_termino,
-        )
+    cerrado = not periodo.abierto
 
-        esperada = (
-            CalculoIndicadores.calcular_meta_esperada_al_dia(
-                periodo,
-                fecha_calculo,
-            )
-        )
+    fecha_calculo = (
+        periodo.fecha_termino
+        if cerrado
+        else (fecha or timezone.localdate())
+    )
 
-        reglas = CalculoIndicadores._reglas_periodo(
+    # La fecha de cálculo nunca sale del período.
+    fecha_calculo = max(
+        periodo.fecha_inicio,
+        min(fecha_calculo, periodo.fecha_termino),
+    )
+
+    esperada = (
+        CalculoIndicadores.calcular_meta_esperada_al_dia(
             periodo,
             fecha_calculo,
         )
+    )
 
-        # Días transcurridos del período, contando el día inicial.
-        dias_transcurridos = max(
-            (fecha_calculo - periodo.fecha_inicio).days + 1,
-            1,
+    reglas = CalculoIndicadores._reglas_periodo(
+        periodo,
+        fecha_calculo,
+    )
+
+    # Días transcurridos, contando el día inicial.
+    dias_transcurridos = (
+        (fecha_calculo - periodo.fecha_inicio).days + 1
+    )
+
+    ids_funcionarios = [
+        fila["funcionario"].pk
+        for fila in filas
+    ]
+
+    actividad_por_funcionario = {}
+
+    if ids_funcionarios:
+        registros = (
+            Actividad.objects
+            .filter(
+                funcionario_id__in=ids_funcionarios,
+                periodo=periodo,
+                estado=Actividad.ESTADO_VALIDADA,
+                fecha__gte=periodo.fecha_inicio,
+                fecha__lte=fecha_calculo,
+            )
+            .values("funcionario_id")
+            .annotate(
+                cantidad=Count("id_actividad"),
+                ultima_fecha=Max("fecha"),
+            )
         )
 
-        # Solo se consideran actividades que fueron validadas.
-        # La consulta se limita al período y a los funcionarios visibles.
-        ids_funcionarios = [
-            fila["funcionario"].pk
-            for fila in filas
-        ]
-
-        actividad_por_funcionario = {}
-
-        if ids_funcionarios:
-            registros = (
-                Actividad.objects
-                .filter(
-                    funcionario_id__in=ids_funcionarios,
-                    periodo=periodo,
-                    estado=Actividad.ESTADO_VALIDADA,
-                    fecha__lte=fecha_calculo,
-                )
-                .values("funcionario_id")
-                .annotate(
-                    cantidad=Count("id_actividad"),
-                    ultima_fecha=Max("fecha"),
-                )
-            )
-
-            actividad_por_funcionario = {
-                registro["funcionario_id"]: registro
-                for registro in registros
-            }
-
-        # Incorporar los indicadores recientes a cada responsable.
-        for fila in filas:
-            funcionario_id = fila["funcionario"].pk
-
-            registro = actividad_por_funcionario.get(
-                funcionario_id,
-                {},
-            )
-
-            cantidad = registro.get("cantidad", 0)
-            ultima_fecha = registro.get("ultima_fecha")
-
-            dias_sin_ingreso = (
-                (fecha_calculo - ultima_fecha).days
-                if ultima_fecha
-                else None
-            )
-
-            promedio_diario = (
-                calc.redondear(
-                    Decimal(cantidad) / Decimal(dias_transcurridos)
-                )
-                if dias_transcurridos
-                else Decimal("0.00")
-            )
-
-            fila.update({
-                "ultimo_ingreso": ultima_fecha,
-                "dias_sin_ingreso": dias_sin_ingreso,
-                "cantidad_registros": cantidad,
-                "promedio_diario": promedio_diario,
-            })
-
-        cantidad_funcionarios = len(filas)
-
-        suma_resultados = sum(
-            (
-                fila["total_ponderado"]
-                for fila in filas
-            ),
-            Decimal("0.00"),
-        )
-
-        promedio = (
-            calc.redondear(
-                suma_resultados / cantidad_funcionarios
-            )
-            if cantidad_funcionarios
-            else Decimal("0.00")
-        )
-
-        total_ponderado_delegacion = calc.redondear(
-            suma_resultados
-        )
-
-        conteo = {
-            semaforo: sum(
-                1
-                for fila in filas
-                if fila["semaforo"] == semaforo
-            )
-            for semaforo in (
-                calc.SEMAFORO_VERDE,
-                calc.SEMAFORO_AMBAR,
-                calc.SEMAFORO_ROJO,
-            )
+        actividad_por_funcionario = {
+            registro["funcionario_id"]: registro
+            for registro in registros
         }
 
-        bajo_umbral = [
-            fila
-            for fila in filas
-            if fila["bajo_umbral"]
-        ]
+    # Indicadores de actividad reciente por funcionario.
+    for fila in filas:
+        funcionario_id = fila["funcionario"].pk
 
-        resultado_global = promedio
-
-        semaforo_global = (
-            calc.calcular_semaforo(
-                resultado_global,
-                esperada,
-                umbral_ambar=reglas["umbral_ambar"],
-            )
-            if cantidad_funcionarios
-            else ""
+        registro = actividad_por_funcionario.get(
+            funcionario_id,
+            {},
         )
 
-        total_registros_validos = sum(
-            fila["cantidad_registros"]
-            for fila in filas
+        cantidad = registro.get("cantidad", 0)
+        ultima_fecha = registro.get("ultima_fecha")
+
+        dias_sin_ingreso = (
+            (fecha_calculo - ultima_fecha).days
+            if ultima_fecha
+            else None
         )
 
-        return {
-            "filas": filas,
-            "promedio": promedio,
-            "resultado_global": resultado_global,
-            "total_ponderado_delegacion": total_ponderado_delegacion,
-            "meta_esperada": esperada,
-            "semaforo": semaforo_global,
-            "conteo": conteo,
-            "total_funcionarios": cantidad_funcionarios,
-            "bajo_umbral": bajo_umbral,
-            "total_registros_validos": total_registros_validos,
-            "dias_periodo_transcurridos": dias_transcurridos,
-        }
+        promedio_diario = calc.redondear(
+            Decimal(cantidad) / Decimal(dias_transcurridos)
+        )
+
+        fila.update({
+            "ultimo_ingreso": ultima_fecha,
+            "dias_sin_ingreso": dias_sin_ingreso,
+            "cantidad_registros": cantidad,
+            "promedio_diario": promedio_diario,
+        })
+
+    cantidad_funcionarios = len(filas)
+
+    suma_resultados = sum(
+        (
+            fila["total_ponderado"]
+            for fila in filas
+        ),
+        Decimal("0.00"),
+    )
+
+    promedio = (
+        calc.redondear(
+            suma_resultados / cantidad_funcionarios
+        )
+        if cantidad_funcionarios
+        else Decimal("0.00")
+    )
+
+    total_ponderado_delegacion = calc.redondear(
+        suma_resultados
+    )
+
+    conteo = {
+        semaforo: sum(
+            1
+            for fila in filas
+            if fila["semaforo"] == semaforo
+        )
+        for semaforo in (
+            calc.SEMAFORO_VERDE,
+            calc.SEMAFORO_AMBAR,
+            calc.SEMAFORO_ROJO,
+        )
+    }
+
+    bajo_umbral = [
+        fila
+        for fila in filas
+        if fila["bajo_umbral"]
+    ]
+
+    resultado_global = promedio
+
+    semaforo_global = (
+        calc.calcular_semaforo(
+            resultado_global,
+            esperada,
+            umbral_ambar=reglas["umbral_ambar"],
+        )
+        if cantidad_funcionarios
+        else ""
+    )
+
+    total_registros_validos = sum(
+        fila["cantidad_registros"]
+        for fila in filas
+    )
+
+    return {
+        "filas": filas,
+        "promedio": promedio,
+        "resultado_global": resultado_global,
+        "total_ponderado_delegacion": total_ponderado_delegacion,
+        "meta_esperada": esperada,
+        "semaforo": semaforo_global,
+        "conteo": conteo,
+        "total_funcionarios": cantidad_funcionarios,
+        "bajo_umbral": bajo_umbral,
+        "total_registros_validos": total_registros_validos,
+        "dias_periodo_transcurridos": dias_transcurridos,
+    }

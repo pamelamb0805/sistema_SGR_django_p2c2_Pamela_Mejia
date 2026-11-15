@@ -167,7 +167,7 @@
       <div class="card-body">
         <div class="row g-3">
 
-          <div class="col-sm-6 col-lg-4">
+          <div class="col-sm-6 col-lg-6">
             <div class="border rounded p-3 h-100">
               <div class="text-body-secondary small">
                 Registros válidos del período
@@ -178,7 +178,7 @@
             </div>
           </div>
 
-          <div class="col-sm-6 col-lg-4">
+          <div class="col-sm-6 col-lg-6">
             <div class="border rounded p-3 h-100">
               <div class="text-body-secondary small">
                 Días transcurridos del período
@@ -186,24 +186,6 @@
               <div class="fs-3 fw-semibold">
                 {{ resumen.dias_periodo_transcurridos|default:0 }}
               </div>
-            </div>
-          </div>
-
-          <div class="col-sm-6 col-lg-4">
-            <div class="border rounded p-3 h-100">
-              <div class="text-body-secondary small">
-                Promedio diario de registros
-              </div>
-              <div class="fs-3 fw-semibold">
-                {% if resumen.dias_periodo_transcurridos %}
-                  {{ resumen.total_registros_validos|default:0|floatformat:2 }}
-                {% else %}
-                  0
-                {% endif %}
-              </div>
-              <small class="text-body-secondary">
-                Total de registros válidos del período.
-              </small>
             </div>
           </div>
 
