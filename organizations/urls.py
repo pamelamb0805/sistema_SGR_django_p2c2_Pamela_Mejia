@@ -64,6 +64,11 @@ urlpatterns = [
         views.ItemToggleView.as_view(),
         name="item_toggle",
     ),
+    path(
+    "items/<int:pk>/historial/",
+    views.ItemHistorialView.as_view(),
+    name="item_historial",
+    ),
 
     # Roles
     path(

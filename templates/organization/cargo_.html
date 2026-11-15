@@ -88,6 +88,7 @@
                     <table class="table table-hover align-middle">
                         <thead>
                             <tr>
+                                <th>Código</th>
                                 <th>Ítem</th>
                                 <th>Tipo</th>
                                 <th>Vigencia</th>
@@ -98,36 +99,67 @@
                         <tbody>
                             {% for item in items %}
                                 <tr>
-                                    <td>{{ item.nombre_item }}</td>
-                                    <td>{{ item.tipo }}</td>
+                                    <td>{{ item.codigo|default:"—" }}</td>
+
                                     <td>
-                                        {% if item.vigencia %}
-                                            <span class="badge text-bg-success">Vigente</span>
-                                        {% else %}
-                                            <span class="badge text-bg-secondary">No vigente</span>
+                                        <strong>{{ item.nombre_item }}</strong>
+                                        {% if item.descripcion %}
+                                            <div class="small text-body-secondary">
+                                                {{ item.descripcion }}
+                                            </div>
                                         {% endif %}
                                     </td>
-                                    <td class="text-end">
-                                        <form
-                                            method="post"
-                                            action="{% url 'organizations:item_toggle' item.pk %}"
-                                            class="d-inline"
-                                        >
-                                            {% csrf_token %}
 
-                                            <button
-                                                class="btn btn-sm btn-outline-secondary"
-                                                type="submit"
+                                    <td>{{ item.tipo }}</td>
+
+                                    <td>
+                                        {% if item.vigencia %}
+                                            <span class="badge text-bg-success">
+                                                Vigente
+                                            </span>
+                                        {% else %}
+                                            <span class="badge text-bg-secondary">
+                                                No vigente
+                                            </span>
+                                        {% endif %}
+                                    </td>
+
+                                    <td class="text-end text-nowrap">
+                                        <div class="d-inline-flex flex-wrap gap-1 justify-content-end">
+
+                                            <a
+                                                href="{% url 'organizations:item_historial' item.pk %}"
+                                                class="btn btn-sm btn-outline-primary"
+                                                title="Consultar historial"
                                             >
-                                                Cambiar vigencia
-                                            </button>
-                                        </form>
+                                                <i class="bi bi-clock-history me-1"></i>
+                                                Historial
+                                            </a>
+
+                                            <form
+                                                method="post"
+                                                action="{% url 'organizations:item_toggle' item.pk %}"
+                                                class="d-inline"
+                                            >
+                                                {% csrf_token %}
+
+                                                <button
+                                                    class="btn btn-sm btn-outline-secondary"
+                                                    type="submit"
+                                                >
+                                                    <i class="bi bi-arrow-repeat me-1"></i>
+                                                    Cambiar vigencia
+                                                </button>
+                                            </form>
+
+                                        </div>
                                     </td>
                                 </tr>
+
                             {% empty %}
                                 <tr>
                                     <td
-                                        colspan="4"
+                                        colspan="5"
                                         class="text-center text-body-secondary py-4"
                                     >
                                         No hay ítems asociados a este cargo.
@@ -251,9 +283,11 @@
                         {% for c in cargos %}
                             <tr>
                                 <td>{{ c.nombre_cargo }}</td>
+
                                 <td>
                                     {{ c.vigencia_desde|default:"—" }}
                                 </td>
+
                                 <td>
                                     {{ c.vigencia_hasta|default:"Indefinida" }}
                                 </td>
@@ -278,6 +312,7 @@
                                     </div>
                                 </td>
                             </tr>
+
                         {% empty %}
                             <tr>
                                 <td

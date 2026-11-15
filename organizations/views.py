@@ -20,7 +20,15 @@ from core.mixins import (
 from core.mixins import ModalFormPageMixin
 
 from .forms import AccesoForm, CargoForm, DelegacionForm, FuncionarioForm, ItemMedibleForm, RolForm, UsuarioAdminForm
-from .models import Cargo, Delegacion, Funcionario, ItemMedible, Rol, Usuario
+from .models import (
+    Cargo,
+    Delegacion,
+    Funcionario,
+    ItemMedible,
+    ItemMedibleVersion,
+    Rol,
+    Usuario,
+)
 from .services import CRUDCargo, CRUDDelegacion, CRUDFuncionario, CRUDRol, Seguridad
 from django.db import transaction
 
@@ -285,7 +293,29 @@ class ItemToggleView(AccionPostView):
     def get_redirect(self, objeto):
         return reverse("organizations:cargo_detail", args=[objeto.cargo_id])
 
+class ItemHistorialView(LecturaMixin, DetailView):
+    model = ItemMedible
+    template_name = "organization/item_historial.html"
+    context_object_name = "item"
 
+    def get_context_data(self, **kwargs):
+        contexto = super().get_context_data(**kwargs)
+
+        versiones = (
+            ItemMedibleVersion.objects
+            .filter(objeto_id=self.object.pk)
+            .select_related("creado_por")
+            .order_by("-numero_version")
+        )
+
+        contexto["versiones"] = versiones
+        contexto["total_versiones"] = versiones.count()
+        contexto["titulo"] = (
+            f"Historial del ítem: {self.object.nombre_item}"
+        )
+
+        return contexto
+    
 # ---------------------------------------------------------------------------
 # Roles
 # ---------------------------------------------------------------------------
