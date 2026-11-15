@@ -432,6 +432,8 @@ def historial_reglas_periodo(request, pk):
             "total_versiones": versiones.count(),
         },
     )
+
+
 class PeriodoRecalcularView(AccionPostView):
     roles_permitidos = ROLES_MEDICION
     redirect_name = "measurement:periodo_list"
@@ -441,58 +443,80 @@ class PeriodoRecalcularView(AccionPostView):
 
     def accion(self, request, objeto):
         if not objeto.abierto:
-            raise ReglaNegocioError("El período está cerrado: sus resultados no se recalculan.")
+            raise ReglaNegocioError(
+                "El período está cerrado: sus resultados no se recalculan."
+            )
+
         cantidad = CalculoIndicadores.recalcular_periodo(objeto)
+
         return f"Se recalcularon {cantidad} indicadores."
 
     def get_redirect(self, objeto):
-        return reverse("measurement:periodo_detail", args=[objeto.pk])
-
-
-    @login_required
-    def items_vigentes_funcionario(request, funcionario_id):
-        if not tiene_rol(request.user, *ROLES_MEDICION):
-            return JsonResponse(
-                {"error": "No tienes permiso para consultar estos ítems."},
-                status=403,
-            )
-
-        funcionario = (
-            filtrar_por_ambito(
-                Funcionario.objects.select_related("cargo"),
-                request.user,
-                "delegacion_id",
-            )
-            .filter(
-                pk=funcionario_id,
-                estado=Funcionario.ESTADO_ACTIVO,
-            )
-            .first()
+        return reverse(
+            "measurement:periodo_detail",
+            args=[objeto.pk],
         )
 
-        if funcionario is None:
-            return JsonResponse(
-                {"error": "Funcionario no encontrado o fuera de tu ámbito."},
-                status=404,
-            )
 
-        items = ItemMedible.objects.filter(
+@login_required
+def items_vigentes_funcionario(request, funcionario_id):
+    """
+    Devuelve exclusivamente los ítems vigentes del cargo
+    del funcionario seleccionado y dentro del ámbito autorizado.
+    """
+
+    if not tiene_rol(request.user, *ROLES_MEDICION):
+        return JsonResponse(
+            {"error": "No tienes permiso para consultar estos ítems."},
+            status=403,
+        )
+
+    funcionario = (
+        filtrar_por_ambito(
+            Funcionario.objects.select_related(
+                "cargo",
+                "delegacion",
+            ),
+            request.user,
+            "delegacion_id",
+        )
+        .filter(
+            pk=funcionario_id,
+            estado=Funcionario.ESTADO_ACTIVO,
+        )
+        .first()
+    )
+
+    if funcionario is None:
+        return JsonResponse(
+            {
+                "error": (
+                    "Funcionario no encontrado o fuera de tu ámbito."
+                )
+            },
+            status=404,
+        )
+
+    items = (
+        ItemMedible.objects.filter(
             cargo_id=funcionario.cargo_id,
             vigencia=True,
-        ).order_by("nombre_item")
+        )
+        .order_by("nombre_item")
+    )
 
-        return JsonResponse({
-            "cargo": funcionario.cargo.nombre_cargo,
-            "items": [
-                {
-                    "id": item.pk,
-                    "codigo": item.codigo,
-                    "nombre": item.nombre_item,
-                    "tipo": item.tipo,
-                }
-                for item in items
-            ],
-        })
+    return JsonResponse({
+        "cargo": funcionario.cargo.nombre_cargo,
+        "items": [
+            {
+                "id": item.pk,
+                "codigo": item.codigo,
+                "nombre": item.nombre_item,
+                "tipo": item.tipo,
+            }
+            for item in items
+        ],
+    })
 
 # ---------------------------------------------------------------------------
 # Metas

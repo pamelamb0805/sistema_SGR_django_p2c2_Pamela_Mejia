@@ -239,8 +239,9 @@ class CargoListView(PageSizeMixin, LecturaMixin, ModoMixin, ListView):
 
 
 
+
 class CargoDetailView(LecturaMixin, ModoMixin, DetailView):
-    """Detalle de cargo e ítems medibles vigentes."""
+    """Detalle del cargo y administración de sus ítems medibles."""
 
     model = Cargo
     template_name = "organization/cargo_.html"
@@ -250,23 +251,23 @@ class CargoDetailView(LecturaMixin, ModoMixin, DetailView):
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
 
-        contexto["titulo"] = (
-            f"Cargo: {self.object.nombre_cargo}"
+        items = self.object.items.all().order_by(
+            "nombre_item",
         )
 
-        contexto["items"] = (
-            self.object.items.filter(
+        contexto.update({
+            "titulo": f"Cargo: {self.object.nombre_cargo}",
+            "items": items,
+            "item_form": ItemMedibleForm(),
+            "total_items": items.count(),
+            "total_items_vigentes": items.filter(
                 vigencia=True,
-            ).order_by(
-                "nombre_item",
-            )
-        )
-
-        contexto["item_form"] = ItemMedibleForm()
-
-        contexto["total_items_vigentes"] = (
-            contexto["items"].count()
-        )
+            ).count(),
+            "puede_editar": tiene_rol(
+                self.request.user,
+                *ROLES_CONFIGURACION,
+            ),
+        })
 
         return contexto
 
