@@ -729,21 +729,39 @@ class CRUDFuncionario:
 # ---------------------------------------------------------------------------
 # Seguridad (RNF-004, RNF-005)
 # ---------------------------------------------------------------------------
+
 class Seguridad:
+
     @staticmethod
     def verificar_usuario(username):
-        usuario = Usuario.objects.select_related("funcionario").filter(username=username).first()
-        return {"existe": usuario is not None, "activo": bool(usuario and usuario.is_active), "usuario": usuario}
+        usuario = (
+            Usuario.objects
+            .select_related("funcionario", "funcionario__delegacion")
+            .filter(username__iexact=username)
+            .first()
+        )
+
+        return {
+            "existe": usuario is not None,
+            "activo": bool(usuario and usuario.is_active),
+            "usuario": usuario,
+        }
 
     @staticmethod
     def verificar_credenciales(username, password):
-        usuario = authenticate(username=username, password=password)
-        return {"valido": usuario is not None, "usuario": usuario}
+        usuario = authenticate(
+            username=username,
+            password=password,
+        )
+
+        return {
+            "valido": usuario is not None,
+            "usuario": usuario,
+        }
 
     @staticmethod
     def cifrar_datos(password):
         return make_password(password)
-
 
     @staticmethod
     def crear_usuario(
@@ -783,29 +801,21 @@ class Seguridad:
                 "La contraseña es obligatoria."
             )
 
-        if Usuario.objects.filter(
-            funcionario=funcionario
-        ).exists():
+        if Usuario.objects.filter(funcionario=funcionario).exists():
             raise ReglaNegocioError(
                 "El funcionario ya tiene un acceso creado."
             )
 
-        if Usuario.objects.filter(
-            username__iexact=username
-        ).exists():
+        if Usuario.objects.filter(username__iexact=username).exists():
             raise ReglaNegocioError(
                 "Ese nombre de usuario ya está en uso."
             )
 
-        if email and Usuario.objects.filter(
-            email__iexact=email
-        ).exists():
+        if email and Usuario.objects.filter(email__iexact=email).exists():
             raise ReglaNegocioError(
                 "Ese correo ya está asociado a otra cuenta."
             )
 
-        # La validación se hace contra la delegación,
-        # no contra el identificador del funcionario.
         _validar_ambito_asignacion(
             actor=actor,
             queryset=Delegacion.objects.all(),
@@ -818,10 +828,7 @@ class Seguridad:
             ),
         )
 
-        _validar_delegaciones_asignables(
-            actor,
-            delegaciones,
-        )
+        _validar_delegaciones_asignables(actor, delegaciones)
 
         Seguridad.validar_delegaciones(
             funcionario,
@@ -831,9 +838,7 @@ class Seguridad:
         try:
             validate_password(password)
         except ValidationError as exc:
-            raise ReglaNegocioError(
-                " ".join(exc.messages)
-            )
+            raise ReglaNegocioError(" ".join(exc.messages))
 
         with transaction.atomic():
             usuario = Usuario.objects.create_user(
@@ -844,9 +849,7 @@ class Seguridad:
                 activo_acceso=True,
             )
 
-            usuario.delegaciones_autorizadas.set(
-                delegaciones
-            )
+            usuario.delegaciones_autorizadas.set(delegaciones)
 
             auditar(
                 actor,
@@ -873,21 +876,23 @@ class Seguridad:
             validate_password(password, user=usuario)
         except ValidationError as exc:
             raise ReglaNegocioError(" ".join(exc.messages))
+
         usuario.set_password(password)
         usuario.save(update_fields=["password"])
-        auditar(actor, "CAMBIO_CONTRASENIA", "usuario_acceso", usuario.pk, None, None)  # sin guardar la clave
+
+        auditar(
+            actor,
+            "CAMBIO_CONTRASENIA",
+            "usuario_acceso",
+            usuario.pk,
+            None,
+            None,
+        )
+
         return usuario
 
-        @staticmethod
+    @staticmethod
     def guardar_usuario(form, actor=None):
-        """
-        Crea o modifica un usuario de acceso.
-
-        Conserva relaciones existentes, valida el ámbito del actor
-        y evita habilitar cuentas de funcionarios o delegaciones
-        inactivas.
-        """
-
         usuario = form.instance
         es_nuevo = not bool(usuario.pk)
 
@@ -959,12 +964,9 @@ class Seguridad:
                 "a una delegación inactiva."
             )
 
-        if (
-            acceso_solicitado
-            and (
-                not funcionario.activo
-                or not funcionario.delegacion.activa
-            )
+        if acceso_solicitado and (
+            not funcionario.activo
+            or not funcionario.delegacion.activa
         ):
             raise ReglaNegocioError(
                 "No se puede habilitar el acceso de un funcionario "
@@ -1014,10 +1016,7 @@ class Seguridad:
             for rol in roles
         }
 
-        if (
-            delegaciones
-            and not ({"global", "multiples"} & alcances)
-        ):
+        if delegaciones and not ({"global", "multiples"} & alcances):
             raise ReglaNegocioError(
                 "Los roles asignados no permiten "
                 "delegaciones adicionales."
@@ -1025,14 +1024,9 @@ class Seguridad:
 
         if password:
             try:
-                validate_password(
-                    password,
-                    user=usuario,
-                )
+                validate_password(password, user=usuario)
             except ValidationError as exc:
-                raise ReglaNegocioError(
-                    " ".join(exc.messages)
-                )
+                raise ReglaNegocioError(" ".join(exc.messages))
 
         with transaction.atomic():
             usuario = form.save(commit=False)
@@ -1073,7 +1067,7 @@ class Seguridad:
             )
 
         return usuario
-    
+
     @staticmethod
     def cambiar_estado_acceso(usuario, actor=None):
         with transaction.atomic():
@@ -1121,12 +1115,8 @@ class Seguridad:
                     )
 
             anterior = _snapshot(usuario)
-
             usuario.activo_acceso = nuevo_estado
-
-            usuario.save(
-                update_fields=["activo_acceso"]
-            )
+            usuario.save(update_fields=["activo_acceso"])
 
             auditar(
                 actor,
@@ -1146,7 +1136,7 @@ class Seguridad:
             )
 
         return usuario
-    
+
     @staticmethod
     def validar_delegaciones(
         funcionario,
@@ -1154,13 +1144,6 @@ class Seguridad:
         delegaciones_existentes_ids=None,
         validar_principal=True,
     ):
-        """
-        Impide asignaciones nuevas a delegaciones inactivas.
-
-        Permite conservar delegaciones inactivas que ya estaban
-        asociadas a una cuenta, sin permitir nuevas asignaciones.
-        """
-
         delegaciones = list(delegaciones or [])
         existentes = set(delegaciones_existentes_ids or [])
 
@@ -1181,8 +1164,10 @@ class Seguridad:
         inactivas_nuevas = [
             delegacion.nombre
             for delegacion in delegaciones
-            if not delegacion.activa
-            and delegacion.pk not in existentes
+            if (
+                not delegacion.activa
+                and delegacion.pk not in existentes
+            )
         ]
 
         if inactivas_nuevas:
