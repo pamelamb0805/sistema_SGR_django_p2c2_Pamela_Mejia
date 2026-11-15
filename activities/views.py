@@ -499,9 +499,10 @@ def exportar_actividades_excel(request):
     return respuesta
 
 
+
 @login_required
 def exportar_validaciones_excel(request):
-    """Exporta todas las evidencias pendientes dentro del ámbito autorizado."""
+    """Exporta las evidencias pendientes dentro del ámbito autorizado."""
 
     if not tiene_rol(request.user, *ROLES_VALIDACION):
         return HttpResponse("No autorizado", status=403)
@@ -555,6 +556,8 @@ def exportar_validaciones_excel(request):
         "actividad",
         "actividad__funcionario",
         "actividad__item",
+        "actividad__catalogo",
+        "actividad__periodo",
     ).order_by("fecha_carga")
 
     libro = Workbook()
@@ -584,14 +587,14 @@ def exportar_validaciones_excel(request):
             evidencia.codigo_evidencia,
             actividad.codigo,
             actividad.funcionario.nombre,
-            actividad.item.nombre_item,
+            actividad.item_nombre_historico,
             timezone.localtime(evidencia.fecha_carga).strftime(
                 "%d/%m/%Y %H:%M"
             ),
             evidencia.estado_revision,
             (
-            f"{evidencia.codigo_evidencia}.{evidencia.extension}"
-            if evidencia.archivo_vinculo else ""
+                f"{evidencia.codigo_evidencia}.{evidencia.extension}"
+                if evidencia.archivo_vinculo else ""
             ),
         ])
 
