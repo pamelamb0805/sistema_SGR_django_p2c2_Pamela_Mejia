@@ -393,6 +393,55 @@ class CRUDMeta:
                 "; ".join(exc.messages)
             ) from exc
 
+        
+    @staticmethod
+    def _datos_version(meta):
+        return {
+            "valor_objetivo": str(meta.valor_objetivo),
+            "unidad": meta.unidad,
+            "ponderador": str(meta.ponderador),
+            "umbral_minimo": str(meta.umbral_minimo),
+            "maximo_computable": str(meta.maximo_computable),
+            "item_id": meta.item_id,
+            "funcionario_id": meta.funcionario_id,
+            "periodo_id": meta.periodo_id,
+            "cargo_id": meta.cargo_id,
+        }
+
+    @staticmethod
+    def _registrar_version(meta, actor=None):
+        """
+        Cierra la versión vigente y registra una nueva fotografía
+        de los parámetros actuales.
+        """
+        from .models import MetaVersion
+
+        ultima = (
+            MetaVersion.objects
+            .filter(objeto_id=meta.pk)
+            .order_by("-numero_version")
+            .first()
+        )
+
+        ahora = timezone.now()
+
+        if ultima:
+            ultima.vigente_hasta = ahora
+            ultima.save(update_fields=["vigente_hasta"])
+            numero = ultima.numero_version + 1
+        else:
+            numero = 1
+
+        MetaVersion.objects.create(
+            meta=meta,
+            objeto_id=meta.pk,
+            numero_version=numero,
+            vigente_desde=ahora,
+            datos=CRUDMeta._datos_version(meta),
+            creado_por=actor if getattr(actor, "is_authenticated", False) else None,
+        )
+
+
     @staticmethod
     def crear_meta(meta, actor=None):
         _exigir_rol(
@@ -411,6 +460,8 @@ class CRUDMeta:
             )
 
             guardar(meta, actor, "meta")
+            
+            CRUDMeta._registrar_version(meta, actor)
 
             CalculoIndicadores.recalcular_indicador_meta(meta)
 

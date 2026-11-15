@@ -222,3 +222,45 @@ class Ajuste(models.Model):
         if self.meta_id and self.funcionario_id and self.periodo_id:
             if self.meta.funcionario_id != self.funcionario_id or self.meta.periodo_id != self.periodo_id:
                 raise ValidationError({"meta": "La meta debe corresponder al mismo funcionario y período."})
+
+
+class MetaVersion(models.Model):
+    """
+    Historial inmutable de los parámetros de una meta (RF-038).
+    Conserva los valores anteriores aunque la meta sea modificada o eliminada.
+    """
+
+    meta = models.ForeignKey(
+        Meta,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="versiones",
+    )
+    objeto_id = models.PositiveIntegerField(db_index=True)
+    numero_version = models.PositiveIntegerField()
+    vigente_desde = models.DateTimeField(default=timezone.now)
+    vigente_hasta = models.DateTimeField(null=True, blank=True)
+
+    datos = models.JSONField(default=dict)
+
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="versiones_metas_creadas",
+    )
+
+    class Meta:
+        db_table = "meta_version"
+        ordering = ["objeto_id", "-numero_version"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["objeto_id", "numero_version"],
+                name="uq_meta_version_numero",
+            )
+        ]
+
+    def __str__(self):
+        return f"Meta {self.objeto_id} - versión {self.numero_version}"
