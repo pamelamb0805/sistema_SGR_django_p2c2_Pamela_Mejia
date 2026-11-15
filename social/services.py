@@ -270,9 +270,6 @@ class CRUDAtencionSocial:
             gestion.tipo_atencion_nombre = gestion.tipo_atencion.nombre
             gestion.subatencion_nombre = gestion.subatencion.nombre
 
-            # RF-038: conservar los nombres vigentes al registrar.
-            gestion.tipo_atencion_nombre = gestion.tipo_atencion.nombre
-
             gestion.full_clean()
             guardar(gestion, actor, "atencion_social")
 
