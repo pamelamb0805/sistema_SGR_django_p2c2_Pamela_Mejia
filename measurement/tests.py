@@ -747,6 +747,65 @@ class MetaServicioTests(BaseTestCase):
             "180",
         )
 
+    def test_rf007_conserva_datos_historicos_del_item(self):
+        meta = CRUDMeta.crear_meta(
+            self.nueva_meta(
+                self.f,
+                item=self.item1,
+                pond="100",
+            )
+        )
+
+        version = MetaVersion.objects.get(
+            objeto_id=meta.pk,
+            numero_version=1,
+        )
+
+        datos_originales = version.datos.copy()
+
+        self.assertEqual(
+            datos_originales["item_nombre"],
+            "Visitas",
+        )
+        self.assertEqual(
+            datos_originales["item_codigo"],
+            self.item1.codigo,
+        )
+        self.assertEqual(
+            datos_originales["item_descripcion"],
+            self.item1.descripcion,
+        )
+        self.assertEqual(
+            datos_originales["item_tipo"],
+            self.item1.tipo,
+        )
+
+        # Simula un cambio posterior en el catálogo.
+        self.item1.nombre_item = "Visitas modificadas"
+        self.item1.descripcion = "Nueva descripción"
+        self.item1.save(
+            update_fields=[
+                "nombre_item",
+                "descripcion",
+            ]
+        )
+
+        version.refresh_from_db()
+
+        # La fotografía histórica debe permanecer intacta.
+        self.assertEqual(
+            version.datos["item_nombre"],
+            "Visitas",
+        )
+        self.assertEqual(
+            version.datos["item_descripcion"],
+            datos_originales["item_descripcion"],
+        )
+        self.assertEqual(
+            version.datos["item_codigo"],
+            datos_originales["item_codigo"],
+        )
+
 
 # ---------------------------------------------------------------------------
 # Pruebas de indicadores

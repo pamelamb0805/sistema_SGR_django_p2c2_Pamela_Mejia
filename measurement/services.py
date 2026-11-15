@@ -568,24 +568,36 @@ class CRUDMeta:
     # ---------------------------------------------------------
     # VERSIONAMIENTO RF-007 / RF-038
     # ---------------------------------------------------------
-
     @staticmethod
     def _datos_version(meta):
         """
-        Devuelve una fotografía de los parámetros de la meta.
-        Los valores decimales se guardan como texto para evitar
-        pérdidas de precisión en el JSON.
+        Guarda una fotografía completa de los parámetros de la meta
+        y de los datos del ítem medible asociados a esa versión.
+
+        Los datos del ítem se conservan aunque posteriormente
+        cambie su nombre, descripción, tipo o vigencia en el catálogo.
         """
+        item = meta.item
+
         return {
+            # Parámetros de la meta
             "valor_objetivo": str(meta.valor_objetivo),
             "unidad": meta.unidad,
             "ponderador": str(meta.ponderador),
             "umbral_minimo": str(meta.umbral_minimo),
             "maximo_computable": str(meta.maximo_computable),
+
+            # Identificadores de relaciones
             "item_id": meta.item_id,
             "funcionario_id": meta.funcionario_id,
             "periodo_id": meta.periodo_id,
             "cargo_id": meta.cargo_id,
+
+            # Fotografía histórica del ítem
+            "item_nombre": item.nombre_item,
+            "item_codigo": item.codigo,
+            "item_descripcion": item.descripcion,
+            "item_tipo": item.tipo,
         }
 
 
