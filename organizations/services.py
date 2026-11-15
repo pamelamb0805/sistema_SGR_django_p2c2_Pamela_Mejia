@@ -117,28 +117,97 @@ class CRUDRol:
 
     @staticmethod
     def asignar_rol_a_funcionario(funcionario, rol, actor=None):
-        vinculo, creado = FuncionarioRol.objects.get_or_create(funcionario=funcionario, rol=rol)
-        if creado:
-            auditar(actor, "ASIGNAR_ROL", "funcionario_rol", vinculo.pk, None, rol.nombre_rol)
+        with transaction.atomic():
+            vinculo, creado = FuncionarioRol.objects.get_or_create(
+                funcionario=funcionario,
+                rol=rol,
+            )
+
+            if creado:
+                auditar(
+                    actor,
+                    "ASIGNAR_ROL",
+                    "funcionario_rol",
+                    vinculo.pk,
+                    None,
+                    rol.nombre_rol,
+                )
+
+                _notificar_crud(
+                    "funcionario_rol",
+                    "crear",
+                    actor,
+                    vinculo,
+                    delegacion_id=funcionario.delegacion_id,
+                )
+
         return vinculo
 
     @staticmethod
     def sincronizar_roles(funcionario, roles, actor=None):
-        """Deja al funcionario con exactamente los roles indicados (uno o más)."""
-        nuevos = {r.pk: r for r in roles}
-        if not nuevos:
-            raise ReglaNegocioError("Debe asignar al menos un rol.")
-        with transaction.atomic():
-            actuales = set(funcionario.funcionario_roles.values_list("rol_id", flat=True))
-            anterior = sorted(funcionario.funcionario_roles.values_list("rol__nombre_rol", flat=True))
-            funcionario.funcionario_roles.exclude(rol_id__in=nuevos).delete()
-            for rol_id in set(nuevos) - actuales:
-                FuncionarioRol.objects.create(funcionario=funcionario, rol=nuevos[rol_id])
-            if actuales != set(nuevos):
-                auditar(actor, "MODIFICAR_ROLES", "funcionario", funcionario.pk,
-                        json.dumps(anterior, ensure_ascii=False),
-                        json.dumps(sorted(r.nombre_rol for r in nuevos.values()), ensure_ascii=False))
+        """Deja al funcionario con exactamente los roles indicados."""
+        nuevos = {rol.pk: rol for rol in roles}
 
+        if not nuevos:
+            raise ReglaNegocioError(
+                "Debe asignar al menos un rol."
+            )
+
+        with transaction.atomic():
+            actuales = set(
+                funcionario.funcionario_roles.values_list(
+                    "rol_id",
+                    flat=True,
+                )
+            )
+
+            anterior = sorted(
+                funcionario.funcionario_roles.values_list(
+                    "rol__nombre_rol",
+                    flat=True,
+                )
+            )
+
+            ids_nuevos = set(nuevos)
+
+            if actuales == ids_nuevos:
+                return
+
+            funcionario.funcionario_roles.exclude(
+                rol_id__in=ids_nuevos
+            ).delete()
+
+            for rol_id in ids_nuevos - actuales:
+                FuncionarioRol.objects.create(
+                    funcionario=funcionario,
+                    rol=nuevos[rol_id],
+                )
+
+            auditar(
+                actor,
+                "MODIFICAR_ROLES",
+                "funcionario",
+                funcionario.pk,
+                json.dumps(
+                    anterior,
+                    ensure_ascii=False,
+                ),
+                json.dumps(
+                    sorted(
+                        rol.nombre_rol
+                        for rol in nuevos.values()
+                    ),
+                    ensure_ascii=False,
+                ),
+            )
+
+            _notificar_crud(
+                "funcionario",
+                "actualizar",
+                actor,
+                funcionario,
+                delegacion_id=funcionario.delegacion_id,
+            )
 
 # ---------------------------------------------------------------------------
 # CRUDFuncionario (RF-002)
@@ -315,7 +384,9 @@ class Seguridad:
                 activo_acceso=funcionario.activo,
             )
 
-            usuario.delegaciones_autorizadas.set(delegaciones)
+            usuario.delegaciones_autorizadas.set(
+                delegaciones
+            )
 
             auditar(
                 actor,
@@ -324,6 +395,14 @@ class Seguridad:
                 usuario.pk,
                 None,
                 _snapshot(usuario),
+            )
+
+            _notificar_crud(
+                "usuario",
+                "crear",
+                actor,
+                usuario,
+                delegacion_id=funcionario.delegacion_id,
             )
 
         return usuario
@@ -379,34 +458,64 @@ class Seguridad:
                 _snapshot(usuario),
             )
 
+            delegacion_id = (
+                usuario.funcionario.delegacion_id
+                if usuario.funcionario_id
+                else None
+            )
+
+            _notificar_crud(
+                "usuario",
+                "crear" if es_nuevo else "actualizar",
+                actor,
+                usuario,
+                delegacion_id=delegacion_id,
+            )
+
         return usuario
+    
     @staticmethod
     def cambiar_estado_acceso(usuario, actor=None):
-        if not usuario.funcionario_id:
-            raise ReglaNegocioError(
-                "Asocia la cuenta a un funcionario antes de habilitarla."
+        with transaction.atomic():
+            usuario = Usuario.objects.select_for_update().select_related(
+                "funcionario"
+            ).get(pk=usuario.pk)
+
+            if not usuario.funcionario_id:
+                raise ReglaNegocioError(
+                    "Asocia la cuenta a un funcionario antes de habilitarla."
+                )
+
+            if not usuario.funcionario.activo:
+                raise ReglaNegocioError(
+                    "No se puede habilitar el acceso de un funcionario inactivo."
+                )
+
+            anterior = _snapshot(usuario)
+
+            usuario.activo_acceso = not usuario.activo_acceso
+            usuario.save(
+                update_fields=["activo_acceso"]
             )
 
-        if not usuario.funcionario.activo:
-            raise ReglaNegocioError(
-                "No se puede habilitar el acceso de un funcionario inactivo."
+            auditar(
+                actor,
+                "CAMBIAR_ESTADO",
+                "usuario",
+                usuario.pk,
+                anterior,
+                _snapshot(usuario),
             )
 
-        anterior = _snapshot(usuario)
-        usuario.activo_acceso = not usuario.activo_acceso
-        usuario.save(update_fields=["activo_acceso"])
-
-        auditar(
-            actor,
-            "CAMBIAR_ESTADO",
-            "usuario",
-            usuario.pk,
-            anterior,
-            _snapshot(usuario),
-        )
+            _notificar_crud(
+                "usuario",
+                "actualizar",
+                actor,
+                usuario,
+                delegacion_id=usuario.funcionario.delegacion_id,
+            )
 
         return usuario
-
     @staticmethod
     def validar_delegaciones(funcionario, delegaciones):
         """
