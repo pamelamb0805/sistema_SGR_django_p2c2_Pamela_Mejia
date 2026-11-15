@@ -515,7 +515,6 @@ class CRUDMeta:
             "omitidas": omitidas,
         }
 
-
     @staticmethod
     def modificar_meta(meta, actor=None):
         _exigir_rol(
@@ -543,7 +542,6 @@ class CRUDMeta:
                     "el ítem ni el período de una meta."
                 )
 
-            # Conserva la validación del período abierto.
             CRUDMeta._preparar(meta)
 
             CRUDMeta._validar(
@@ -552,51 +550,9 @@ class CRUDMeta:
                 actor=actor,
             )
 
-            # Guarda los nuevos parámetros.
             guardar(meta, actor, "meta")
 
-            # RF-038: cierra la versión anterior y registra la nueva.
             CRUDMeta._registrar_version(meta, actor)
-
-            # Actualiza el indicador con los parámetros vigentes.
-            CalculoIndicadores.recalcular_indicador_meta(meta)
-
-        return meta
-
-        _exigir_rol(
-            actor,
-            ROLES_MEDICION,
-            "No tiene permiso para modificar metas.",
-        )
-
-        with transaction.atomic():
-            original = Meta.objects.select_for_update().get(
-                pk=meta.pk
-            )
-
-            if (
-                original.funcionario_id,
-                original.item_id,
-                original.periodo_id,
-            ) != (
-                meta.funcionario_id,
-                meta.item_id,
-                meta.periodo_id,
-            ):
-                raise ReglaNegocioError(
-                    "No se puede cambiar el funcionario, "
-                    "el ítem ni el período de una meta."
-                )
-
-            CRUDMeta._preparar(meta)
-
-            CRUDMeta._validar(
-                meta,
-                es_nueva=False,
-                actor=actor,
-            )
-
-            guardar(meta, actor, "meta")
 
             CalculoIndicadores.recalcular_indicador_meta(meta)
 
@@ -853,6 +809,36 @@ class CalculoIndicadores:
             ),
         }
 
+    
+    @staticmethod
+    def _datos_meta_historicos(meta, fecha):
+        """
+        Recupera los parámetros de la meta vigentes en una fecha.
+        Si no existe historial para esa fecha, utiliza los valores
+        actuales como respaldo para registros antiguos.
+        """
+        from .models import MetaVersion
+
+        versiones = MetaVersion.objects.filter(
+            objeto_id=meta.pk,
+            vigente_desde__date__lte=fecha,
+        ).order_by("-numero_version")
+
+        version = versiones.filter(
+            vigente_hasta__isnull=True
+        ).first()
+
+        if version is None:
+            version = versiones.filter(
+                vigente_hasta__date__gt=fecha
+            ).first()
+
+        if version:
+            return version.datos
+
+        return CRUDMeta._datos_version(meta)
+
+
     # -----------------------------------------------------------------------
     # PERSISTENCIA
     # -----------------------------------------------------------------------
@@ -927,6 +913,7 @@ class CalculoIndicadores:
     # RESÚMENES
     # -----------------------------------------------------------------------
 
+
     @staticmethod
     def resumen_funcionario(
         funcionario,
@@ -961,6 +948,24 @@ class CalculoIndicadores:
         )
 
         for meta in metas:
+            if cerrado:
+                datos_historicos = (
+                    CalculoIndicadores._datos_meta_historicos(
+                        meta,
+                        fecha,
+                    )
+                )
+            else:
+                datos_historicos = CRUDMeta._datos_version(meta)
+
+            ponderador_historico = Decimal(
+                str(datos_historicos["ponderador"])
+            )
+
+            umbral_historico = Decimal(
+                str(datos_historicos["umbral_minimo"])
+            )
+
             guardado = (
                 Indicador.objects.filter(meta=meta).first()
                 if cerrado
@@ -980,18 +985,23 @@ class CalculoIndicadores:
                     fecha,
                 )
 
+            cumple = valores["cumplimiento"] >= 100
+            bajo_umbral = (
+                valores["cumplimiento"] < umbral_historico
+            )
+
             filas.append({
                 "meta": meta,
                 "item": meta.item,
+                "ponderador_historico": ponderador_historico,
+                "umbral_historico": umbral_historico,
                 **valores,
-                "cumple": valores["cumplimiento"] >= 100,
-                "bajo_umbral": (
-                    valores["cumplimiento"] < meta.umbral_minimo
-                ),
+                "cumple": cumple,
+                "bajo_umbral": bajo_umbral,
             })
 
             total += valores["ponderado"]
-            suma_pond += meta.ponderador
+            suma_pond += ponderador_historico
 
         ajustes = sum(
             (
