@@ -9,7 +9,7 @@ import hashlib
 import json
 import re
 from django.conf import settings
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 
 from core.exceptions import ReglaNegocioError
@@ -393,60 +393,118 @@ class CRUDEvidencia:
 # CRUDValidacion (RF-013, RF-014, HU-11)
 # ---------------------------------------------------------------------------
 class CRUDValidacion:
+
     @staticmethod
     def _decidir(evidencia, decision, observacion, actor):
+        """
+        Registra una decisión inmutable sobre una evidencia.
+
+        RF-013:
+        - Solo permite aprobar, rechazar o solicitar corrección.
+        - Exige un verificador autorizado.
+        - Impide validar evidencias propias.
+        - Solo permite revisar evidencias pendientes.
+        - Exige observación para rechazo o corrección.
+        - Conserva verificador, fecha, decisión y observación.
+        - Genera versiones consecutivas del historial.
+        - Recalcula los indicadores y notifica el cambio.
+        """
         observacion = (observacion or "").strip()
 
+        decisiones_permitidas = {
+            Validacion.DECISION_APROBADA,
+            Validacion.DECISION_RECHAZADA,
+            Validacion.DECISION_CORRECCION,
+        }
+
+        if decision not in decisiones_permitidas:
+            raise ReglaNegocioError(
+                "La decisión seleccionada no es válida."
+            )
+
         if not tiene_rol(actor, *ROLES_VALIDACION):
-            raise ReglaNegocioError("No tiene el rol de verificador.")
+            raise ReglaNegocioError(
+                "No tiene el rol de verificador."
+            )
 
         verificador = get_funcionario(actor)
 
         if verificador is None:
-            raise ReglaNegocioError("Su usuario no tiene un funcionario asociado.")
-
-        if decision != Validacion.DECISION_APROBADA and not observacion:
             raise ReglaNegocioError(
-                "Debe registrar una observación para rechazar o solicitar corrección."
+                "Su usuario no tiene un funcionario asociado."
+            )
+
+        if (
+            decision != Validacion.DECISION_APROBADA
+            and not observacion
+        ):
+            raise ReglaNegocioError(
+                "Debe registrar una observación para rechazar "
+                "o solicitar corrección."
             )
 
         with transaction.atomic():
-            evidencia = Evidencia.objects.select_for_update().get(pk=evidencia.pk)
+            evidencia = Evidencia.objects.select_for_update().get(
+                pk=evidencia.pk
+            )
 
-            if not evidencias_visibles(actor).filter(pk=evidencia.pk).exists():
-                raise ReglaNegocioError("La evidencia está fuera de su ámbito.")
+            if not evidencias_visibles(actor).filter(
+                pk=evidencia.pk
+            ).exists():
+                raise ReglaNegocioError(
+                    "La evidencia está fuera de su ámbito autorizado."
+                )
+
+            if evidencia.estado_revision != Evidencia.ESTADO_PENDIENTE:
+                raise ReglaNegocioError(
+                    "Esta evidencia ya fue revisada. "
+                    "No se puede registrar otra decisión."
+                )
 
             actividad = Actividad.objects.select_for_update().get(
                 pk=evidencia.actividad_id
             )
 
-            if verificador.pk == actividad.funcionario_id:
+            if actividad.estado == Actividad.ESTADO_ANULADA:
                 raise ReglaNegocioError(
-                    "No puede validar sus propias actividades (segregación de funciones)."
+                    "No se puede validar una evidencia de una "
+                    "actividad anulada."
                 )
 
-            if actividad.estado == Actividad.ESTADO_ANULADA:
-                raise ReglaNegocioError("La actividad está anulada.")
+            if verificador.pk == actividad.funcionario_id:
+                raise ReglaNegocioError(
+                    "No puede validar sus propias actividades."
+                )
 
             _exigir_periodo_abierto(
-                actividad.periodo_id, "validar evidencias"
+                actividad.periodo_id,
+                "validar evidencias"
             )
 
-            version = evidencia.validaciones.count() + 1
-            anterior = evidencia.estado_revision
+            version = (
+                evidencia.validaciones.aggregate(
+                    ultima=models.Max("version")
+                )["ultima"] or 0
+            ) + 1
 
-            Validacion.objects.create(
+            estado_anterior = evidencia.estado_revision
+            estado_anterior_actividad = actividad.estado
+
+            validacion = Validacion(
                 evidencia=evidencia,
                 funcionario=verificador,
                 decision=decision,
                 observacion=observacion,
-                version=version
+                version=version,
             )
+            validacion.full_clean()
+            validacion.save()
 
             evidencia.estado_revision = decision
-            evidencia.save(update_fields=["estado_revision"])
+            evidencia.save(
+                update_fields=["estado_revision"]
+            )
 
-            estado_anterior_actividad = actividad.estado
             _recalcular_estado(actividad)
 
             auditar(
@@ -455,21 +513,28 @@ class CRUDValidacion:
                 "evidencia",
                 evidencia.pk,
                 json.dumps({
-                    "estado_revision": anterior,
-                    "estado_actividad": estado_anterior_actividad
-                }),
+                    "estado_revision": estado_anterior,
+                    "estado_actividad": estado_anterior_actividad,
+                }, ensure_ascii=False),
                 json.dumps({
                     "decision": decision,
                     "version": version,
                     "observacion": observacion,
-                    "estado_actividad": actividad.estado
-                }, ensure_ascii=False)
+                    "verificador": verificador.pk,
+                    "fecha": timezone.localtime(
+                        validacion.fecha
+                    ).isoformat(),
+                    "estado_actividad": actividad.estado,
+                }, ensure_ascii=False),
             )
 
             _recalcular_indicadores(actividad)
 
             _notificar_crud(
-                "validacion", "actualizar", actor, evidencia
+                "validacion",
+                "actualizar",
+                actor,
+                evidencia,
             )
 
         return evidencia
