@@ -31,6 +31,8 @@ from core.pagination import PageSizeMixin
 
 from django.http import Http404, JsonResponse, HttpResponse
 from openpyxl import Workbook
+from core.reporting import incorporar_metadatos_informe
+from core.reporting import informe_excel
 
 class SocialMixin(RolRequeridoMixin):
     roles_permitidos = ROLES_SOCIAL
@@ -143,7 +145,7 @@ class CasoListView(PageSizeMixin, SocialMixin, ModoMixin, ListView):
         return contexto
 
 
-
+@informe_excel("Informe de atención social")
 def exportar_casos_excel(request):
     """Exporta casos y gestiones respetando filtros, permisos e historia."""
 
@@ -587,7 +589,7 @@ def estadisticas(request):
         "delegaciones": Delegacion.objects.all() if es_transversal(request.user) else [],
     })
 
-
+@informe_excel("Estadísticas de atención social")
 def exportar_estadisticas_excel(request):
     """Exporta estadísticas sociales respetando filtros y permisos."""
 

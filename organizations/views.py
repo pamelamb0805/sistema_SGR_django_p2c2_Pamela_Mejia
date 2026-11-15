@@ -50,6 +50,8 @@ from core.mixins import (
 )
 from core.pagination import PageSizeMixin
 from django.utils import timezone
+from core.reporting import incorporar_metadatos_informe
+from core.reporting import informe_excel
 
 # ---------------------------------------------------------------------------
 # Bloques reutilizables
@@ -1059,7 +1061,14 @@ class UsuarioToggleView(EscrituraMixin, AccionPostView):
 # Exportaciones Excel de mantenedores
 # ---------------------------------------------------------------------------
 
-def _respuesta_excel(nombre_archivo, nombre_hoja, encabezados, filas):
+
+def _respuesta_excel(
+    nombre_archivo,
+    nombre_hoja,
+    encabezados,
+    filas,
+    request=None,
+):
     libro = Workbook()
     hoja = libro.active
     hoja.title = nombre_hoja
@@ -1067,6 +1076,13 @@ def _respuesta_excel(nombre_archivo, nombre_hoja, encabezados, filas):
 
     for fila in filas:
         hoja.append(fila)
+
+    if request is not None:
+        incorporar_metadatos_informe(
+            libro,
+            request,
+            f"Informe de {nombre_hoja.lower()}",
+        )
 
     respuesta = HttpResponse(
         content_type=(
@@ -1077,12 +1093,14 @@ def _respuesta_excel(nombre_archivo, nombre_hoja, encabezados, filas):
     respuesta["Content-Disposition"] = (
         f'attachment; filename="{nombre_archivo}"'
     )
+    respuesta["Cache-Control"] = "private, no-store"
 
     libro.save(respuesta)
     return respuesta
 
 
 @login_required
+@informe_excel("Informe de delegaciones")
 def exportar_delegaciones_excel(request):
     if not tiene_rol(request.user, *ROLES_SUPERVISION):
         return HttpResponse("No autorizado", status=403)
@@ -1130,6 +1148,7 @@ def exportar_delegaciones_excel(request):
 
 
 @login_required
+@informe_excel("Informe de roles")
 def exportar_roles_excel(request):
     if not (
         tiene_rol(request.user, *ROLES_SUPERVISION)
@@ -1177,6 +1196,7 @@ def exportar_roles_excel(request):
 
 
 @login_required
+@informe_excel("Informe de usuarios")
 def exportar_usuarios_excel(request):
     if not (
         tiene_rol(request.user, *ROLES_CONFIGURACION)
@@ -1275,6 +1295,7 @@ def exportar_usuarios_excel(request):
         filas,
     )
 @login_required
+@informe_excel("Informe de ítems medibles")
 def exportar_items_excel(request, pk):
     if not (
         tiene_rol(request.user, *ROLES_SUPERVISION)
@@ -1327,6 +1348,7 @@ def exportar_items_excel(request, pk):
 
 
 @login_required
+@informe_excel("Informe de funcionarios")
 def exportar_funcionarios_excel(request):
     """
     Exporta funcionarios visibles para el usuario,
@@ -1439,6 +1461,7 @@ def exportar_funcionarios_excel(request):
     return respuesta
 
 @login_required
+@informe_excel("Informe de cargos y funciones")
 def exportar_cargos_excel(request):
     """Exporta cargos y sus funciones (ítems medibles)."""
 

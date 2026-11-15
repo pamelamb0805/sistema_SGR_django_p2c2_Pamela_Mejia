@@ -32,6 +32,8 @@ from django.http import HttpResponse
 from openpyxl import Workbook
 from django.core.paginator import Paginator
 from core.pagination import PageSizeMixin, PAGE_SIZE_OPTIONS, get_page_size
+from core.reporting import incorporar_metadatos_informe
+from core.reporting import informe_excel
 
 def _filtrar(qs, g):
     """Filtros de la agenda (HU-12, RF-032): responsable, estado, territorio, fechas, período, plazo."""
@@ -307,6 +309,7 @@ def resumen_colectivo(request):
     })
 
 @login_required
+@informe_excel("Informe de compromisos")
 def exportar_compromisos_excel(request):
     queryset = compromisos_visibles(request.user).prefetch_related(
         "historial"
@@ -369,6 +372,7 @@ def exportar_compromisos_excel(request):
 
 
 @login_required
+@informe_excel("Resumen de agenda colectiva")
 def exportar_resumen_colectivo_excel(request):
     """Exporta el resumen colectivo completo con los filtros aplicados."""
 

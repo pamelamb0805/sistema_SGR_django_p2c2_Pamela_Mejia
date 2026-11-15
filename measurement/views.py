@@ -47,6 +47,8 @@ from django.http import HttpResponse, JsonResponse
 from openpyxl import Workbook
 from django.core.paginator import Paginator
 from core.pagination import PageSizeMixin, PAGE_SIZE_OPTIONS, get_page_size
+from core.reporting import incorporar_metadatos_informe
+from core.reporting import informe_excel
 
 class LecturaMixin(RolRequeridoMixin):
     roles_permitidos = ROLES_SUPERVISION
@@ -1267,6 +1269,7 @@ def vista_global_cargos(request):
 
 
 @login_required
+@informe_excel("Informe de metas")
 def exportar_metas_excel(request):
     """Exporta metas respetando el nombre histórico del ítem en períodos cerrados."""
 
@@ -1368,6 +1371,7 @@ def exportar_metas_excel(request):
 
 
 @login_required
+@informe_excel("Informe de períodos")
 def exportar_periodos_excel(request):
     """Exporta todos los períodos que coinciden con los filtros."""
 
@@ -1455,6 +1459,7 @@ def exportar_periodos_excel(request):
 
 
 @login_required
+@informe_excel("Informe de incentivos y penalizaciones")
 def exportar_ajustes_excel(request):
     """Exporta ajustes respetando el nombre histórico del ítem asociado."""
 
@@ -1566,6 +1571,7 @@ def exportar_ajustes_excel(request):
 
 
 @login_required
+@informe_excel("Informe de semáforo")
 def exportar_semaforo_excel(request):
     """Exporta el semáforo completo de la delegación o ámbito autorizado."""
 

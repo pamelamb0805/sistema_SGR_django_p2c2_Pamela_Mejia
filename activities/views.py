@@ -34,6 +34,8 @@ from django.http import HttpResponse
 from openpyxl import Workbook
 from core.pagination import PageSizeMixin
 from django.utils import timezone
+from core.reporting import incorporar_metadatos_informe
+from core.reporting import informe_excel
 
 TIPOS_MIME = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "pdf": "application/pdf"}
 
@@ -555,7 +557,7 @@ class ValidacionCreateView(VerificadorMixin, ModoMixin, GuardarMixin, FormView):
                 "Se solicitó corrección al funcionario.",
         }[decision]
 
-
+@informe_excel("Informe de actividades")
 def exportar_actividades_excel(request):
     """Exporta las actividades aplicando los mismos filtros y permisos (RF-032/RF-033)."""
     from django.utils.dateparse import parse_date
@@ -696,6 +698,7 @@ def exportar_actividades_excel(request):
 
 
 @login_required
+@informe_excel("Informe de validación de evidencias")
 def exportar_validaciones_excel(request):
     """Exporta las evidencias pendientes dentro del ámbito autorizado."""
 
