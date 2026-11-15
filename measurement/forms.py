@@ -4,7 +4,7 @@ from core.forms import BootstrapFormMixin
 from organizations.models import Funcionario, ItemMedible
 
 from .models import Ajuste, Meta as MetaModel, Periodo, maximo_por_defecto, umbral_por_defecto
-
+from decimal import Decimal
 
 class PeriodoForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
@@ -58,3 +58,36 @@ class AjusteForm(BootstrapFormMixin, forms.ModelForm):
         self.fields["funcionario"].queryset = Funcionario.objects.filter(estado=Funcionario.ESTADO_ACTIVO)
         self.fields["meta"].queryset = MetaModel.objects.select_related("item", "funcionario", "periodo")
         self.fields["meta"].required = False
+
+
+class ReglasCalculoForm(BootstrapFormMixin, forms.Form):
+    """
+    Configuración versionada de reglas de cálculo.
+    Los cambios se aplican desde el momento de su registro.
+    """
+
+    tope_cumplimiento = forms.DecimalField(
+        label="Tope máximo de cumplimiento (%)",
+        max_digits=8,
+        decimal_places=2,
+        min_value=Decimal("0.01"),
+        initial=150,
+    )
+
+    umbral_colectivo = forms.DecimalField(
+        label="Umbral colectivo (%)",
+        max_digits=5,
+        decimal_places=2,
+        min_value=Decimal("0"),
+        max_value=Decimal("100"),
+        initial=60,
+    )
+
+    umbral_ambar = forms.DecimalField(
+        label="Umbral del semáforo ámbar (%)",
+        max_digits=5,
+        decimal_places=2,
+        min_value=Decimal("0"),
+        max_value=Decimal("100"),
+        initial=60,
+    )

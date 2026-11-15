@@ -13,7 +13,11 @@ urlpatterns = [
     path("periodos/<int:pk>/cerrar/", views.PeriodoCerrarView.as_view(), name="periodo_cerrar"),
     path("periodos/<int:pk>/reabrir/", views.PeriodoReabrirView.as_view(), name="periodo_reabrir"),
     path("periodos/<int:pk>/recalcular/", views.PeriodoRecalcularView.as_view(), name="periodo_recalcular"),
-
+    path(
+    "periodos/<int:pk>/reglas/",
+    views.configurar_reglas_periodo,
+    name="periodo_reglas",
+    ),
     # Metas
     path("metas/", views.MetaListView.as_view(), name="meta_list"),
     path("metas/nueva/", views.MetaCreateView.as_view(), name="meta_create"),

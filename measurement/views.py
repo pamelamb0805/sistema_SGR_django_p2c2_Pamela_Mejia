@@ -26,12 +26,19 @@ from core.mixins import (
 )
 from organizations.models import Cargo, Delegacion, Funcionario, ItemMedible
 
-from .forms import AjusteForm, MetaForm, PeriodoForm, ReabrirPeriodoForm
+from .forms import (
+    AjusteForm,
+    MetaForm,
+    PeriodoForm,
+    ReabrirPeriodoForm,
+    ReglasCalculoForm,
+)
 from .models import (
     Ajuste,
     Meta as MetaModel,
     MetaVersion,
     Periodo,
+    ReglaCalculoVersion,
 )
 from .services import CalculoIndicadores, CRUDAjuste, CRUDMeta, CRUDPeriodo
 
@@ -135,6 +142,10 @@ class PeriodoListView(PageSizeMixin, LecturaMixin, ModoMixin, ListView):
             fecha_desde=filtros.get("fecha_desde", ""),
             fecha_hasta=filtros.get("fecha_hasta", ""),
             total_resultados=self.get_queryset().count(),
+            puede_configurar_reglas=tiene_rol(
+            self.request.user,
+            *ROLES_CONFIGURACION,
+        ),
         )
         return contexto
 
@@ -256,6 +267,97 @@ class PeriodoReabrirView(AccionPostView):
         CRUDPeriodo.reabrir_periodo(objeto, request.POST.get("motivo", ""), request.user)
         return f"Período {objeto} reabierto. Quedó registrado en la auditoría."
 
+
+@login_required
+def configurar_reglas_periodo(request, pk):
+    """
+    Permite al Administrador configurar reglas de cálculo
+    para un período abierto y conservar sus versiones.
+    """
+    if not tiene_rol(request.user, *ROLES_CONFIGURACION):
+        return denegar_acceso(request)
+
+    periodo = get_object_or_404(Periodo, pk=pk)
+
+    if not periodo.abierto:
+        messages.error(
+            request,
+            "No se pueden modificar las reglas de un período cerrado.",
+        )
+        return redirect(
+            "measurement:periodo_detail",
+            pk=periodo.pk,
+        )
+
+    version_actual = (
+        ReglaCalculoVersion.objects
+        .filter(periodo=periodo)
+        .order_by("-numero_version")
+        .first()
+    )
+
+    configuracion = (
+        version_actual.datos
+        if version_actual
+        else CRUDPeriodo._datos_reglas_actuales()
+    )
+
+    if request.method == "POST":
+        form = ReglasCalculoForm(request.POST)
+
+        if form.is_valid():
+            try:
+                nueva_version = CRUDPeriodo.actualizar_reglas_periodo(
+                    periodo,
+                    form.cleaned_data,
+                    request.user,
+                )
+
+                messages.success(
+                    request,
+                    (
+                        "Reglas actualizadas correctamente. "
+                        f"Se registró la versión "
+                        f"{nueva_version.numero_version}."
+                    ),
+                )
+
+                return redirect(
+                    "measurement:periodo_detail",
+                    pk=periodo.pk,
+                )
+
+            except ReglaNegocioError as exc:
+                messages.error(request, str(exc))
+
+    else:
+        form = ReglasCalculoForm(
+            initial={
+                "tope_cumplimiento": configuracion.get(
+                    "tope_cumplimiento",
+                    150,
+                ),
+                "umbral_colectivo": configuracion.get(
+                    "umbral_colectivo",
+                    60,
+                ),
+                "umbral_ambar": configuracion.get(
+                    "umbral_ambar",
+                    60,
+                ),
+            }
+        )
+
+    return render(
+        request,
+        "measurement/reglas_periodo.html",
+        {
+            "titulo": "Configurar reglas de cálculo",
+            "periodo": periodo,
+            "form": form,
+            "version_actual": version_actual,
+        },
+    )
 
 class PeriodoRecalcularView(AccionPostView):
     roles_permitidos = ROLES_MEDICION

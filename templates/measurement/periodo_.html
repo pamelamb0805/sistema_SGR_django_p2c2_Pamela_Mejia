@@ -26,6 +26,15 @@
         <a href="{% url 'measurement:periodo_list' %}"
            class="btn btn-outline-secondary">
             Volver al listado
+            {% if puede_configurar_reglas and periodo.abierto %}
+            <a
+                href="{% url 'measurement:periodo_reglas' periodo.pk %}"
+                class="btn btn-outline-primary"
+            >
+                <i class="bi bi-sliders me-1"></i>
+                Configurar reglas
+            </a>
+            {% endif %}
         </a>
 
         {% if puede_editar and periodo.abierto %}
