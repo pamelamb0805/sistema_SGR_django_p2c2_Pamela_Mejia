@@ -573,7 +573,10 @@ class FuncionarioDetailView(
             ),
             usuario_acceso=usuario,
             acceso_form=(
-                AccesoForm(usuario=usuario)
+                AccesoForm(
+                    usuario=usuario,
+                    actor=self.request.user,
+                )
                 if puede_gestionar_acceso
                 else None
             ),
@@ -724,6 +727,7 @@ class FuncionarioAccesoView(EscrituraMixin, View):
         form = AccesoForm(
             request.POST,
             usuario=usuario,
+            actor=request.user,
         )
 
         if form.is_valid():
@@ -839,113 +843,6 @@ class FuncionarioAccesoView(EscrituraMixin, View):
             "organizations:funcionario_detail",
             pk=funcionario.pk,
         )
-
-def post(self, request, pk):
-    funcionario = get_object_or_404(
-        Funcionario.objects.select_related("delegacion"),
-        pk=pk,
-    )
-
-    usuario = getattr(funcionario, "usuario", None)
-
-    form = AccesoForm(
-        request.POST,
-        usuario=usuario,
-    )
-
-    if form.is_valid():
-        try:
-            email = form.cleaned_data["email"].strip().lower()
-
-            delegaciones = list(
-                form.cleaned_data["delegaciones_autorizadas"]
-            )
-
-            delegaciones_existentes_ids = (
-                set(
-                    usuario.delegaciones_autorizadas.values_list(
-                        "pk",
-                        flat=True,
-                    )
-                )
-                if usuario
-                else set()
-            )
-
-            Seguridad.validar_delegaciones(
-                funcionario,
-                delegaciones,
-                delegaciones_existentes_ids=delegaciones_existentes_ids,
-                validar_principal=usuario is None,
-            )
-
-            if usuario:
-                if Usuario.objects.filter(
-                    email__iexact=email
-                ).exclude(pk=usuario.pk).exists():
-                    raise ReglaNegocioError(
-                        "Ese correo electrónico ya está registrado."
-                    )
-
-                with transaction.atomic():
-                    usuario.email = email
-
-                    if not funcionario.activo:
-                        usuario.activo_acceso = False
-
-                    usuario.save(
-                        update_fields=[
-                            "email",
-                            "activo_acceso",
-                        ]
-                    )
-
-                    usuario.delegaciones_autorizadas.set(
-                        delegaciones
-                    )
-
-                    password = form.cleaned_data.get("password1")
-
-                    if password:
-                        Seguridad.cambiar_contrasenia(
-                            usuario,
-                            password,
-                            request.user,
-                        )
-
-                messages.success(
-                    request,
-                    "Acceso actualizado correctamente.",
-                )
-
-            else:
-                Seguridad.crear_usuario(
-                    funcionario=funcionario,
-                    username=form.cleaned_data["username"],
-                    password=form.cleaned_data["password1"],
-                    actor=request.user,
-                    email=email,
-                    delegaciones=delegaciones,
-                )
-
-                messages.success(
-                    request,
-                    "Acceso creado correctamente.",
-                )
-
-        except ReglaNegocioError as exc:
-            messages.error(request, str(exc))
-
-    else:
-        messages.error(
-            request,
-            _errores(form),
-        )
-
-    return redirect(
-        "organizations:funcionario_detail",
-        pk=funcionario.pk,
-    )
 
 
 class UsuarioListView(

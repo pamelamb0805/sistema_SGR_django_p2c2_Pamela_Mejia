@@ -744,6 +744,7 @@ class Seguridad:
     def cifrar_datos(password):
         return make_password(password)
 
+
     @staticmethod
     def crear_usuario(
         funcionario,
@@ -803,11 +804,13 @@ class Seguridad:
                 "Ese correo ya está asociado a otra cuenta."
             )
 
+        # La validación se hace contra la delegación,
+        # no contra el identificador del funcionario.
         _validar_ambito_asignacion(
             actor=actor,
-            queryset=Funcionario.objects.all(),
-            campo="delegacion_id",
-            objeto_id=funcionario.pk,
+            queryset=Delegacion.objects.all(),
+            campo="id_delegacion",
+            objeto_id=funcionario.delegacion_id,
             entidad="usuario",
             mensaje=(
                 "No tienes autorización para crear "
@@ -863,6 +866,7 @@ class Seguridad:
             )
 
         return usuario
+
     @staticmethod
     def cambiar_contrasenia(usuario, password, actor=None):
         try:
@@ -875,35 +879,24 @@ class Seguridad:
         return usuario
 
 
+
     @staticmethod
     def guardar_usuario(form, actor=None):
         """
         Crea o modifica un usuario de acceso.
 
-        Garantiza:
-        - Funcionario obligatorio.
-        - Un usuario por funcionario.
-        - Al menos un rol.
-        - Delegaciones compatibles con el alcance del rol.
-        - Contraseñas almacenadas mediante hash de Django.
-        - Auditoría y notificación.
+        Conserva la contraseña anterior si el formulario
+        de edición se envía con los campos de contraseña vacíos.
         """
 
         usuario = form.instance
         es_nuevo = not bool(usuario.pk)
 
         funcionario = form.cleaned_data.get("funcionario")
-
-        roles = list(
-            form.cleaned_data.get("roles") or []
-        )
-
+        roles = list(form.cleaned_data.get("roles") or [])
         delegaciones = list(
-            form.cleaned_data.get(
-                "delegaciones_autorizadas"
-            ) or []
+            form.cleaned_data.get("delegaciones_autorizadas") or []
         )
-
         password = form.cleaned_data.get("password1")
 
         if funcionario is None:
@@ -932,11 +925,12 @@ class Seguridad:
                 "La delegación del funcionario está inactiva."
             )
 
+        # Corregido: validar el ID de la delegación principal.
         _validar_ambito_asignacion(
             actor=actor,
-            queryset=Funcionario.objects.all(),
-            campo="delegacion_id",
-            objeto_id=funcionario.pk,
+            queryset=Delegacion.objects.all(),
+            campo="id_delegacion",
+            objeto_id=funcionario.delegacion_id,
             entidad="usuario",
             mensaje=(
                 "No tienes autorización para administrar "
@@ -951,15 +945,11 @@ class Seguridad:
         if not es_nuevo:
             original = (
                 Usuario.objects
-                .prefetch_related(
-                    "delegaciones_autorizadas"
-                )
+                .prefetch_related("delegaciones_autorizadas")
                 .get(pk=usuario.pk)
             )
 
-            funcionario_original_id = (
-                original.funcionario_id
-            )
+            funcionario_original_id = original.funcionario_id
 
             delegaciones_existentes_ids = set(
                 original.delegaciones_autorizadas.values_list(
@@ -975,10 +965,7 @@ class Seguridad:
             or funcionario_original_id != funcionario.pk
         )
 
-        if (
-            cambio_funcionario
-            and not funcionario.delegacion.activa
-        ):
+        if cambio_funcionario and not funcionario.delegacion.activa:
             raise ReglaNegocioError(
                 "No se puede asignar una cuenta "
                 "a una delegación inactiva."
@@ -990,11 +977,11 @@ class Seguridad:
         )
 
         inactivas_nuevas = [
-            d.nombre
-            for d in delegaciones
+            delegacion.nombre
+            for delegacion in delegaciones
             if (
-                not d.activa
-                and d.pk not in delegaciones_existentes_ids
+                not delegacion.activa
+                and delegacion.pk not in delegaciones_existentes_ids
             )
         ]
 
@@ -1011,9 +998,7 @@ class Seguridad:
 
         if (
             delegaciones
-            and not (
-                {"global", "multiples"} & alcances
-            )
+            and not ({"global", "multiples"} & alcances)
         ):
             raise ReglaNegocioError(
                 "Los roles asignados no permiten "
@@ -1022,10 +1007,7 @@ class Seguridad:
 
         if password:
             try:
-                validate_password(
-                    password,
-                    user=usuario,
-                )
+                validate_password(password, user=usuario)
             except ValidationError as exc:
                 raise ReglaNegocioError(
                     " ".join(exc.messages)
@@ -1034,16 +1016,10 @@ class Seguridad:
         with transaction.atomic():
             usuario = form.save(commit=False)
 
-            if not funcionario.activo:
-                usuario.activo_acceso = False
-
-            # Nunca guardar la contraseña como texto plano.
-            # En edición, una contraseña vacía conserva la anterior.
             if password:
                 usuario.set_password(password)
 
             usuario.save()
-
             form.save_m2m()
 
             CRUDRol.sincronizar_roles(
@@ -1070,7 +1046,8 @@ class Seguridad:
             )
 
         return usuario
-  
+
+
     @staticmethod
     def cambiar_estado_acceso(usuario, actor=None):
         with transaction.atomic():
