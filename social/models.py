@@ -46,8 +46,20 @@ class UsuarioSocial(models.Model):
         verbose_name_plural = "usuarios sociales"
 
     def __str__(self):
-        return f"{self.nombre} ({self.territorio})"
+        tipo = (
+            self.tipo_atencion_nombre
+            or (
+                self.tipo_atencion.nombre
+                if self.tipo_atencion_id
+                else "Sin tipo"
+            )
+        )
 
+        return (
+            f"Gestión {self.numero_gestion} – "
+            f"{tipo} ({self.fecha:%d/%m/%Y})"
+        )
+    
     @property
     def cerrado(self):
         return self.estado_caso == self.ESTADO_CERRADO

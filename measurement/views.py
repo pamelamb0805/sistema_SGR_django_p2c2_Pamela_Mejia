@@ -316,6 +316,22 @@ class MetaListView(PageSizeMixin, LecturaMixin, AmbitoDelegacionMixin, ModoMixin
         contexto = super().get_context_data(**kwargs)
         g = self.request.GET
 
+        # RF-038: mostrar el nombre del ítem correspondiente
+        # a la versión histórica de cada meta.
+        for meta in contexto.get("metas", []):
+            if meta.periodo.abierto:
+                datos = CRUDMeta._datos_version(meta)
+            else:
+                datos = CalculoIndicadores._datos_meta_historicos(
+                    meta,
+                    meta.periodo.fecha_termino,
+                )
+
+            meta.nombre_item_historico = datos.get(
+                "item_nombre",
+                meta.item.nombre_item,
+            )
+
         contexto.update(
             periodos=Periodo.objects.all(),
             cargos=Cargo.objects.all(),
@@ -331,11 +347,12 @@ class MetaListView(PageSizeMixin, LecturaMixin, AmbitoDelegacionMixin, ModoMixin
             q=g.get("q", ""),
             total_resultados=self.get_queryset().count(),
             items=ItemMedible.objects.select_related("cargo").order_by(
-                "cargo__nombre_cargo", "nombre_item"
+                "cargo__nombre_cargo",
+                "nombre_item",
             ),
         )
-        return contexto
 
+        return contexto
 class MetaFormMixin(MedicionMixin, ModoMixin, GuardarMixin):
     model = MetaModel
     form_class = MetaForm

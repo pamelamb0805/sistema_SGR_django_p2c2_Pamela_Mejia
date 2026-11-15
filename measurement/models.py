@@ -47,13 +47,23 @@ class PeriodoQuerySet(models.QuerySet):
 class Periodo(models.Model):
     ESTADO_ABIERTO = "Abierto"
     ESTADO_CERRADO = "Cerrado"
-    ESTADOS = [(ESTADO_ABIERTO, "Abierto"), (ESTADO_CERRADO, "Cerrado")]
+    ESTADOS = [
+        (ESTADO_ABIERTO, "Abierto"),
+        (ESTADO_CERRADO, "Cerrado"),
+    ]
 
     id_periodo = models.AutoField(primary_key=True)
     fecha_inicio = models.DateField()
     fecha_termino = models.DateField()
-    dias_computables = models.PositiveIntegerField(editable=False, default=0)
-    estado = models.CharField(max_length=10, choices=ESTADOS, default=ESTADO_ABIERTO)
+    dias_computables = models.PositiveIntegerField(
+        editable=False,
+        default=0,
+    )
+    estado = models.CharField(
+        max_length=10,
+        choices=ESTADOS,
+        default=ESTADO_ABIERTO,
+    )
     version_parametros = models.PositiveIntegerField(default=1)
 
     objects = PeriodoQuerySet.as_manager()
@@ -62,46 +72,48 @@ class Periodo(models.Model):
         db_table = "periodo"
         ordering = ["-fecha_inicio"]
 
-    
     def __str__(self):
-        nombre_item = self.item.nombre_item if self.item_id else "Sin ítem"
+        return (
+            f"{self.fecha_inicio:%d/%m/%Y} - "
+            f"{self.fecha_termino:%d/%m/%Y} ({self.estado})"
+        )
 
-        try:
-            if self.periodo_id and self.periodo.abierto:
-                datos = CRUDMeta._datos_version(self)
-            elif self.periodo_id:
-                datos = CalculoIndicadores._datos_meta_historicos(
-                    self,
-                    self.periodo.fecha_termino,
-                )
-            else:
-                datos = {}
-
-            nombre_item = datos.get("item_nombre") or nombre_item
-        except Exception:
-            pass
-
-        return f"{nombre_item} – {self.funcionario} ({self.periodo})"
-
-        @property
-        def abierto(self):
-            return self.estado == self.ESTADO_ABIERTO
+    @property
+    def abierto(self):
+        return self.estado == self.ESTADO_ABIERTO
 
     def clean(self):
         if self.fecha_inicio and self.fecha_termino:
             if self.fecha_termino < self.fecha_inicio:
-                raise ValidationError({"fecha_termino": "La fecha de término no puede ser anterior a la de inicio."})
+                raise ValidationError({
+                    "fecha_termino": (
+                        "La fecha de término no puede ser anterior "
+                        "a la fecha de inicio."
+                    )
+                })
+
             superpuestos = Periodo.objects.filter(
-                fecha_inicio__lte=self.fecha_termino, fecha_termino__gte=self.fecha_inicio,
+                fecha_inicio__lte=self.fecha_termino,
+                fecha_termino__gte=self.fecha_inicio,
             ).exclude(pk=self.pk)
+
             if superpuestos.exists():
-                raise ValidationError("El período se superpone con otro período existente.")
+                raise ValidationError(
+                    "El período se superpone con otro período existente."
+                )
 
     def save(self, *args, **kwargs):
-        if self.fecha_inicio and self.fecha_termino and self.fecha_termino >= self.fecha_inicio:
-            self.dias_computables = calc.calcular_dias_computables(self.fecha_inicio, self.fecha_termino)
-        super().save(*args, **kwargs)
+        if (
+            self.fecha_inicio
+            and self.fecha_termino
+            and self.fecha_termino >= self.fecha_inicio
+        ):
+            self.dias_computables = calc.calcular_dias_computables(
+                self.fecha_inicio,
+                self.fecha_termino,
+            )
 
+        super().save(*args, **kwargs)
 # ---------------------------------------------------------------------------
 # VERSIONES DE REGLAS DE CÁLCULO (RF-038)
 # ---------------------------------------------------------------------------

@@ -182,11 +182,11 @@
                         </td>
 
                         <td>
-                            {{ gestion.tipo_atencion.nombre }}
+                        {{ gestion.tipo_atencion_nombre|default:gestion.tipo_atencion.nombre }}
                         </td>
 
                         <td>
-                            {{ gestion.subatencion.nombre }}
+                        {{ gestion.subatencion_nombre|default:gestion.subatencion.nombre }}
                         </td>
 
                         <td>
