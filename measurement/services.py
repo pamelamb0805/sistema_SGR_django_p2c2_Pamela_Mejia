@@ -37,6 +37,7 @@ from .models import (
     ReglaCalculoVersion,
 )
 from django.conf import settings
+from types import SimpleNamespace
 
 ACTIVIDAD_VALIDADA = "Validada"
 COMPROMISO_REALIZADO = "Realizado"
@@ -1056,11 +1057,17 @@ class CalculoIndicadores:
 
 
     @staticmethod
+
+    @staticmethod
     def resumen_funcionario(
         funcionario,
         periodo,
         fecha=None,
     ):
+        """
+        Genera el resumen del funcionario utilizando las versiones
+        históricas de metas e ítems cuando el período está cerrado.
+        """
         cerrado = not periodo.abierto
 
         fecha = (
@@ -1112,6 +1119,35 @@ class CalculoIndicadores:
                 str(datos_historicos["umbral_minimo"])
             )
 
+            # Recuperar la fotografía histórica del ítem.
+            # No consultar el nombre actual del catálogo para
+            # representar períodos cerrados.
+            if cerrado:
+                item_historico = SimpleNamespace(
+                    pk=datos_historicos.get(
+                        "item_id",
+                        meta.item_id,
+                    ),
+                    codigo=datos_historicos.get(
+                        "item_codigo",
+                        meta.item.codigo,
+                    ),
+                    nombre_item=datos_historicos.get(
+                        "item_nombre",
+                        meta.item.nombre_item,
+                    ),
+                    descripcion=datos_historicos.get(
+                        "item_descripcion",
+                        meta.item.descripcion,
+                    ),
+                    tipo=datos_historicos.get(
+                        "item_tipo",
+                        meta.item.tipo,
+                    ),
+                )
+            else:
+                item_historico = meta.item
+
             guardado = (
                 Indicador.objects.filter(meta=meta).first()
                 if cerrado
@@ -1133,13 +1169,15 @@ class CalculoIndicadores:
                 )
 
             cumple = valores["cumplimiento"] >= 100
+
             bajo_umbral = (
                 valores["cumplimiento"] < umbral_historico
             )
 
             filas.append({
                 "meta": meta,
-                "item": meta.item,
+                "item": item_historico,
+                "datos_historicos": datos_historicos,
                 "ponderador_historico": ponderador_historico,
                 "umbral_historico": umbral_historico,
                 **valores,
@@ -1169,7 +1207,9 @@ class CalculoIndicadores:
             "filas": filas,
             "total_ponderado": total,
             "ajustes": ajustes,
-            "resultado_total": calc.redondear(total + ajustes),
+            "resultado_total": calc.redondear(
+                total + ajustes
+            ),
             "meta_esperada": esperada,
             "semaforo": calc.calcular_semaforo(
                 total,
@@ -1177,7 +1217,9 @@ class CalculoIndicadores:
                 umbral_ambar=reglas["umbral_ambar"],
             ),
             "suma_ponderadores": suma_pond,
-            "completa": suma_pond == Decimal("100"),
+            "completa": (
+                suma_pond == Decimal("100")
+            ),
             "bajo_umbral": calc.esta_bajo_umbral(
                 total,
                 reglas["umbral_colectivo"],
