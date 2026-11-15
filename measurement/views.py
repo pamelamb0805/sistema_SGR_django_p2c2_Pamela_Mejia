@@ -487,47 +487,65 @@ class MetaListView(PageSizeMixin, LecturaMixin, AmbitoDelegacionMixin, ModoMixin
 
         return qs
 
-    def get_context_data(self, **kwargs):
-        contexto = super().get_context_data(**kwargs)
-        g = self.request.GET
+    
+def get_context_data(self, **kwargs):
+    contexto = super().get_context_data(**kwargs)
+    g = self.request.GET
 
-        # RF-038: mostrar el nombre del ítem correspondiente
-        # a la versión histórica de cada meta.
-        for meta in contexto.get("metas", []):
-            if meta.periodo.abierto:
-                datos = CRUDMeta._datos_version(meta)
-            else:
-                datos = CalculoIndicadores._datos_meta_historicos(
-                    meta,
-                    meta.periodo.fecha_termino,
-                )
-
-            meta.nombre_item_historico = datos.get(
-                "item_nombre",
-                meta.item.nombre_item,
+    for meta in contexto.get("metas", []):
+        if meta.periodo.abierto:
+            datos = CRUDMeta._datos_version(meta)
+        else:
+            datos = CalculoIndicadores._datos_meta_historicos(
+                meta,
+                meta.periodo.fecha_termino,
             )
 
-        contexto.update(
-            periodos=Periodo.objects.all(),
-            cargos=Cargo.objects.all(),
-            funcionarios=filtrar_por_ambito(
-                Funcionario.objects.all(),
-                self.request.user,
-                "delegacion_id",
-            ),
-            periodo_sel=g.get("periodo", ""),
-            funcionario_sel=g.get("funcionario", ""),
-            cargo_sel=g.get("cargo", ""),
-            item_sel=g.get("item", ""),
-            q=g.get("q", ""),
-            total_resultados=self.get_queryset().count(),
-            items=ItemMedible.objects.select_related("cargo").order_by(
-                "cargo__nombre_cargo",
-                "nombre_item",
-            ),
+        meta.nombre_item_historico = datos.get(
+            "item_nombre",
+            meta.item.nombre_item,
         )
 
-        return contexto
+    funcionarios = filtrar_por_ambito(
+        Funcionario.objects.select_related(
+            "cargo",
+            "delegacion",
+        ),
+        self.request.user,
+        "delegacion_id",
+    )
+
+    cargos = Cargo.objects.all()
+
+    items = ItemMedible.objects.filter(
+        vigencia=True
+    ).select_related("cargo")
+
+    cargo_seleccionado = g.get("cargo", "").strip()
+
+    if cargo_seleccionado.isdigit():
+        items = items.filter(
+            cargo_id=int(cargo_seleccionado)
+        )
+
+    contexto.update({
+        "periodos": Periodo.objects.all(),
+        "cargos": cargos,
+        "funcionarios": funcionarios,
+        "periodo_sel": g.get("periodo", ""),
+        "funcionario_sel": g.get("funcionario", ""),
+        "cargo_sel": cargo_seleccionado,
+        "item_sel": g.get("item", ""),
+        "q": g.get("q", ""),
+        "total_resultados": self.get_queryset().count(),
+        "items": items.order_by(
+            "cargo__nombre_cargo",
+            "nombre_item",
+        ),
+    })
+
+    return contexto
+
 class MetaFormMixin(MedicionMixin, ModoMixin, GuardarMixin):
     model = MetaModel
     form_class = MetaForm

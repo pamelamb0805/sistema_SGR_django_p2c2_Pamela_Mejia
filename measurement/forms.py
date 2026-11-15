@@ -20,31 +20,131 @@ class ReabrirPeriodoForm(BootstrapFormMixin, forms.Form):
     motivo = forms.CharField(label="Motivo de la reapertura", widget=forms.Textarea(attrs={"rows": 3}))
 
 
+
 class MetaForm(BootstrapFormMixin, forms.ModelForm):
     aplicar_a_cargo = forms.BooleanField(
-        required=False, label="Aplicar a todos los funcionarios activos del mismo cargo",
-        help_text="Crea la misma meta para cada funcionario del cargo (omite a quienes ya la tengan).")
+        required=False,
+        label="Aplicar a todos los funcionarios activos del mismo cargo",
+        help_text=(
+            "Crea la misma meta para cada funcionario del cargo "
+            "(omite a quienes ya la tengan)."
+        ),
+    )
 
     class Meta:
         model = MetaModel
-        fields = ["periodo", "funcionario", "item", "valor_objetivo", "unidad",
-                  "ponderador", "umbral_minimo", "maximo_computable"]
+        fields = [
+            "periodo",
+            "funcionario",
+            "item",
+            "valor_objetivo",
+            "unidad",
+            "ponderador",
+            "umbral_minimo",
+            "maximo_computable",
+        ]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
         self.fields["periodo"].queryset = Periodo.objects.abiertos()
-        self.fields["funcionario"].queryset = Funcionario.objects.filter(
-            estado=Funcionario.ESTADO_ACTIVO).select_related("cargo")
-        self.fields["item"].queryset = ItemMedible.objects.filter(vigencia=True).select_related("cargo")
+
+        self.fields["funcionario"].queryset = (
+            Funcionario.objects.filter(
+                estado=Funcionario.ESTADO_ACTIVO
+            )
+            .select_related("cargo")
+            .order_by("nombre")
+        )
+
+        items = ItemMedible.objects.filter(
+            vigencia=True
+        ).select_related("cargo")
+
+        funcionario_id = (
+            self.data.get("funcionario")
+            if self.is_bound
+            else (
+                self.instance.funcionario_id
+                if self.instance.pk
+                else None
+            )
+        )
+
+        if funcionario_id:
+            funcionario = (
+                Funcionario.objects
+                .filter(
+                    pk=funcionario_id,
+                    estado=Funcionario.ESTADO_ACTIVO,
+                )
+                .select_related("cargo")
+                .first()
+            )
+
+            if funcionario:
+                items = items.filter(
+                    cargo_id=funcionario.cargo_id
+                )
+            else:
+                items = items.none()
+        elif not self.instance.pk:
+            items = items.none()
+
+        self.fields["item"].queryset = items.order_by(
+            "nombre_item"
+        )
+
         if self.instance.pk:
-            # Al editar solo cambian valores; funcionario, ítem y período quedan fijos
-            for campo in ("periodo", "funcionario", "item"):
+            for campo in (
+                "periodo",
+                "funcionario",
+                "item",
+            ):
                 self.fields[campo].disabled = True
-                self.fields[campo].queryset = self.fields[campo].queryset.model.objects.all()
-            del self.fields["aplicar_a_cargo"]
+
+                self.fields[campo].queryset = (
+                    self.fields[campo].queryset.model.objects.filter(
+                        pk=getattr(
+                            self.instance,
+                            f"{campo}_id",
+                        )
+                    )
+                )
+
+            self.fields["aplicar_a_cargo"].widget = (
+                forms.HiddenInput()
+            )
+
         else:
-            self.fields["umbral_minimo"].initial = umbral_por_defecto()
-            self.fields["maximo_computable"].initial = maximo_por_defecto()
+            self.fields["umbral_minimo"].initial = (
+                umbral_por_defecto()
+            )
+            self.fields["maximo_computable"].initial = (
+                maximo_por_defecto()
+            )
+
+    def clean(self):
+        cleaned_data = super().clean()
+
+        funcionario = cleaned_data.get("funcionario")
+        item = cleaned_data.get("item")
+
+        if funcionario and item:
+            if item.cargo_id != funcionario.cargo_id:
+                self.add_error(
+                    "item",
+                    "El ítem seleccionado no pertenece "
+                    "al cargo del funcionario.",
+                )
+
+            if not self.instance.pk and not item.vigencia:
+                self.add_error(
+                    "item",
+                    "No puedes asignar un ítem que no está vigente.",
+                )
+
+        return cleaned_data
 
 
 class AjusteForm(BootstrapFormMixin, forms.ModelForm):
