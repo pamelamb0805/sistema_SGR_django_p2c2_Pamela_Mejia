@@ -374,16 +374,15 @@
               <th>Fecha comprometida</th>
               <th>Estado</th>
               <th>Observación</th>
+              <th>Detalle</th>
             </tr>
           </thead>
 
           <tbody>
             {% for compromiso in compromisos %}
               <tr>
-                <td>#{{ compromiso.pk }}</td>
-
+                <td>#{{ compromiso.id_compromiso }}</td>
                 <td>{{ compromiso.origen }}</td>
-
                 <td>{{ compromiso.solicitante }}</td>
 
                 <td>
@@ -417,11 +416,18 @@
                 <td>
                   {{ compromiso.observacion|default:"—"|truncatechars:100 }}
                 </td>
+
+                <td>
+                  <a href="{% url 'agenda:compromiso_detail' compromiso.pk %}"
+                     class="btn btn-sm btn-outline-primary">
+                    Ver
+                  </a>
+                </td>
               </tr>
 
             {% empty %}
               <tr>
-                <td colspan="7"
+                <td colspan="8"
                     class="text-center text-body-secondary py-4">
                   No existen compromisos asociados a este funcionario
                   en el período seleccionado.
@@ -556,13 +562,186 @@
     </div>
   </div>
 
+  <!-- RF-028: Trazabilidad del origen de cada indicador -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-header">
+      <strong>
+        <i class="bi bi-diagram-3 me-1"></i>
+        Origen y detalle de los indicadores
+      </strong>
+    </div>
+
+    <div class="card-body">
+      {% for fila in resumen.filas %}
+        <div class="border rounded p-3 mb-3">
+
+          <div class="d-flex flex-wrap justify-content-between gap-2 mb-3">
+            <div>
+              <strong>{{ fila.item.nombre_item }}</strong>
+              <div class="small text-body-secondary">
+                {{ fila.item.codigo }}
+              </div>
+            </div>
+
+            <span class="badge text-bg-primary">
+              {{ fila.avance|floatformat:2 }} unidades de avance
+            </span>
+          </div>
+
+          <h6 class="mb-2">Actividades que originan el indicador</h6>
+
+          <div class="table-responsive mb-3">
+            <table class="table table-sm table-hover align-middle">
+              <thead>
+                <tr>
+                  <th>Código</th>
+                  <th>Fecha</th>
+                  <th>Actividad registrada</th>
+                  <th>Estado</th>
+                  <th>Evidencias</th>
+                  <th>Detalle</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {% for actividad in fila.actividades_origen %}
+                  <tr>
+                    <td>{{ actividad.codigo }}</td>
+                    <td>{{ actividad.fecha|date:"d/m/Y" }}</td>
+                    <td>{{ actividad.accion|truncatechars:100 }}</td>
+                    <td>
+                      {% if actividad.estado == "Validada" %}
+                        <span class="badge text-bg-success">Validada</span>
+                      {% elif actividad.estado == "Rechazada" %}
+                        <span class="badge text-bg-danger">Rechazada</span>
+                      {% elif actividad.estado == "En revisión" %}
+                        <span class="badge text-bg-warning">En revisión</span>
+                      {% elif actividad.estado == "Anulada" %}
+                        <span class="badge text-bg-secondary">Anulada</span>
+                      {% else %}
+                        <span class="badge text-bg-info">
+                          {{ actividad.estado }}
+                        </span>
+                      {% endif %}
+                    </td>
+
+                    <td>
+                      {% for evidencia in actividad.evidencias.all %}
+                        <div class="small">
+                          {{ evidencia.codigo_evidencia }}
+                          · {{ evidencia.estado_revision }}
+                        </div>
+                      {% empty %}
+                        <span class="text-body-secondary small">
+                          Sin evidencias
+                        </span>
+                      {% endfor %}
+                    </td>
+
+                    <td>
+                      <a href="{% url 'activities:actividad_detail' actividad.pk %}"
+                         class="btn btn-sm btn-outline-primary">
+                        Ver actividad
+                      </a>
+                    </td>
+                  </tr>
+
+                {% empty %}
+                  <tr>
+                    <td colspan="6"
+                        class="text-center text-body-secondary py-3">
+                      No hay actividades registradas para este ítem
+                      en el período.
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="d-flex flex-wrap gap-2 mb-2">
+            <span class="badge text-bg-success">
+              Actividades que aportan al avance:
+              {{ fila.actividades_validas }}
+            </span>
+            <span class="badge text-bg-secondary">
+              Compromisos asociados:
+              {{ fila.compromisos_resumen.total }}
+            </span>
+          </div>
+
+          <h6 class="mb-2 mt-3">Compromisos asociados al indicador</h6>
+
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>Compromiso</th>
+                  <th>Origen</th>
+                  <th>Fecha comprometida</th>
+                  <th>Estado</th>
+                  <th>Detalle</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {% for compromiso in fila.compromisos %}
+                  <tr>
+                    <td>#{{ compromiso.id_compromiso }}</td>
+                    <td>{{ compromiso.origen }}</td>
+                    <td>
+                      {{ compromiso.fecha_comprometida|date:"d/m/Y" }}
+                    </td>
+                    <td>
+                      {% if compromiso.estado == "Realizado" %}
+                        <span class="badge text-bg-success">Realizado</span>
+                      {% elif compromiso.estado == "En proceso" %}
+                        <span class="badge text-bg-primary">En proceso</span>
+                      {% elif compromiso.estado == "Pendiente" %}
+                        <span class="badge text-bg-warning">Pendiente</span>
+                      {% else %}
+                        <span class="badge text-bg-secondary">
+                          {{ compromiso.estado }}
+                        </span>
+                      {% endif %}
+                    </td>
+                    <td>
+                      <a href="{% url 'agenda:compromiso_detail' compromiso.pk %}"
+                         class="btn btn-sm btn-outline-primary">
+                        Ver compromiso
+                      </a>
+                    </td>
+                  </tr>
+
+                {% empty %}
+                  <tr>
+                    <td colspan="5"
+                        class="text-center text-body-secondary py-3">
+                      No hay compromisos asociados a este ítem.
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+        </div>
+      {% empty %}
+        <p class="text-body-secondary mb-0">
+          No existen indicadores para mostrar.
+        </p>
+      {% endfor %}
+    </div>
+  </div>
+
   <div class="alert alert-info">
     <i class="bi bi-info-circle me-1"></i>
     <strong>Cómo interpretar el resultado:</strong>
     el cumplimiento compara el avance registrado con el objetivo de cada ítem.
     El resultado ponderado aplica la ponderación y el máximo computable
     configurados para la meta. Los ajustes se muestran por separado y se
-    incorporan al resultado total.
+    incorporan al resultado total. Las actividades y compromisos asociados
+    permiten consultar el origen de los registros que forman el tablero.
   </div>
 
 {% elif periodo %}

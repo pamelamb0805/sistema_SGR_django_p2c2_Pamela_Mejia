@@ -872,29 +872,24 @@ class AjusteDeleteView(AccionPostView):
 
 def _contexto_panel(request, funcionario, modo, titulo):
     """
-    Construye la ficha personal o supervisora del funcionario.
+    Construye el tablero personal o supervisor de desempeño.
 
-    RF-008 y RF-028:
-    - Identificación, cargo y delegación.
-    - Filtro por período.
+    RF-028:
+    - Filtrado por período.
     - Metas, avance, cumplimiento y ponderación.
-    - Semáforo individual.
-    - Estado de evidencias general y por ítem.
-    - Compromisos generales y por ítem.
-    - Detalle de origen de los indicadores.
+    - Semáforo y estado de evidencias.
+    - Resumen y detalle de compromisos.
+    - Trazabilidad de las actividades que originan el avance.
     """
     from collections import defaultdict
     from django.db.models import Count
-    from activities.models import Evidencia
+    from activities.models import Actividad, Evidencia
     from agenda.models import Compromiso
 
     periodo = _periodo_seleccionado(request)
 
     resumen = (
-        CalculoIndicadores.resumen_funcionario(
-            funcionario,
-            periodo,
-        )
+        CalculoIndicadores.resumen_funcionario(funcionario, periodo)
         if periodo
         else None
     )
@@ -911,7 +906,7 @@ def _contexto_panel(request, funcionario, modo, titulo):
         "total": 0,
         "Ingresado": 0,
         "Pendiente": 0,
-        "En proceso": 0,
+        "En_proceso": 0,
         "Realizado": 0,
     }
 
@@ -932,8 +927,9 @@ def _contexto_panel(request, funcionario, modo, titulo):
             estado = registro["estado_revision"]
             cantidad = registro["total"]
 
-            evidencias_resumen[estado] = cantidad
-            evidencias_resumen["total"] += cantidad
+            if estado in evidencias_resumen:
+                evidencias_resumen[estado] = cantidad
+                evidencias_resumen["total"] += cantidad
 
         compromisos = (
             Compromiso.objects
@@ -957,11 +953,20 @@ def _contexto_panel(request, funcionario, modo, titulo):
         for compromiso in compromisos:
             compromisos_resumen["total"] += 1
 
-            if compromiso.estado in compromisos_resumen:
-                compromisos_resumen[compromiso.estado] += 1
+            if compromiso.estado == Compromiso.ESTADO_INGRESADO:
+                compromisos_resumen["Ingresado"] += 1
+            elif compromiso.estado == Compromiso.ESTADO_PENDIENTE:
+                compromisos_resumen["Pendiente"] += 1
+            elif compromiso.estado == Compromiso.ESTADO_EN_PROCESO:
+                compromisos_resumen["En_proceso"] += 1
+            elif compromiso.estado == Compromiso.ESTADO_REALIZADO:
+                compromisos_resumen["Realizado"] += 1
 
         if resumen:
             for fila in resumen["filas"]:
+                item_id = fila["meta"].item_id
+
+                # Evidencias asociadas al ítem y período.
                 conteos = defaultdict(int)
 
                 evidencias_item = (
@@ -969,7 +974,7 @@ def _contexto_panel(request, funcionario, modo, titulo):
                     .filter(
                         actividad__funcionario=funcionario,
                         actividad__periodo=periodo,
-                        actividad__item_id=fila["meta"].item_id,
+                        actividad__item_id=item_id,
                     )
                     .values("estado_revision")
                     .annotate(total=Count("pk"))
@@ -988,9 +993,29 @@ def _contexto_panel(request, funcionario, modo, titulo):
                     "Corrección": conteos["Corrección"],
                 }
 
+                # Actividades que originan el avance del ítem.
+                # Solo las Validada aportan al cálculo del avance.
+                fila["actividades_origen"] = list(
+                    Actividad.objects
+                    .filter(
+                        funcionario=funcionario,
+                        periodo=periodo,
+                        item_id=item_id,
+                    )
+                    .prefetch_related("evidencias")
+                    .order_by("-fecha", "-id_actividad")
+                )
+
+                fila["actividades_validas"] = sum(
+                    1
+                    for actividad in fila["actividades_origen"]
+                    if actividad.estado == Actividad.ESTADO_VALIDADA
+                )
+
+                # Compromisos vinculados al mismo ítem.
                 fila["compromisos"] = list(
                     compromisos.filter(
-                        item_medible_id=fila["meta"].item_id,
+                        item_medible_id=item_id,
                     )
                 )
 
@@ -1004,7 +1029,7 @@ def _contexto_panel(request, funcionario, modo, titulo):
                         1 for c in fila["compromisos"]
                         if c.estado == Compromiso.ESTADO_PENDIENTE
                     ),
-                    "En proceso": sum(
+                    "En_proceso": sum(
                         1 for c in fila["compromisos"]
                         if c.estado == Compromiso.ESTADO_EN_PROCESO
                     ),
