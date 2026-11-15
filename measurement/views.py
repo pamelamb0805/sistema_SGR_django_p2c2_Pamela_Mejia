@@ -808,9 +808,10 @@ def exportar_periodos_excel(request):
     return respuesta
 
 
+
 @login_required
 def exportar_ajustes_excel(request):
-    """Exporta incentivos y penalizaciones dentro del ámbito autorizado."""
+    """Exporta ajustes respetando el nombre histórico del ítem asociado."""
 
     if not tiene_rol(request.user, *ROLES_SUPERVISION):
         return HttpResponse("No autorizado", status=403)
@@ -872,6 +873,26 @@ def exportar_ajustes_excel(request):
     ])
 
     for ajuste in queryset.order_by("-id_ajuste"):
+        nombre_item = ""
+
+        if ajuste.meta_id:
+            if ajuste.periodo.abierto:
+                datos_historicos = CRUDMeta._datos_version(
+                    ajuste.meta
+                )
+            else:
+                datos_historicos = (
+                    CalculoIndicadores._datos_meta_historicos(
+                        ajuste.meta,
+                        ajuste.periodo.fecha_termino,
+                    )
+                )
+
+            nombre_item = datos_historicos.get(
+                "item_nombre",
+                ajuste.meta.item.nombre_item,
+            )
+
         hoja.append([
             ajuste.pk,
             ajuste.funcionario.nombre,
@@ -881,7 +902,7 @@ def exportar_ajustes_excel(request):
             float(ajuste.valor),
             float(ajuste.puntos),
             ajuste.motivo,
-            ajuste.meta.item.nombre_item if ajuste.meta else "",
+            nombre_item,
         ])
 
     respuesta = HttpResponse(
@@ -894,6 +915,7 @@ def exportar_ajustes_excel(request):
         'attachment; filename="incentivos_penalizaciones.xlsx"'
     )
     respuesta["Cache-Control"] = "private, no-store"
+
     libro.save(respuesta)
     return respuesta
 
