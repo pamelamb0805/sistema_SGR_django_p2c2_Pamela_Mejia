@@ -1,11 +1,13 @@
+
 """
-Modelos de social, basados en el diagrama E-R: USUARIO (aquí UsuarioSocial, tabla `usuario`)
-y ATENCION_SOCIAL.
+Modelos de social, basados en el diagrama E-R: USUARIO
+(persona atendida) y ATENCION_SOCIAL.
 
-Reglas del PDF: un caso (persona usuaria) registra hasta 3 gestiones relacionadas, con tipos y
-fechas diferenciadas, sin duplicar la identificación principal (RF-015, RN-012, CA-04).
-
-Privacidad (RNF-009): solo se guardan nombre y territorio; no hay RUT, teléfono ni dirección.
+Reglas:
+- Un caso puede registrar hasta 3 gestiones relacionadas.
+- No se duplica la identificación principal por delegación.
+- Se conserva el historial de los nombres de los catálogos.
+- Se protege la información histórica mediante relaciones PROTECT.
 """
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
@@ -15,39 +17,60 @@ from django.utils import timezone
 from catalogs.models import Catalogo
 from organizations.models import Delegacion, Funcionario
 
-MAX_GESTIONES = 3     # RN-012 (el límite vigente se lee de settings.SGR_MAX_GESTIONES_SOCIAL en los servicios)
+MAX_GESTIONES = 3
 
 
 # ---------------------------------------------------------------------------
-# USUARIO (persona atendida) = caso
+# USUARIO SOCIAL (persona atendida / caso)
 # ---------------------------------------------------------------------------
 class UsuarioSocial(models.Model):
     ESTADO_ABIERTO = "Abierto"
     ESTADO_SEGUIMIENTO = "En seguimiento"
     ESTADO_CERRADO = "Cerrado"
-    ESTADOS = [(e, e) for e in (ESTADO_ABIERTO, ESTADO_SEGUIMIENTO, ESTADO_CERRADO)]
+
+    ESTADOS = [
+        (ESTADO_ABIERTO, ESTADO_ABIERTO),
+        (ESTADO_SEGUIMIENTO, ESTADO_SEGUIMIENTO),
+        (ESTADO_CERRADO, ESTADO_CERRADO),
+    ]
 
     id_usuario = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=150)
     territorio = models.CharField(max_length=150)
-    fecha_primer_registro = models.DateField(default=timezone.localdate, editable=False)
-    estado_caso = models.CharField(max_length=15, choices=ESTADOS, default=ESTADO_ABIERTO)
-    delegacion = models.ForeignKey(Delegacion, on_delete=models.PROTECT, db_column="id_delegacion",
-                                   related_name="usuarios_sociales")
+
+    fecha_primer_registro = models.DateField(
+        default=timezone.localdate,
+        editable=False,
+    )
+
+    estado_caso = models.CharField(
+        max_length=15,
+        choices=ESTADOS,
+        default=ESTADO_ABIERTO,
+    )
+
+    delegacion = models.ForeignKey(
+        Delegacion,
+        on_delete=models.PROTECT,
+        db_column="id_delegacion",
+        related_name="usuarios_sociales",
+    )
 
     class Meta:
         db_table = "usuario"
         ordering = ["-fecha_primer_registro", "nombre"]
         constraints = [
-            # La identificación principal no se duplica: una persona = un caso por delegación
-            models.UniqueConstraint(fields=["delegacion", "nombre", "territorio"], name="uq_usuario_persona"),
+            models.UniqueConstraint(
+                fields=["delegacion", "nombre", "territorio"],
+                name="uq_usuario_persona",
+            ),
         ]
         verbose_name = "usuario social"
         verbose_name_plural = "usuarios sociales"
 
     def __str__(self):
         return f"{self.nombre} – {self.territorio}"
-    
+
     @property
     def cerrado(self):
         return self.estado_caso == self.ESTADO_CERRADO
@@ -55,21 +78,31 @@ class UsuarioSocial(models.Model):
     def clean(self):
         self.nombre = (self.nombre or "").strip()
         self.territorio = (self.territorio or "").strip()
+
         if self.nombre and self.territorio and self.delegacion_id:
-            duplicado = UsuarioSocial.objects.filter(
-                delegacion_id=self.delegacion_id, nombre__iexact=self.nombre, territorio__iexact=self.territorio,
-            ).exclude(pk=self.pk).first()
+            duplicado = (
+                UsuarioSocial.objects
+                .filter(
+                    delegacion_id=self.delegacion_id,
+                    nombre__iexact=self.nombre,
+                    territorio__iexact=self.territorio,
+                )
+                .exclude(pk=self.pk)
+                .first()
+            )
+
             if duplicado:
                 raise ValidationError(
-                    f"Ya existe un caso para esta persona en el mismo territorio (caso N° {duplicado.pk}). "
-                    "Registre una nueva gestión en ese caso en lugar de crear otro.")
-
+                    f"Ya existe un caso para esta persona en el mismo "
+                    f"territorio (caso N° {duplicado.pk}). Registre una "
+                    "nueva gestión en ese caso en lugar de crear otro."
+                )
 
     @property
     def delegacion_historica(self):
         """
         Recupera la versión de la delegación vigente al crear el caso.
-        Utiliza la fecha exacta del primer evento de auditoría.
+        Utiliza la fecha del primer evento de auditoría.
         """
         from audit.models import Auditoria
 
@@ -98,14 +131,15 @@ class UsuarioSocial(models.Model):
 
 
 # ---------------------------------------------------------------------------
-# ATENCION_SOCIAL (gestión)
+# ATENCION SOCIAL (gestión)
 # ---------------------------------------------------------------------------
 class AtencionSocial(models.Model):
     ESTADO_PROGRAMADA = "Programada"
     ESTADO_REALIZADA = "Realizada"
+
     ESTADOS = [
-        (ESTADO_PROGRAMADA, "Programada"),
-        (ESTADO_REALIZADA, "Realizada"),
+        (ESTADO_PROGRAMADA, ESTADO_PROGRAMADA),
+        (ESTADO_REALIZADA, ESTADO_REALIZADA),
     ]
 
     id_atencion_social = models.AutoField(primary_key=True)
@@ -118,16 +152,17 @@ class AtencionSocial(models.Model):
         ],
     )
 
-    # Catálogo de Tipo de Atención.
     tipo_atencion = models.ForeignKey(
         Catalogo,
         on_delete=models.PROTECT,
         db_column="id_tipo_atencion",
         related_name="atenciones_como_tipo",
-        limit_choices_to={"tipo_catalogo": Catalogo.TIPO_ATENCION},
+        limit_choices_to={
+            "tipo_catalogo": Catalogo.TIPO_ATENCION,
+        },
     )
 
-    # Fotografías de los nombres del catálogo al registrar la gestión (RF-038).
+    # Fotografía histórica del nombre del catálogo.
     tipo_atencion_nombre = models.CharField(
         max_length=150,
         blank=True,
@@ -142,21 +177,22 @@ class AtencionSocial(models.Model):
         editable=False,
     )
 
-    # Subatención perteneciente al Tipo de Atención seleccionado.
     subatencion = models.ForeignKey(
         Catalogo,
         on_delete=models.PROTECT,
         db_column="id_subatencion",
         related_name="atenciones_como_subatencion",
-        limit_choices_to={"tipo_catalogo": Catalogo.TIPO_SUBATENCION},
+        limit_choices_to={
+            "tipo_catalogo": Catalogo.TIPO_SUBATENCION,
+        },
     )
 
     descripcion = models.TextField()
 
-    # Fecha de la gestión.
-    fecha = models.DateField(default=timezone.localdate)
+    fecha = models.DateField(
+        default=timezone.localdate,
+    )
 
-    # Momento de registro: se asigna automáticamente desde Django.
     fecha_registro = models.DateTimeField(
         default=timezone.now,
         editable=False,
@@ -216,90 +252,126 @@ class AtencionSocial(models.Model):
                 else "Sin tipo"
             )
         )
+
         return (
             f"Gestión {self.numero_gestion} – "
             f"{tipo} ({self.fecha:%d/%m/%Y})"
         )
 
-def clean(self):
-    errores = {}
+    def clean(self):
+        errores = {}
 
-    original = None
+        original = None
 
-    if self.pk:
-        original = (
-            AtencionSocial.objects
-            .filter(pk=self.pk)
-            .only(
-                "tipo_atencion_id",
-                "subatencion_id",
+        if self.pk:
+            original = (
+                AtencionSocial.objects
+                .filter(pk=self.pk)
+                .only(
+                    "tipo_atencion_id",
+                    "subatencion_id",
+                )
+                .first()
             )
-            .first()
+
+        conserva_tipo = (
+            original is not None
+            and original.tipo_atencion_id == self.tipo_atencion_id
         )
 
-    conserva_tipo = (
-        original is not None
-        and original.tipo_atencion_id == self.tipo_atencion_id
-    )
+        conserva_subatencion = (
+            original is not None
+            and original.subatencion_id == self.subatencion_id
+        )
 
-    conserva_subatencion = (
-        original is not None
-        and original.subatencion_id == self.subatencion_id
-    )
+        # Validar Tipo de Atención.
+        if self.tipo_atencion_id:
+            if (
+                self.tipo_atencion.tipo_catalogo
+                != Catalogo.TIPO_ATENCION
+            ):
+                errores["tipo_atencion"] = (
+                    "Debe seleccionar un elemento del catálogo "
+                    "Tipo de Atención."
+                )
 
-    if self.tipo_atencion_id:
-        if self.tipo_atencion.tipo_catalogo != Catalogo.TIPO_ATENCION:
-            errores["tipo_atencion"] = (
-                "Debe seleccionar un elemento del catálogo Tipo de Atención."
-            )
-        elif not self.tipo_atencion.activo and not conserva_tipo:
-            errores["tipo_atencion"] = (
-                "El Tipo de Atención seleccionado está inactivo."
-            )
+            elif not self.tipo_atencion.activo and not conserva_tipo:
+                errores["tipo_atencion"] = (
+                    "El Tipo de Atención seleccionado está inactivo."
+                )
 
-    if self.subatencion_id:
-        if self.subatencion.tipo_catalogo != Catalogo.TIPO_SUBATENCION:
-            errores["subatencion"] = (
-                "Debe seleccionar una Subatención."
-            )
+        # Validar Subatención.
+        if self.subatencion_id:
+            if (
+                self.subatencion.tipo_catalogo
+                != Catalogo.TIPO_SUBATENCION
+            ):
+                errores["subatencion"] = (
+                    "Debe seleccionar una Subatención."
+                )
 
-        elif (
-            self.tipo_atencion_id
-            and self.subatencion.tipo_atencion_padre_id
-            != self.tipo_atencion_id
+            elif (
+                self.tipo_atencion_id
+                and self.subatencion.tipo_atencion_padre_id
+                != self.tipo_atencion_id
+            ):
+                errores["subatencion"] = (
+                    "La Subatención debe pertenecer al Tipo de "
+                    "Atención seleccionado."
+                )
+
+            elif (
+                not self.subatencion.activo
+                and not conserva_subatencion
+            ):
+                errores["subatencion"] = (
+                    "La Subatención seleccionada está inactiva."
+                )
+
+            elif (
+                self.tipo_atencion_id
+                and self.subatencion.tipo_atencion_padre
+                and self.subatencion.tipo_atencion_padre.area
+                not in (
+                    self.subatencion.area,
+                    Catalogo.AREA_GENERAL,
+                )
+                and self.tipo_atencion.area != Catalogo.AREA_GENERAL
+            ):
+                errores["subatencion"] = (
+                    "El Tipo de Atención y la Subatención deben "
+                    "pertenecer a la misma área o al área General."
+                )
+
+        # Una gestión realizada no puede tener fecha futura.
+        if (
+            self.estado == self.ESTADO_REALIZADA
+            and self.fecha
+            and self.fecha > timezone.localdate()
         ):
-            errores["subatencion"] = (
-                "La Subatención debe pertenecer al Tipo de Atención seleccionado."
+            errores["fecha"] = (
+                "Una gestión realizada no puede tener fecha futura. "
+                "Si es una visita agendada, márquela como Programada."
             )
 
-        elif not self.subatencion.activo and not conserva_subatencion:
-            errores["subatencion"] = (
-                "La Subatención seleccionada está inactiva."
+        # Una gestión realizada requiere resultado.
+        if (
+            self.estado == self.ESTADO_REALIZADA
+            and not (self.resultado or "").strip()
+        ):
+            errores["resultado"] = (
+                "Indique el resultado de la gestión realizada."
             )
 
-    if (
-        self.estado == self.ESTADO_REALIZADA
-        and self.fecha
-        and self.fecha > timezone.localdate()
-    ):
-        errores["fecha"] = (
-            "Una gestión realizada no puede tener fecha futura. "
-            "Si es una visita agendada, márquela como Programada."
-        )
+        if errores:
+            raise ValidationError(errores)
 
-    if (
-        self.estado == self.ESTADO_REALIZADA
-        and not (self.resultado or "").strip()
-    ):
-        errores["resultado"] = (
-            "Indique el resultado de la gestión realizada."
-        )
-
-    if errores:
-        raise ValidationError(errores)
-    
     @property
     def delegacion_historica(self):
+        """
+        Recupera la versión histórica de la delegación
+        correspondiente al momento del registro.
+        """
         fecha_referencia = self.fecha_registro or self.fecha
 
         return (
