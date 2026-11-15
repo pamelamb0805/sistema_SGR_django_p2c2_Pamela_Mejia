@@ -885,8 +885,9 @@ class Seguridad:
         """
         Crea o modifica un usuario de acceso.
 
-        Conserva la contraseña anterior si el formulario
-        de edición se envía con los campos de contraseña vacíos.
+        Permite conservar relaciones históricas con funcionarios
+        o delegaciones inactivas, pero impide crear o reasignar
+        cuentas nuevas a entidades inactivas.
         """
 
         usuario = form.instance
@@ -913,30 +914,6 @@ class Seguridad:
             raise ReglaNegocioError(
                 "Debe establecer una contraseña."
             )
-
-        if not funcionario.activo:
-            raise ReglaNegocioError(
-                "No se puede habilitar una cuenta "
-                "para un funcionario inactivo."
-            )
-
-        if not funcionario.delegacion.activa:
-            raise ReglaNegocioError(
-                "La delegación del funcionario está inactiva."
-            )
-
-        # Corregido: validar el ID de la delegación principal.
-        _validar_ambito_asignacion(
-            actor=actor,
-            queryset=Delegacion.objects.all(),
-            campo="id_delegacion",
-            objeto_id=funcionario.delegacion_id,
-            entidad="usuario",
-            mensaje=(
-                "No tienes autorización para administrar "
-                "usuarios de esa delegación."
-            ),
-        )
 
         funcionario_original_id = None
         delegaciones_existentes_ids = set()
@@ -965,11 +942,35 @@ class Seguridad:
             or funcionario_original_id != funcionario.pk
         )
 
-        if cambio_funcionario and not funcionario.delegacion.activa:
+        # Solo se permite una asignación nueva a un funcionario activo.
+        if cambio_funcionario and not funcionario.activo:
+            raise ReglaNegocioError(
+                "No se puede asignar una cuenta nueva "
+                "a un funcionario inactivo."
+            )
+
+        # Una delegación inactiva puede conservarse en una relación
+        # existente, pero no utilizarse para una nueva asignación.
+        if (
+            cambio_funcionario
+            and not funcionario.delegacion.activa
+        ):
             raise ReglaNegocioError(
                 "No se puede asignar una cuenta "
                 "a una delegación inactiva."
             )
+
+        _validar_ambito_asignacion(
+            actor=actor,
+            queryset=Delegacion.objects.all(),
+            campo="id_delegacion",
+            objeto_id=funcionario.delegacion_id,
+            entidad="usuario",
+            mensaje=(
+                "No tienes autorización para administrar "
+                "usuarios de esa delegación."
+            ),
+        )
 
         _validar_delegaciones_asignables(
             actor,
@@ -1007,7 +1008,10 @@ class Seguridad:
 
         if password:
             try:
-                validate_password(password, user=usuario)
+                validate_password(
+                    password,
+                    user=usuario,
+                )
             except ValidationError as exc:
                 raise ReglaNegocioError(
                     " ".join(exc.messages)
@@ -1018,6 +1022,11 @@ class Seguridad:
 
             if password:
                 usuario.set_password(password)
+
+            # Un funcionario inactivo nunca puede conservar
+            # el acceso habilitado.
+            if not funcionario.activo:
+                usuario.activo_acceso = False
 
             usuario.save()
             form.save_m2m()
@@ -1046,7 +1055,6 @@ class Seguridad:
             )
 
         return usuario
-
 
     @staticmethod
     def cambiar_estado_acceso(usuario, actor=None):
