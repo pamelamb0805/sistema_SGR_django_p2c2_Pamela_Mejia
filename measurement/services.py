@@ -565,87 +565,93 @@ class CRUDMeta:
             "cargo_id": meta.cargo_id,
         }
 
+
     @staticmethod
-    def _registrar_version(meta, actor=None, datos_anteriores=None):
+    def _registrar_version_reglas(periodo, actor=None, datos=None):
         """
-        Registra una versión inmutable de los parámetros.
+        Registra una versión inmutable de las reglas de cálculo
+        asociadas a un período.
 
-        - Primera creación: versión 1.
+        - Primera configuración: versión 1.
         - Modificación: cierra la versión anterior y crea otra.
-        - Meta antigua sin historial: conserva primero sus valores
-          anteriores y luego registra los nuevos.
+        - Conserva los parámetros históricos.
+        - Registra autor y fecha de vigencia.
         """
-        ahora = timezone.now()
-        datos_actuales = CRUDMeta._datos_version(meta)
-
-        versiones = (
-            MetaVersion.objects
-            .select_for_update()
-            .filter(objeto_id=meta.pk)
-            .order_by("-numero_version")
-        )
-
-        ultima = versiones.first()
-
-        vigente = versiones.filter(
-            vigente_hasta__isnull=True
-        ).first()
-
-        # Si ya existe una versión idéntica, no crea duplicados.
-        if vigente and vigente.datos == datos_actuales:
-            return vigente
-
-        # Compatibilidad con metas anteriores al versionamiento.
-        if ultima is None and datos_anteriores is not None:
-            fecha_anterior = (
-                meta.fecha_version or timezone.localdate()
+        with transaction.atomic():
+            periodo = (
+                Periodo.objects
+                .select_for_update()
+                .get(pk=periodo.pk)
             )
 
-            inicio_anterior = timezone.make_aware(
-                datetime.combine(fecha_anterior, time.min)
+            versiones = (
+                ReglaCalculoVersion.objects
+                .select_for_update()
+                .filter(periodo=periodo)
+                .order_by("-numero_version")
             )
 
-            MetaVersion.objects.create(
-                meta=meta,
-                objeto_id=meta.pk,
-                numero_version=1,
-                vigente_desde=inicio_anterior,
-                vigente_hasta=ahora,
-                datos=dict(datos_anteriores),
+            ultima = versiones.first()
+
+            if datos is None:
+                configuracion = (
+                    dict(ultima.datos or {})
+                    if ultima
+                    else CRUDPeriodo._datos_reglas_actuales()
+                )
+            else:
+                if not isinstance(datos, dict):
+                    raise ReglaNegocioError(
+                        "La configuración de reglas no es válida."
+                    )
+                configuracion = dict(datos)
+
+            campos_obligatorios = (
+                "tope_cumplimiento",
+                "umbral_colectivo",
+                "umbral_ambar",
+            )
+
+            for campo in campos_obligatorios:
+                if campo not in configuracion:
+                    raise ReglaNegocioError(
+                        f"Falta el parámetro {campo}."
+                    )
+
+            ahora = timezone.now()
+
+            numero_version = (
+                ultima.numero_version + 1
+                if ultima
+                else 1
+            )
+
+            # Cierra cualquier versión que aún figure vigente.
+            versiones.filter(
+                vigente_hasta__isnull=True
+            ).update(
+                vigente_hasta=ahora
+            )
+
+            # Mantiene sincronizado el número de versión del período.
+            if periodo.version_parametros != numero_version:
+                periodo.version_parametros = numero_version
+                periodo.save(
+                    update_fields=["version_parametros"]
+                )
+
+            return ReglaCalculoVersion.objects.create(
+                periodo=periodo,
+                numero_version=numero_version,
+                vigente_desde=ahora,
+                vigente_hasta=None,
+                datos=configuracion,
                 creado_por=(
                     actor
                     if getattr(actor, "is_authenticated", False)
                     else None
                 ),
             )
-
-            numero_nuevo = 2
-
-        else:
-            if vigente:
-                vigente.vigente_hasta = ahora
-                vigente.save(
-                    update_fields=["vigente_hasta"]
-                )
-
-            numero_nuevo = (
-                ultima.numero_version + 1
-                if ultima
-                else 1
-            )
-
-        return MetaVersion.objects.create(
-            meta=meta,
-            objeto_id=meta.pk,
-            numero_version=numero_nuevo,
-            vigente_desde=ahora,
-            datos=datos_actuales,
-            creado_por=(
-                actor
-                if getattr(actor, "is_authenticated", False)
-                else None
-            ),
-        )
 
     @staticmethod
     def suma_ponderaciones(funcionario, periodo, excluir_meta=None):

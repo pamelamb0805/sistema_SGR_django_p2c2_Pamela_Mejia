@@ -10,9 +10,17 @@ from core.exceptions import ReglaNegocioError
 from organizations.models import Cargo, Delegacion, Funcionario, FuncionarioRol, ItemMedible, Rol, Usuario
 
 from . import calculations as calc
-from .models import Ajuste, Indicador, Meta, Periodo
+from .models import (
+    Ajuste,
+    Indicador,
+    Meta,
+    MetaVersion,
+    Periodo,
+    ReglaCalculoVersion,
+)
 from .services import CalculoIndicadores, CRUDAjuste, CRUDMeta, CRUDPeriodo
-from measurement.models import MetaVersion
+
+
 
 CLAVE = "Clave-Segura-2026"
 D = Decimal
@@ -116,6 +124,87 @@ class PeriodoTests(BaseTestCase):
         self.periodo.refresh_from_db()
         self.assertTrue(self.periodo.abierto)
         self.assertEqual(self.periodo.version_parametros, 2)
+
+
+    def test_rf007_versiona_reglas_y_conserva_historial(self):
+        coordinador = self.crear_func(
+            "C-RF007",
+            "Coordinador",
+            username="coord_rf007",
+        )
+        administrador = self.crear_func(
+            "A-RF007",
+            "Administrador",
+            username="admin_rf007",
+        )
+
+        actor_coordinador = Usuario.objects.get(
+            username="coord_rf007"
+        )
+        actor_administrador = Usuario.objects.get(
+            username="admin_rf007"
+        )
+
+        periodo = CRUDPeriodo.crear_periodo(
+            Periodo(
+                fecha_inicio=date(2027, 1, 1),
+                fecha_termino=date(2027, 3, 31),
+            ),
+            actor_coordinador,
+        )
+
+        version_inicial = ReglaCalculoVersion.objects.get(
+            periodo=periodo,
+            numero_version=1,
+        )
+
+        self.assertIsNone(version_inicial.vigente_hasta)
+
+        nueva_version = CRUDPeriodo.actualizar_reglas_periodo(
+            periodo,
+            {
+                "tope_cumplimiento": D("180"),
+                "umbral_colectivo": D("70"),
+                "umbral_ambar": D("55"),
+            },
+            actor_administrador,
+        )
+
+        versiones = list(
+            ReglaCalculoVersion.objects.filter(
+                periodo=periodo
+            ).order_by("numero_version")
+        )
+
+        self.assertEqual(len(versiones), 2)
+        self.assertEqual(versiones[0].numero_version, 1)
+        self.assertEqual(versiones[1].numero_version, 2)
+
+        self.assertIsNotNone(versiones[0].vigente_hasta)
+        self.assertIsNone(versiones[1].vigente_hasta)
+
+        self.assertEqual(
+            versiones[1].datos["tope_cumplimiento"],
+            "180",
+        )
+        self.assertEqual(
+            versiones[1].datos["umbral_colectivo"],
+            "70",
+        )
+        self.assertEqual(
+            versiones[1].datos["umbral_ambar"],
+            "55",
+        )
+
+        self.assertEqual(
+            versiones[1].creado_por_id,
+            actor_administrador.pk,
+        )
+
+        self.assertEqual(nueva_version.numero_version, 2)
+
+        periodo.refresh_from_db()
+        self.assertEqual(periodo.version_parametros, 2)
 
 
 class MetaServicioTests(BaseTestCase):
