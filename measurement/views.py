@@ -868,12 +868,99 @@ class AjusteDeleteView(AccionPostView):
 # ---------------------------------------------------------------------------
 # Paneles de desempeño y semáforo
 # ---------------------------------------------------------------------------
-def _contexto_panel(request, funcionario, modo, titulo):
-    periodo = _periodo_seleccionado(request)
-    resumen = CalculoIndicadores.resumen_funcionario(funcionario, periodo) if periodo else None
-    return {"modo": modo, "titulo": titulo, "funcionario": funcionario, "periodo": periodo,
-            "periodos": Periodo.objects.all(), "resumen": resumen, "hoy": timezone.localdate()}
 
+def _contexto_panel(request, funcionario, modo, titulo):
+    """
+    Construye la ficha personal o supervisora del funcionario.
+
+    RF-008:
+    - Identificación del funcionario, cargo y delegación.
+    - Metas, avance y cumplimiento por ítem.
+    - Resultado ponderado del período.
+    - Estado de evidencias por ítem y consolidado.
+    - Consulta de períodos anteriores.
+    """
+    from collections import defaultdict
+    from django.db.models import Count
+    from activities.models import Evidencia
+
+    periodo = _periodo_seleccionado(request)
+
+    resumen = (
+        CalculoIndicadores.resumen_funcionario(
+            funcionario,
+            periodo,
+        )
+        if periodo
+        else None
+    )
+
+    evidencias_resumen = {
+        "total": 0,
+        "Pendiente": 0,
+        "Aprobada": 0,
+        "Rechazada": 0,
+        "Corrección": 0,
+    }
+
+    if periodo:
+        evidencias = (
+            Evidencia.objects
+            .filter(
+                actividad__funcionario=funcionario,
+                actividad__periodo=periodo,
+            )
+            .values("estado_revision")
+            .annotate(total=Count("pk"))
+        )
+
+        for registro in evidencias:
+            estado = registro["estado_revision"]
+            cantidad = registro["total"]
+
+            evidencias_resumen[estado] = cantidad
+            evidencias_resumen["total"] += cantidad
+
+        # El estado de las evidencias también se presenta
+        # desglosado por cada ítem de la ficha.
+        if resumen:
+            for fila in resumen["filas"]:
+                conteos = defaultdict(int)
+
+                evidencias_item = (
+                    Evidencia.objects
+                    .filter(
+                        actividad__funcionario=funcionario,
+                        actividad__periodo=periodo,
+                        actividad__item_id=fila["meta"].item_id,
+                    )
+                    .values("estado_revision")
+                    .annotate(total=Count("pk"))
+                )
+
+                for registro in evidencias_item:
+                    conteos[registro["estado_revision"]] = (
+                        registro["total"]
+                    )
+
+                fila["evidencias"] = {
+                    "total": sum(conteos.values()),
+                    "Pendiente": conteos["Pendiente"],
+                    "Aprobada": conteos["Aprobada"],
+                    "Rechazada": conteos["Rechazada"],
+                    "Corrección": conteos["Corrección"],
+                }
+
+    return {
+        "modo": modo,
+        "titulo": titulo,
+        "funcionario": funcionario,
+        "periodo": periodo,
+        "periodos": Periodo.objects.all().order_by("-fecha_inicio"),
+        "resumen": resumen,
+        "evidencias_resumen": evidencias_resumen,
+        "hoy": timezone.localdate(),
+    }
 
 @login_required
 @funcionario_requerido

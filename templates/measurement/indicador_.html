@@ -66,6 +66,7 @@
     {% endif %}
   </div>
 
+  <!-- Indicadores generales -->
   <div class="row g-3 mb-4">
 
     <div class="col-sm-6 col-xl-3">
@@ -126,6 +127,7 @@
 
   </div>
 
+  <!-- Configuración y ajustes -->
   <div class="row g-3 mb-4">
 
     <div class="col-md-4">
@@ -175,6 +177,140 @@
 
   </div>
 
+  <!-- RF-008: Resumen general de evidencias -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-header">
+      <strong>
+        <i class="bi bi-file-earmark-check me-1"></i>
+        Estado de evidencias del período
+      </strong>
+    </div>
+
+    <div class="card-body">
+      <div class="row g-3 text-center">
+
+        <div class="col-6 col-md">
+          <div class="border rounded p-3 h-100">
+            <div class="text-body-secondary small">Total</div>
+            <div class="fs-3 fw-semibold">
+              {{ evidencias_resumen.total }}
+            </div>
+          </div>
+        </div>
+
+        <div class="col-6 col-md">
+          <div class="border rounded p-3 h-100">
+            <div class="text-body-secondary small">Pendientes</div>
+            <div class="fs-3 fw-semibold text-warning">
+              {{ evidencias_resumen.Pendiente }}
+            </div>
+          </div>
+        </div>
+
+        <div class="col-6 col-md">
+          <div class="border rounded p-3 h-100">
+            <div class="text-body-secondary small">Aprobadas</div>
+            <div class="fs-3 fw-semibold text-success">
+              {{ evidencias_resumen.Aprobada }}
+            </div>
+          </div>
+        </div>
+
+        <div class="col-6 col-md">
+          <div class="border rounded p-3 h-100">
+            <div class="text-body-secondary small">Rechazadas</div>
+            <div class="fs-3 fw-semibold text-danger">
+              {{ evidencias_resumen.Rechazada }}
+            </div>
+          </div>
+        </div>
+
+        <div class="col-6 col-md">
+          <div class="border rounded p-3 h-100">
+            <div class="text-body-secondary small">Con corrección</div>
+            <div class="fs-3 fw-semibold text-info">
+              {{ evidencias_resumen.Corrección }}
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- RF-008: Evidencias desglosadas por ítem -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-header">
+      <strong>
+        <i class="bi bi-list-check me-1"></i>
+        Evidencias por ítem medible
+      </strong>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Ítem</th>
+            <th>Total</th>
+            <th>Pendientes</th>
+            <th>Aprobadas</th>
+            <th>Rechazadas</th>
+            <th>Corrección</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {% for fila in resumen.filas %}
+            <tr>
+              <td>
+                <strong>{{ fila.item.nombre_item }}</strong>
+                <div class="small text-body-secondary">
+                  {{ fila.item.codigo }}
+                </div>
+              </td>
+
+              <td>{{ fila.evidencias.total }}</td>
+
+              <td>
+                <span class="badge text-bg-warning">
+                  {{ fila.evidencias.Pendiente }}
+                </span>
+              </td>
+
+              <td>
+                <span class="badge text-bg-success">
+                  {{ fila.evidencias.Aprobada }}
+                </span>
+              </td>
+
+              <td>
+                <span class="badge text-bg-danger">
+                  {{ fila.evidencias.Rechazada }}
+                </span>
+              </td>
+
+              <td>
+                <span class="badge text-bg-info">
+                  {{ fila.evidencias.Corrección }}
+                </span>
+              </td>
+            </tr>
+
+          {% empty %}
+            <tr>
+              <td colspan="6"
+                  class="text-center text-body-secondary py-4">
+                No existen ítems configurados para este período.
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Metas e indicadores por ítem -->
   <div class="card shadow-sm mb-4">
     <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
       <strong>
