@@ -29,7 +29,14 @@ from .models import (
     Rol,
     Usuario,
 )
-from .services import CRUDCargo, CRUDDelegacion, CRUDFuncionario, CRUDRol, Seguridad
+from .services import (
+    CRUDCargo,
+    CRUDDelegacion,
+    CRUDFuncionario,
+    CRUDRol,
+    Seguridad,
+    _validar_delegaciones_asignables,
+)
 from django.db import transaction
 
 from django.contrib.auth.decorators import login_required
@@ -436,126 +443,402 @@ class RolDeleteView(AccionPostView):
 # Funcionarios
 # ---------------------------------------------------------------------------
 
-class FuncionarioListView(PageSizeMixin, LecturaMixin, AmbitoDelegacionMixin, ModoMixin, ListView):
+class FuncionarioListView(
+    PageSizeMixin,
+    LecturaMixin,
+    AmbitoDelegacionMixin,
+    ModoMixin,
+    ListView,
+):
     model = Funcionario
     template_name = "organization/funcionario_.html"
     context_object_name = "funcionarios"
+
     ambito_campo = "delegacion_id"
+
     paginate_by = 10
     page_size_session_key = "funcionario_page_size"
+
     titulo = "Funcionarios"
+
+    permisos_permitidos = ("funcionarios.ver",)
+    permisos_edicion = ("funcionarios.editar",)
 
     def get_queryset(self):
         qs = (
             super().get_queryset()
-            .select_related("cargo", "delegacion")
-            .prefetch_related("funcionario_roles__rol")
+            .select_related(
+                "cargo",
+                "delegacion",
+            )
+            .prefetch_related(
+                "funcionario_roles__rol",
+            )
         )
 
         g = self.request.GET
 
         if g.get("q", "").strip():
             q = g["q"].strip()
+
             qs = qs.filter(
                 Q(nombre__icontains=q)
-                | Q(identificador_institucional__icontains=q)
+                | Q(
+                    identificador_institucional__icontains=q
+                )
             )
 
         if g.get("delegacion"):
-            qs = qs.filter(delegacion_id=g["delegacion"])
+            qs = qs.filter(
+                delegacion_id=g["delegacion"]
+            )
 
         if g.get("cargo"):
-            qs = qs.filter(cargo_id=g["cargo"])
+            qs = qs.filter(
+                cargo_id=g["cargo"]
+            )
 
         if g.get("estado"):
-            qs = qs.filter(estado=g["estado"])
+            qs = qs.filter(
+                estado=g["estado"]
+            )
 
         return qs
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
+
         g = self.request.GET
+
+        delegaciones = filtrar_por_ambito(
+            Delegacion.objects.all(),
+            self.request.user,
+            "id_delegacion",
+        )
 
         contexto.update(
             q=g.get("q", ""),
             delegacion_sel=g.get("delegacion", ""),
             cargo_sel=g.get("cargo", ""),
             estado_sel=g.get("estado", ""),
-            delegaciones=Delegacion.objects.all(),
+            delegaciones=delegaciones,
             cargos=Cargo.objects.all(),
             estados=Funcionario.ESTADOS,
+            total_resultados=self.get_queryset().count(),
         )
 
         return contexto
-
-class FuncionarioDetailView(LecturaMixin, AmbitoDelegacionMixin, ModoMixin, DetailView):
+    
+class FuncionarioDetailView(
+    LecturaMixin,
+    AmbitoDelegacionMixin,
+    ModoMixin,
+    DetailView,
+):
     model = Funcionario
     template_name = "organization/funcionario_.html"
     context_object_name = "funcionario"
+
     ambito_campo = "delegacion_id"
     modo = "detalle"
 
+    permisos_permitidos = ("funcionarios.ver",)
+    permisos_edicion = ("funcionarios.editar",)
+
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
-        usuario = getattr(self.object, "usuario", None)
+
+        usuario = getattr(
+            self.object,
+            "usuario",
+            None,
+        )
+
+        puede_gestionar_acceso = (
+            tiene_rol(
+                self.request.user,
+                *ROLES_CONFIGURACION,
+            )
+            or tiene_permiso(
+                self.request.user,
+                "usuarios.editar",
+            )
+        )
+
         contexto.update(
             titulo=f"Funcionario: {self.object.nombre}",
-            roles_asignados=self.object.funcionario_roles.select_related("rol"),
+            roles_asignados=(
+                self.object.funcionario_roles
+                .select_related("rol")
+            ),
             usuario_acceso=usuario,
-            acceso_form=AccesoForm(usuario=usuario),
+            acceso_form=(
+                AccesoForm(usuario=usuario)
+                if puede_gestionar_acceso
+                else None
+            ),
         )
+
         return contexto
-
-
-class FuncionarioCreateView(EscrituraMixin,  ModalFormPageMixin, ModoMixin, GuardarMixin, CreateView):
+    
+class FuncionarioCreateView(
+    EscrituraMixin,
+    ModalFormPageMixin,
+    ModoMixin,
+    GuardarMixin,
+    CreateView,
+):
     model = Funcionario
     form_class = FuncionarioForm
+
     template_name = "organization/funcionario_.html"
-    modo, titulo = "form", "Nuevo funcionario"
+
+    modo = "form"
+    titulo = "Nuevo funcionario"
+
     success_url_name = "organizations:funcionario_list"
     mensaje_exito = "Funcionario registrado."
+
     list_view_class = FuncionarioListView
+
+    permisos_permitidos = ("funcionarios.editar",)
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["actor"] = self.request.user
+        return kwargs
 
     def guardar(self, form):
         self.object = CRUDFuncionario.crear_funcionario(
-            form.instance, form.cleaned_data["roles"], self.request.user)
+            form.instance,
+            form.cleaned_data["roles"],
+            self.request.user,
+        )
 
     def get_success_url(self):
-        return reverse("organizations:funcionario_detail", args=[self.object.pk])
+        return reverse(
+            "organizations:funcionario_detail",
+            args=[self.object.pk],
+        )
 
-
-class FuncionarioUpdateView(EscrituraMixin, ModalFormPageMixin, ModoMixin, GuardarMixin, UpdateView):
+class FuncionarioUpdateView(
+    EscrituraMixin,
+    AmbitoDelegacionMixin,
+    ModalFormPageMixin,
+    ModoMixin,
+    GuardarMixin,
+    UpdateView,
+):
     model = Funcionario
     form_class = FuncionarioForm
+
     template_name = "organization/funcionario_.html"
-    modo, titulo = "form", "Editar funcionario"
+
+    ambito_campo = "delegacion_id"
+
+    modo = "form"
+    titulo = "Editar funcionario"
+
     success_url_name = "organizations:funcionario_list"
     mensaje_exito = "Funcionario actualizado."
+
     list_view_class = FuncionarioListView
+
+    permisos_permitidos = ("funcionarios.editar",)
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["actor"] = self.request.user
+        return kwargs
 
     def guardar(self, form):
         self.object = CRUDFuncionario.modificar_funcionario(
-            form.instance, form.cleaned_data["roles"], self.request.user)
+            form.instance,
+            form.cleaned_data["roles"],
+            self.request.user,
+        )
 
     def get_success_url(self):
-        return reverse("organizations:funcionario_detail", args=[self.object.pk])
-
+        return reverse(
+            "organizations:funcionario_detail",
+            args=[self.object.pk],
+        )
 
 class FuncionarioToggleView(AccionPostView):
     redirect_name = "organizations:funcionario_list"
 
+    permisos_permitidos = ("funcionarios.editar",)
+
     def get_objeto(self, pk):
-        return get_object_or_404(Funcionario, pk=pk)
+        funcionarios = filtrar_por_ambito(
+            Funcionario.objects.all(),
+            self.request.user,
+            "delegacion_id",
+        )
+
+        return get_object_or_404(
+            funcionarios,
+            pk=pk,
+        )
 
     def accion(self, request, objeto):
-        CRUDFuncionario.cambiar_estado(objeto, request.user)
-        return f"Funcionario «{objeto.nombre}» {'activado' if objeto.activo else 'desactivado'}."
+        CRUDFuncionario.cambiar_estado(
+            objeto,
+            request.user,
+        )
 
+        return (
+            f"Funcionario «{objeto.nombre}» "
+            f"{'activado' if objeto.activo else 'desactivado'}."
+        )
 class FuncionarioAccesoView(EscrituraMixin, View):
-    """Crea el acceso de un funcionario o actualiza sus credenciales."""
+    """
+    Crea el acceso de un funcionario o actualiza
+    sus credenciales.
+    """
 
     http_method_names = ["post"]
 
+    permisos_permitidos = ("usuarios.editar",)
+
+    def post(self, request, pk):
+        funcionarios = filtrar_por_ambito(
+            Funcionario.objects.select_related(
+                "delegacion",
+            ),
+            request.user,
+            "delegacion_id",
+        )
+
+        funcionario = get_object_or_404(
+            funcionarios,
+            pk=pk,
+        )
+
+        usuario = getattr(
+            funcionario,
+            "usuario",
+            None,
+        )
+
+        form = AccesoForm(
+            request.POST,
+            usuario=usuario,
+        )
+
+        if form.is_valid():
+            try:
+                email = (
+                    form.cleaned_data["email"]
+                    .strip()
+                    .lower()
+                )
+
+                delegaciones = list(
+                    form.cleaned_data[
+                        "delegaciones_autorizadas"
+                    ]
+                )
+
+                delegaciones_existentes_ids = (
+                    set(
+                        usuario.delegaciones_autorizadas.values_list(
+                            "pk",
+                            flat=True,
+                        )
+                    )
+                    if usuario
+                    else set()
+                )
+
+                Seguridad.validar_delegaciones(
+                    funcionario,
+                    delegaciones,
+                    delegaciones_existentes_ids=(
+                        delegaciones_existentes_ids
+                    ),
+                    validar_principal=usuario is None,
+                )
+
+                _validar_delegaciones_asignables(
+                    request.user,
+                    delegaciones,
+                )
+
+                if usuario:
+                    if Usuario.objects.filter(
+                        email__iexact=email
+                    ).exclude(
+                        pk=usuario.pk
+                    ).exists():
+                        raise ReglaNegocioError(
+                            "Ese correo electrónico ya está registrado."
+                        )
+
+                    with transaction.atomic():
+                        usuario.email = email
+
+                        if not funcionario.activo:
+                            usuario.activo_acceso = False
+
+                        usuario.save(
+                            update_fields=[
+                                "email",
+                                "activo_acceso",
+                            ]
+                        )
+
+                        usuario.delegaciones_autorizadas.set(
+                            delegaciones
+                        )
+
+                        password = form.cleaned_data.get(
+                            "password1"
+                        )
+
+                        if password:
+                            Seguridad.cambiar_contrasenia(
+                                usuario,
+                                password,
+                                request.user,
+                            )
+
+                    messages.success(
+                        request,
+                        "Acceso actualizado correctamente.",
+                    )
+
+                else:
+                    Seguridad.crear_usuario(
+                        funcionario=funcionario,
+                        username=form.cleaned_data["username"],
+                        password=form.cleaned_data["password1"],
+                        actor=request.user,
+                        email=email,
+                        delegaciones=delegaciones,
+                    )
+
+                    messages.success(
+                        request,
+                        "Acceso creado correctamente.",
+                    )
+
+            except ReglaNegocioError as exc:
+                messages.error(
+                    request,
+                    str(exc),
+                )
+
+        else:
+            messages.error(
+                request,
+                _errores(form),
+            )
+
+        return redirect(
+            "organizations:funcionario_detail",
+            pk=funcionario.pk,
+        )
 
 def post(self, request, pk):
     funcionario = get_object_or_404(
@@ -668,12 +951,17 @@ def post(self, request, pk):
 class UsuarioListView(
     PageSizeMixin,
     EscrituraMixin,
+    AmbitoDelegacionMixin,
     ModoMixin,
     ListView,
 ):
     model = Usuario
+
     template_name = "organization/usuario_.html"
     context_object_name = "usuarios"
+
+    ambito_campo = "funcionario__delegacion_id"
+
     paginate_by = 15
     page_size_session_key = "usuario_page_size"
 
@@ -682,7 +970,7 @@ class UsuarioListView(
 
     def get_queryset(self):
         queryset = (
-            Usuario.objects
+            super().get_queryset()
             .select_related(
                 "funcionario",
                 "funcionario__cargo",
@@ -703,8 +991,12 @@ class UsuarioListView(
                 Q(username__icontains=q)
                 | Q(email__icontains=q)
                 | Q(funcionario__nombre__icontains=q)
-                | Q(funcionario__identificador_institucional__icontains=q)
-                | Q(funcionario__funcionario_roles__rol__nombre_rol__icontains=q)
+                | Q(
+                    funcionario__identificador_institucional__icontains=q
+                )
+                | Q(
+                    funcionario__funcionario_roles__rol__nombre_rol__icontains=q
+                )
             ).distinct()
 
         queryset = _filtrar_usuarios_por_estado(
@@ -729,7 +1021,6 @@ class UsuarioListView(
         })
 
         return context
-
 class UsuarioCreateView(
     EscrituraMixin,
     ModalFormPageMixin,
@@ -739,21 +1030,32 @@ class UsuarioCreateView(
 ):
     model = Usuario
     form_class = UsuarioAdminForm
+
     template_name = "organization/usuario_.html"
-    modo, titulo = "form", "Crear usuario"
+
+    modo = "form"
+    titulo = "Crear usuario"
+
     success_url_name = "organizations:usuario_list"
     mensaje_exito = "Usuario creado correctamente."
+
     list_view_class = UsuarioListView
+
     permisos_permitidos = ("usuarios.editar",)
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["actor"] = self.request.user
+        return kwargs
 
     def guardar(self, form):
         self.object = Seguridad.guardar_usuario(
             form,
             self.request.user,
         )
-
 class UsuarioUpdateView(
     EscrituraMixin,
+    AmbitoDelegacionMixin,
     ModalFormPageMixin,
     ModoMixin,
     GuardarMixin,
@@ -761,15 +1063,25 @@ class UsuarioUpdateView(
 ):
     model = Usuario
     form_class = UsuarioAdminForm
-    template_name = "organization/usuario_.html"
-    permisos_permitidos = ("usuarios.editar",)
 
-    # CORRECCIÓN: se asignan dos valores a las dos variables.
-    modo, titulo = "form", "Editar usuario"
+    template_name = "organization/usuario_.html"
+
+    ambito_campo = "funcionario__delegacion_id"
+
+    modo = "form"
+    titulo = "Editar usuario"
 
     success_url_name = "organizations:usuario_list"
     mensaje_exito = "Usuario actualizado correctamente."
+
     list_view_class = UsuarioListView
+
+    permisos_permitidos = ("usuarios.editar",)
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["actor"] = self.request.user
+        return kwargs
 
     def guardar(self, form):
         self.object = Seguridad.guardar_usuario(
@@ -777,22 +1089,33 @@ class UsuarioUpdateView(
             self.request.user,
         )
 
-
 class UsuarioToggleView(EscrituraMixin, AccionPostView):
     redirect_name = "organizations:usuario_list"
+
     permisos_permitidos = ("usuarios.editar",)
 
     def get_objeto(self, pk):
-        return get_object_or_404(Usuario, pk=pk)
+        usuarios = filtrar_por_ambito(
+            Usuario.objects.all(),
+            self.request.user,
+            "funcionario__delegacion_id",
+        )
+
+        return get_object_or_404(
+            usuarios,
+            pk=pk,
+        )
 
     def accion(self, request, objeto):
-        Seguridad.cambiar_estado_acceso(objeto, request.user)
+        Seguridad.cambiar_estado_acceso(
+            objeto,
+            request.user,
+        )
 
         return (
             f"Acceso de {objeto.username} "
             f"{'habilitado' if objeto.activo_acceso else 'deshabilitado'}."
         )
-
 # ---------------------------------------------------------------------------
 # Exportaciones Excel de mantenedores
 # ---------------------------------------------------------------------------
@@ -920,7 +1243,10 @@ def exportar_usuarios_excel(request):
         tiene_rol(request.user, *ROLES_CONFIGURACION)
         or tiene_permiso(request.user, "usuarios.ver")
     ):
-        return HttpResponse("No autorizado", status=403)
+        return HttpResponse(
+            "No autorizado",
+            status=403,
+        )
 
     queryset = (
         Usuario.objects
@@ -935,6 +1261,12 @@ def exportar_usuarios_excel(request):
         .order_by("username")
     )
 
+    queryset = filtrar_por_ambito(
+        queryset,
+        request.user,
+        "funcionario__delegacion_id",
+    )
+
     q = request.GET.get("q", "").strip()
     estado = request.GET.get("estado", "").strip()
 
@@ -943,7 +1275,9 @@ def exportar_usuarios_excel(request):
             Q(username__icontains=q)
             | Q(email__icontains=q)
             | Q(funcionario__nombre__icontains=q)
-            | Q(funcionario__funcionario_roles__rol__nombre_rol__icontains=q)
+            | Q(
+                funcionario__funcionario_roles__rol__nombre_rol__icontains=q
+            )
         ).distinct()
 
     queryset = _filtrar_usuarios_por_estado(
@@ -1001,11 +1335,16 @@ def exportar_usuarios_excel(request):
         ],
         filas,
     )
-
 @login_required
 def exportar_items_excel(request, pk):
-    if not tiene_rol(request.user, *ROLES_SUPERVISION):
-        return HttpResponse("No autorizado", status=403)
+    if not (
+        tiene_rol(request.user, *ROLES_SUPERVISION)
+        or tiene_permiso(request.user, "funcionarios.ver")
+    ):
+        return HttpResponse(
+            "No autorizado",
+            status=403,
+        )
 
     cargo = get_object_or_404(Cargo, pk=pk)
     items = ItemMedible.objects.filter(
@@ -1050,16 +1389,27 @@ def exportar_items_excel(request, pk):
 
 @login_required
 def exportar_funcionarios_excel(request):
-    """Exporta funcionarios visibles para el usuario y aplica los filtros."""
+    """
+    Exporta funcionarios visibles para el usuario,
+    respetando el ámbito autorizado y los filtros.
+    """
 
-    if not tiene_rol(request.user, *ROLES_SUPERVISION):
-        return HttpResponse("No autorizado", status=403)
+    if not (
+        tiene_rol(request.user, *ROLES_SUPERVISION)
+        or tiene_permiso(request.user, "funcionarios.ver")
+    ):
+        return HttpResponse(
+            "No autorizado",
+            status=403,
+        )
 
     queryset = filtrar_por_ambito(
         Funcionario.objects.select_related(
             "cargo",
             "delegacion",
-        ).prefetch_related("funcionario_roles__rol"),
+        ).prefetch_related(
+            "funcionario_roles__rol",
+        ),
         request.user,
         "delegacion_id",
     )
@@ -1067,10 +1417,13 @@ def exportar_funcionarios_excel(request):
     g = request.GET
 
     q = g.get("q", "").strip()
+
     if q:
         queryset = queryset.filter(
             Q(nombre__icontains=q)
-            | Q(identificador_institucional__icontains=q)
+            | Q(
+                identificador_institucional__icontains=q
+            )
         )
 
     if g.get("delegacion"):
@@ -1092,12 +1445,17 @@ def exportar_funcionarios_excel(request):
     hoja = libro.active
     hoja.title = "Funcionarios"
 
-    hoja.append(["Informe de funcionarios"])
+    hoja.append([
+        "Informe de funcionarios",
+    ])
+
     hoja.append([
         "Generado",
         timezone.localtime().strftime("%d/%m/%Y %H:%M"),
     ])
+
     hoja.append([])
+
     hoja.append([
         "Identificador institucional",
         "Nombre",
@@ -1130,13 +1488,16 @@ def exportar_funcionarios_excel(request):
             "spreadsheetml.sheet"
         )
     )
+
     respuesta["Content-Disposition"] = (
         'attachment; filename="funcionarios_filtrados.xlsx"'
     )
-    respuesta["Cache-Control"] = "private, no-store"
-    libro.save(respuesta)
-    return respuesta
 
+    respuesta["Cache-Control"] = "private, no-store"
+
+    libro.save(respuesta)
+
+    return respuesta
 
 @login_required
 def exportar_cargos_excel(request):

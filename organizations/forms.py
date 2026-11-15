@@ -188,7 +188,7 @@ class FuncionarioForm(BootstrapFormMixin, forms.ModelForm):
             "delegacion",
         ]
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, actor=None, **kwargs):
         super().__init__(*args, **kwargs)
 
         cargos = Cargo.objects.vigentes()
@@ -215,9 +215,17 @@ class FuncionarioForm(BootstrapFormMixin, forms.ModelForm):
                 )
             )
 
+        if actor is not None:
+            from core.mixins import filtrar_por_ambito
+
+            delegaciones = filtrar_por_ambito(
+                delegaciones,
+                actor,
+                "id_delegacion",
+            )
+
         self.fields["cargo"].queryset = cargos
         self.fields["delegacion"].queryset = delegaciones
-
     def clean_identificador_institucional(self):
         return self.cleaned_data[
             "identificador_institucional"
@@ -279,39 +287,94 @@ class AccesoForm(BootstrapFormMixin, forms.Form):
         ),
     )
 
-    def __init__(self, *args, usuario=None, **kwargs):
+    def __init__(self, *args, actor=None, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.usuario = usuario
+        self.actor = actor
+
+        self.fields["email"].required = True
+        self.fields["funcionario"].required = True
 
         delegaciones_actuales_ids = set()
 
-        if usuario is not None:
-            self.fields["username"].initial = usuario.username
+        if self.instance and self.instance.pk:
+            self.fields["password1"].help_text = (
+                "Déjala vacía si no quieres cambiar "
+                "la contraseña."
+            )
+
+            self.fields["password2"].help_text = (
+                "Déjala vacía si no quieres cambiar "
+                "la contraseña."
+            )
+
             self.fields["username"].disabled = True
-            self.fields["email"].initial = usuario.email
 
             delegaciones_actuales_ids = set(
-                usuario.delegaciones_autorizadas.values_list(
+                self.instance.delegaciones_autorizadas.values_list(
                     "pk",
                     flat=True,
                 )
             )
 
-            self.fields["delegaciones_autorizadas"].initial = (
-                usuario.delegaciones_autorizadas.all()
+            funcionario_actual = self.instance.funcionario_id
+
+            funcionarios = Funcionario.objects.filter(
+                Q(usuario__isnull=True)
+                | Q(pk=funcionario_actual)
+            ).filter(
+                Q(estado=Funcionario.ESTADO_ACTIVO)
+                | Q(pk=funcionario_actual)
             )
 
-            self.fields["password1"].required = False
-            self.fields["password2"].required = False
+            if funcionario_actual:
+                self.fields["roles"].initial = list(
+                    Funcionario.objects.get(
+                        pk=funcionario_actual
+                    ).roles.values_list(
+                        "pk",
+                        flat=True,
+                    )
+                )
 
-        self.fields["delegaciones_autorizadas"].queryset = (
-            Delegacion.objects.filter(
-                Q(estado=Delegacion.ESTADO_ACTIVA)
-                | Q(pk__in=delegaciones_actuales_ids)
-            ).distinct()
-        )
+        else:
+            self.fields["password1"].required = True
+            self.fields["password2"].required = True
 
+            funcionarios = Funcionario.objects.filter(
+                usuario__isnull=True,
+                estado=Funcionario.ESTADO_ACTIVO,
+                delegacion__estado=Delegacion.ESTADO_ACTIVA,
+            )
+
+        delegaciones = Delegacion.objects.filter(
+            Q(estado=Delegacion.ESTADO_ACTIVA)
+            | Q(pk__in=delegaciones_actuales_ids)
+        ).distinct()
+
+        if actor is not None:
+            from core.mixins import filtrar_por_ambito
+
+            funcionarios = filtrar_por_ambito(
+                funcionarios,
+                actor,
+                "delegacion_id",
+            )
+
+            delegaciones = filtrar_por_ambito(
+                delegaciones,
+                actor,
+                "id_delegacion",
+            )
+
+        self.fields["funcionario"].queryset = funcionarios
+
+        self.fields["roles"].queryset = Rol.objects.all()
+
+        self.fields[
+            "delegaciones_autorizadas"
+        ].queryset = delegaciones
+        
     def clean_email(self):
         email = self.cleaned_data["email"].strip().lower()
 
