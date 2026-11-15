@@ -52,13 +52,15 @@
                 </a>
             {% endif %}
 
-            <a
-                href="{% url 'measurement:periodo_reglas_historial' periodo.pk %}"
-                class="btn btn-outline-info"
-            >
-                <i class="bi bi-clock-history me-1"></i>
-                Historial de reglas
-            </a>
+            {% if puede_ver_historial_reglas %}
+                <a
+                    href="{% url 'measurement:periodo_reglas_historial' periodo.pk %}"
+                    class="btn btn-outline-info"
+                >
+                    <i class="bi bi-clock-history me-1"></i>
+                    Historial de reglas
+                </a>
+            {% endif %}
 
             {% if puede_editar and periodo.abierto %}
                 <a

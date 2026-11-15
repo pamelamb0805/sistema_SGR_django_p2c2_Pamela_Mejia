@@ -98,40 +98,60 @@ class CRUDPeriodo:
         }
 
 
-    @staticmethod
-    def _registrar_version_reglas(periodo, actor=None, datos=None):
-        """
-        Cierra la versión anterior y registra una nueva versión
-        de las reglas de cálculo del período.
-        """
-        ahora = timezone.now()
 
-        anterior = (
-            ReglaCalculoVersion.objects
-            .select_for_update()
-            .filter(
-                periodo=periodo,
-                vigente_hasta__isnull=True,
-            )
-            .order_by("-numero_version")
-            .first()
-        )
+@staticmethod
+def _registrar_version_reglas(periodo, actor=None, datos=None):
+    """
+    Cierra la versión anterior y registra una nueva versión
+    de reglas de cálculo.
 
-        if anterior:
-            anterior.vigente_hasta = ahora
-            anterior.save(update_fields=["vigente_hasta"])
+    Si no se entregan datos nuevos, conserva la última configuración
+    del período en vez de recuperar los valores globales actuales.
+    """
+    ahora = timezone.now()
 
-        return ReglaCalculoVersion.objects.create(
+    ultima = (
+        ReglaCalculoVersion.objects
+        .select_for_update()
+        .filter(periodo=periodo)
+        .order_by("-numero_version")
+        .first()
+    )
+
+    if datos is None:
+        if ultima:
+            datos = dict(ultima.datos or {})
+        else:
+            datos = CRUDPeriodo._datos_reglas_actuales()
+
+    anterior_vigente = (
+        ReglaCalculoVersion.objects
+        .select_for_update()
+        .filter(
             periodo=periodo,
-            numero_version=periodo.version_parametros,
-            vigente_desde=ahora,
-            datos=datos or CRUDPeriodo._datos_reglas_actuales(),
-            creado_por=(
-                actor
-                if getattr(actor, "is_authenticated", False)
-                else None
-            ),
+            vigente_hasta__isnull=True,
         )
+        .order_by("-numero_version")
+        .first()
+    )
+
+    if anterior_vigente:
+        anterior_vigente.vigente_hasta = ahora
+        anterior_vigente.save(
+            update_fields=["vigente_hasta"]
+        )
+
+    return ReglaCalculoVersion.objects.create(
+        periodo=periodo,
+        numero_version=periodo.version_parametros,
+        vigente_desde=ahora,
+        datos=dict(datos),
+        creado_por=(
+            actor
+            if getattr(actor, "is_authenticated", False)
+            else None
+        ),
+    )
 
 
     @staticmethod

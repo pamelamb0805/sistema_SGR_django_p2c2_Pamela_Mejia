@@ -177,8 +177,10 @@ def get_context_data(self, **kwargs):
 
     return contexto
 
+
 class PeriodoDetailView(LecturaMixin, ModoMixin, DetailView):
     """Resumen del período y estado de ponderaciones por funcionario."""
+
     model = Periodo
     template_name = "measurement/periodo_.html"
     context_object_name = "periodo"
@@ -191,7 +193,10 @@ class PeriodoDetailView(LecturaMixin, ModoMixin, DetailView):
         funcionarios = filtrar_por_ambito(
             Funcionario.objects.filter(
                 estado=Funcionario.ESTADO_ACTIVO
-            ).select_related("cargo", "delegacion"),
+            ).select_related(
+                "cargo",
+                "delegacion",
+            ),
             self.request.user,
             "delegacion_id",
         )
@@ -204,15 +209,8 @@ class PeriodoDetailView(LecturaMixin, ModoMixin, DetailView):
                 self.object,
             )
 
-            faltante = max(
-                0,
-                100 - suma,
-            )
-
-            excedente = max(
-                0,
-                suma - 100,
-            )
+            faltante = max(0, 100 - suma)
+            excedente = max(0, suma - 100)
 
             if suma == 100:
                 estado = "Completa"
@@ -237,10 +235,27 @@ class PeriodoDetailView(LecturaMixin, ModoMixin, DetailView):
             titulo=f"Período {self.object}",
             configuracion=configuracion,
             total_metas=self.object.metas.count(),
+
+            puede_configurar_reglas=tiene_rol(
+                self.request.user,
+                *ROLES_CONFIGURACION,
+            ),
+
+            puede_ver_historial_reglas=tiene_rol(
+                self.request.user,
+                *ROLES_SUPERVISION,
+            ),
+
+            puede_editar=tiene_rol(
+                self.request.user,
+                *ROLES_MEDICION,
+            ),
+
             puede_reabrir=tiene_rol(
                 self.request.user,
                 *ROLES_CONFIGURACION,
             ),
+
             reabrir_form=ReabrirPeriodoForm(),
         )
 
