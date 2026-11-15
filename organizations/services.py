@@ -712,69 +712,114 @@ class Seguridad:
         auditar(actor, "CAMBIO_CONTRASENIA", "usuario_acceso", usuario.pk, None, None)  # sin guardar la clave
         return usuario
 
+
     @staticmethod
     def guardar_usuario(form, actor=None):
         usuario = form.instance
-
         es_nuevo = not bool(usuario.pk)
 
-        # Recuperar las asignaciones anteriores antes de guardar.
-        if es_nuevo:
-            funcionario_original_id = None
-            delegaciones_existentes_ids = set()
-            anterior = None
-        else:
-            usuario_original = (
+        funcionario = form.cleaned_data.get("funcionario")
+        roles = list(form.cleaned_data.get("roles") or [])
+        delegaciones = list(
+            form.cleaned_data.get("delegaciones_autorizadas") or []
+        )
+
+        if funcionario is None:
+            raise ReglaNegocioError(
+                "Debe asociar la cuenta a un funcionario."
+            )
+
+        if not roles:
+            raise ReglaNegocioError(
+                "Debe asignar al menos un rol."
+            )
+
+        if not funcionario.activo:
+            raise ReglaNegocioError(
+                "No se puede habilitar una cuenta "
+                "para un funcionario inactivo."
+            )
+
+        if not funcionario.delegacion.activa:
+            raise ReglaNegocioError(
+                "La delegación del funcionario está inactiva."
+            )
+
+        funcionario_original_id = None
+        delegaciones_existentes_ids = set()
+        anterior = None
+
+        if not es_nuevo:
+            original = (
                 Usuario.objects
                 .prefetch_related("delegaciones_autorizadas")
                 .get(pk=usuario.pk)
             )
 
-            funcionario_original_id = usuario_original.funcionario_id
+            funcionario_original_id = original.funcionario_id
 
             delegaciones_existentes_ids = set(
-                usuario_original.delegaciones_autorizadas.values_list(
+                original.delegaciones_autorizadas.values_list(
                     "pk",
                     flat=True,
                 )
             )
 
-            anterior = _snapshot(usuario_original)
+            anterior = _snapshot(original)
 
-        funcionario = form.cleaned_data.get("funcionario")
-
-        delegaciones = list(
-            form.cleaned_data.get(
-                "delegaciones_autorizadas",
-                [],
-            )
-        )
-
-        # La delegación principal se valida si es una cuenta nueva
-        # o si se está cambiando el funcionario asociado.
-        validar_principal = (
+        cambio_funcionario = (
             es_nuevo
-            or funcionario_original_id != getattr(
-                funcionario,
-                "pk",
-                None,
+            or funcionario_original_id != funcionario.pk
+        )
+
+        if cambio_funcionario and not funcionario.delegacion.activa:
+            raise ReglaNegocioError(
+                "No se puede asignar una cuenta "
+                "a una delegación inactiva."
             )
-        )
 
-        Seguridad.validar_delegaciones(
-            funcionario,
-            delegaciones,
-            delegaciones_existentes_ids=delegaciones_existentes_ids,
-            validar_principal=validar_principal,
-        )
+        inactivas_nuevas = [
+            d.nombre
+            for d in delegaciones
+            if not d.activa
+            and d.pk not in delegaciones_existentes_ids
+        ]
 
-        # Una cuenta sin funcionario o con funcionario inactivo
-        # no puede mantener acceso habilitado.
-        if not funcionario or not funcionario.activo:
-            usuario.activo_acceso = False
+        if inactivas_nuevas:
+            raise ReglaNegocioError(
+                "No se pueden asignar delegaciones inactivas: "
+                + ", ".join(inactivas_nuevas)
+            )
+
+        alcances = {
+            rol.alcance_autorizado
+            for rol in roles
+        }
+
+        if (
+            delegaciones
+            and not ({"global", "multiples"} & alcances)
+        ):
+            raise ReglaNegocioError(
+                "Los roles asignados no permiten "
+                "delegaciones adicionales."
+            )
 
         with transaction.atomic():
-            usuario = form.save()
+            usuario = form.save(commit=False)
+
+            if not funcionario.activo:
+                usuario.activo_acceso = False
+
+            usuario.save()
+            form.save_m2m()
+
+            # Los roles pertenecen al funcionario asociado.
+            CRUDRol.sincronizar_roles(
+                funcionario,
+                roles,
+                actor,
+            )
 
             auditar(
                 actor,
@@ -785,18 +830,12 @@ class Seguridad:
                 _snapshot(usuario),
             )
 
-            delegacion_id = (
-                usuario.funcionario.delegacion_id
-                if usuario.funcionario_id
-                else None
-            )
-
             _notificar_crud(
                 "usuario",
                 "crear" if es_nuevo else "actualizar",
                 actor,
                 usuario,
-                delegacion_id=delegacion_id,
+                delegacion_id=funcionario.delegacion_id,
             )
 
         return usuario

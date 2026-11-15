@@ -84,20 +84,30 @@ class ItemMedibleForm(BootstrapFormMixin, forms.ModelForm):
 
 
 
+
 class RolForm(BootstrapFormMixin, forms.ModelForm):
+
+    PERMISOS = [
+        ("roles.ver", "Consultar roles"),
+        ("roles.editar", "Administrar roles"),
+        ("usuarios.ver", "Consultar usuarios"),
+        ("usuarios.editar", "Administrar usuarios"),
+        ("funcionarios.ver", "Consultar funcionarios"),
+        ("funcionarios.editar", "Administrar funcionarios"),
+        ("delegaciones.ver", "Consultar delegaciones"),
+        ("delegaciones.editar", "Administrar delegaciones"),
+        ("catalogos.ver", "Consultar catálogos"),
+        ("catalogos.editar", "Administrar catálogos"),
+        ("atenciones.ver", "Consultar atenciones"),
+        ("atenciones.registrar", "Registrar atenciones"),
+        ("reportes.ver", "Consultar reportes"),
+    ]
+
     permisos = forms.MultipleChoiceField(
-        choices=[
-            ("usuarios.ver", "Ver usuarios"),
-            ("usuarios.editar", "Administrar usuarios"),
-            ("catalogos.ver", "Ver catálogos"),
-            ("catalogos.editar", "Administrar catálogos"),
-            ("atenciones.ver", "Ver atenciones"),
-            ("atenciones.registrar", "Registrar atenciones"),
-            ("reportes.ver", "Ver reportes"),
-            ("delegaciones.editar", "Administrar delegaciones"),
-        ],
+        choices=PERMISOS,
         required=False,
         widget=forms.CheckboxSelectMultiple,
+        label="Permisos autorizados",
     )
 
     class Meta:
@@ -113,20 +123,48 @@ class RolForm(BootstrapFormMixin, forms.ModelForm):
         super().__init__(*args, **kwargs)
 
         if self.instance and self.instance.pk:
-            self.initial["permisos"] = self.instance.permisos or []
+            self.initial["permisos"] = (
+                self.instance.permisos or []
+            )
+
+    def clean_nombre_rol(self):
+        nombre = self.cleaned_data["nombre_rol"].strip()
+
+        duplicados = Rol.objects.filter(
+            nombre_rol__iexact=nombre
+        )
+
+        if self.instance and self.instance.pk:
+            duplicados = duplicados.exclude(
+                pk=self.instance.pk
+            )
+
+        if duplicados.exists():
+            raise ValidationError(
+                "Ya existe un rol con ese nombre."
+            )
+
+        return nombre
 
     def clean_permisos(self):
-        return self.cleaned_data.get("permisos", [])
+        return list(
+            dict.fromkeys(
+                self.cleaned_data.get("permisos", [])
+            )
+        )
 
     def save(self, commit=True):
-        obj = super().save(commit=False)
-        obj.permisos = self.cleaned_data.get("permisos", [])
+        rol = super().save(commit=False)
+        rol.permisos = self.cleaned_data.get(
+            "permisos",
+            [],
+        )
 
         if commit:
-            obj.save()
+            rol.save()
             self.save_m2m()
 
-        return obj
+        return rol
 
 
 class FuncionarioForm(BootstrapFormMixin, forms.ModelForm):
@@ -317,6 +355,7 @@ class AccesoForm(BootstrapFormMixin, forms.Form):
         return datos
 
 
+
 class UsuarioAdminForm(BootstrapFormMixin, forms.ModelForm):
 
     password1 = forms.CharField(
@@ -335,6 +374,18 @@ class UsuarioAdminForm(BootstrapFormMixin, forms.ModelForm):
         ),
     )
 
+    roles = forms.ModelMultipleChoiceField(
+        queryset=Rol.objects.all(),
+        label="Roles autorizados",
+        required=True,
+        widget=forms.SelectMultiple(
+            attrs={"class": "form-select"}
+        ),
+        error_messages={
+            "required": "Debe asignar al menos un rol."
+        },
+    )
+
     class Meta:
         model = Usuario
         fields = [
@@ -349,16 +400,23 @@ class UsuarioAdminForm(BootstrapFormMixin, forms.ModelForm):
         super().__init__(*args, **kwargs)
 
         self.fields["email"].required = True
+        self.fields["funcionario"].required = True
 
         delegaciones_actuales_ids = set()
 
         if self.instance and self.instance.pk:
+
             self.fields["password1"].help_text = (
-                "Déjala vacía si no quieres cambiar la contraseña."
+                "Déjala vacía si no quieres cambiar "
+                "la contraseña."
             )
+
             self.fields["password2"].help_text = (
-                "Déjala vacía si no quieres cambiar la contraseña."
+                "Déjala vacía si no quieres cambiar "
+                "la contraseña."
             )
+
+            self.fields["username"].disabled = True
 
             delegaciones_actuales_ids = set(
                 self.instance.delegaciones_autorizadas.values_list(
@@ -367,10 +425,25 @@ class UsuarioAdminForm(BootstrapFormMixin, forms.ModelForm):
                 )
             )
 
+            funcionario_actual = self.instance.funcionario_id
+
             funcionarios = Funcionario.objects.filter(
                 Q(usuario__isnull=True)
-                | Q(pk=self.instance.funcionario_id)
+                | Q(pk=funcionario_actual)
+            ).filter(
+                Q(estado=Funcionario.ESTADO_ACTIVO)
+                | Q(pk=funcionario_actual)
             )
+
+            if funcionario_actual:
+                self.fields["roles"].initial = list(
+                    Funcionario.objects.get(
+                        pk=funcionario_actual
+                    ).roles.values_list(
+                        "pk",
+                        flat=True,
+                    )
+                )
 
         else:
             self.fields["password1"].required = True
@@ -378,17 +451,20 @@ class UsuarioAdminForm(BootstrapFormMixin, forms.ModelForm):
 
             funcionarios = Funcionario.objects.filter(
                 usuario__isnull=True,
+                estado=Funcionario.ESTADO_ACTIVO,
                 delegacion__estado=Delegacion.ESTADO_ACTIVA,
             )
 
         self.fields["funcionario"].queryset = funcionarios
 
-        self.fields["delegaciones_autorizadas"].queryset = (
-            Delegacion.objects.filter(
-                Q(estado=Delegacion.ESTADO_ACTIVA)
-                | Q(pk__in=delegaciones_actuales_ids)
-            ).distinct()
-        )
+        self.fields["roles"].queryset = Rol.objects.all()
+
+        self.fields[
+            "delegaciones_autorizadas"
+        ].queryset = Delegacion.objects.filter(
+            Q(estado=Delegacion.ESTADO_ACTIVA)
+            | Q(pk__in=delegaciones_actuales_ids)
+        ).distinct()
 
     def clean_username(self):
         username = self.cleaned_data["username"].strip()
@@ -434,16 +510,26 @@ class UsuarioAdminForm(BootstrapFormMixin, forms.ModelForm):
         password1 = datos.get("password1")
         password2 = datos.get("password2")
         funcionario = datos.get("funcionario")
-        delegaciones = datos.get("delegaciones_autorizadas")
+        delegaciones = list(
+            datos.get("delegaciones_autorizadas") or []
+        )
+        roles = list(datos.get("roles") or [])
 
         es_nuevo = not bool(
             self.instance and self.instance.pk
         )
 
+        funcionario_anterior_id = (
+            self.instance.funcionario_id
+            if self.instance and self.instance.pk
+            else None
+        )
+
+        # Contraseña
         if es_nuevo and not password1:
             self.add_error(
                 "password1",
-                "Debes definir una contraseña para la nueva cuenta.",
+                "Debe establecer una contraseña.",
             )
 
         if password1 or password2:
@@ -461,43 +547,61 @@ class UsuarioAdminForm(BootstrapFormMixin, forms.ModelForm):
                 except ValidationError as exc:
                     self.add_error("password1", exc)
 
-        if funcionario:
-            duplicados = Usuario.objects.filter(
-                funcionario=funcionario
+        # Funcionario obligatorio y único
+        if not funcionario:
+            self.add_error(
+                "funcionario",
+                "Debe asociar la cuenta a un funcionario.",
+            )
+            return datos
+
+        duplicados = Usuario.objects.filter(
+            funcionario=funcionario
+        )
+
+        if self.instance and self.instance.pk:
+            duplicados = duplicados.exclude(
+                pk=self.instance.pk
             )
 
-            if self.instance and self.instance.pk:
-                duplicados = duplicados.exclude(
-                    pk=self.instance.pk
-                )
+        if duplicados.exists():
+            self.add_error(
+                "funcionario",
+                "Este funcionario ya tiene una cuenta de acceso.",
+            )
 
-            if duplicados.exists():
+        # No permitir nuevas asignaciones a funcionarios inactivos.
+        cambio_funcionario = (
+            funcionario_anterior_id != funcionario.pk
+        )
+
+        if (
+            cambio_funcionario
+            and not funcionario.activo
+        ):
+            self.add_error(
+                "funcionario",
+                "No puede asociar una cuenta nueva "
+                "a un funcionario inactivo.",
+            )
+
+        if not funcionario.delegacion.activa:
+            if cambio_funcionario:
                 self.add_error(
                     "funcionario",
-                    "Este funcionario ya tiene una cuenta de acceso.",
+                    "No puede asignar una cuenta a una "
+                    "delegación inactiva.",
                 )
 
-        if not funcionario:
-            datos["activo_acceso"] = False
+        # Debe existir al menos un rol.
+        if not roles:
+            self.add_error(
+                "roles",
+                "Debe asignar al menos un rol autorizado.",
+            )
 
-            if delegaciones and delegaciones.exists():
-                self.add_error(
-                    "delegaciones_autorizadas",
-                    "Una cuenta sin funcionario no puede tener delegaciones autorizadas.",
-                )
-
-            return datos
-
-        if not funcionario.activo:
-            datos["activo_acceso"] = False
-
-        if delegaciones is None:
-            return datos
-
-        delegaciones = list(delegaciones)
-
-        # Una delegación inactiva solo puede mantenerse si ya estaba
-        # autorizada antes de esta edición.
+        # Delegaciones inactivas previamente asignadas
+        # pueden conservarse, pero no agregarse nuevamente.
         delegaciones_actuales_ids = set()
 
         if self.instance and self.instance.pk:
@@ -518,360 +622,44 @@ class UsuarioAdminForm(BootstrapFormMixin, forms.ModelForm):
         if inactivas_nuevas:
             self.add_error(
                 "delegaciones_autorizadas",
-                "No puedes asignar delegaciones inactivas: "
+                "No puede asignar delegaciones inactivas: "
                 + ", ".join(inactivas_nuevas),
             )
 
-        alcances = set(
-            funcionario.roles.values_list(
-                "alcance_autorizado",
-                flat=True,
-            )
+        # El alcance se determina con los roles seleccionados.
+        alcances = {
+            rol.alcance_autorizado
+            for rol in roles
+        }
+
+        permite_multiples = bool(
+            {"global", "multiples"} & alcances
         )
 
-        if not ({"global", "multiples"} & alcances) and delegaciones:
+        if delegaciones and not permite_multiples:
             self.add_error(
                 "delegaciones_autorizadas",
-                "El funcionario tiene alcance propio. "
-                "No corresponde asignarle delegaciones adicionales.",
+                "Los roles seleccionados tienen alcance "
+                "propio y no permiten delegaciones adicionales.",
             )
 
-        return datos
-
-    def save(self, commit=True):
-        usuario = super().save(commit=False)
-
-        password = self.cleaned_data.get("password1")
-
-        if password:
-            usuario.set_password(password)
-
-        if not usuario.funcionario or not usuario.funcionario.activo:
-            usuario.activo_acceso = False
-
-        if commit:
-            usuario.save()
-            self.save_m2m()
-
-        return usuario
-
-
-def __init__(self, *args, usuario=None, **kwargs):
-    super().__init__(*args, **kwargs)
-
-    self.usuario = usuario
-
-    delegaciones_actuales_ids = set()
-
-    if usuario is not None:
-        self.fields["username"].initial = usuario.username
-        self.fields["username"].disabled = True
-        self.fields["email"].initial = usuario.email
-
-        delegaciones_actuales_ids = set(
-            usuario.delegaciones_autorizadas.values_list(
-                "pk",
-                flat=True,
-            )
-        )
-
-        self.fields["delegaciones_autorizadas"].initial = (
-            usuario.delegaciones_autorizadas.all()
-        )
-
-        self.fields["password1"].required = False
-        self.fields["password2"].required = False
-
-    self.fields["delegaciones_autorizadas"].queryset = (
-        Delegacion.objects.filter(
-            Q(estado=Delegacion.ESTADO_ACTIVA)
-            | Q(pk__in=delegaciones_actuales_ids)
-        ).distinct()
-    )
-
-    def clean(self):
-        datos = super().clean()
-        p1, p2 = datos.get("password1"), datos.get("password2")
-        if p1 and p2 and p1 != p2:
-            self.add_error("password2", "Las contraseñas no coinciden.")
-        elif p1:
-            try:
-                validate_password(p1, user=self.usuario)
-            except ValidationError as exc:
-                self.add_error("password1", exc)
-        return datos
-
-    def clean_email(self):
-        email = self.cleaned_data["email"].strip().lower()
-        duplicados = Usuario.objects.filter(email__iexact=email)
-
-        usuario_actual = getattr(self, "usuario", None)
-        if usuario_actual and usuario_actual.pk:
-            duplicados = duplicados.exclude(pk=usuario_actual.pk)
-
-        if duplicados.exists():
-            raise ValidationError(
-                "Ese correo ya está asociado a otra cuenta."
-            )
-
-        return email
-
-class UsuarioAdminForm(BootstrapFormMixin, forms.ModelForm):
-    password1 = forms.CharField(
-        label="Contraseña",
-        required=False,
-        widget=forms.PasswordInput(
-            attrs={"autocomplete": "new-password"}
-        ),
-    )
-    password2 = forms.CharField(
-        label="Confirmar contraseña",
-        required=False,
-        widget=forms.PasswordInput(
-            attrs={"autocomplete": "new-password"}
-        ),
-    )
-
-    class Meta:
-        model = Usuario
-        fields = [
-            "username",
-            "email",
-            "funcionario",
-            "delegaciones_autorizadas",
-            "activo_acceso",
-        ]
-
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        self.fields["email"].required = True
-
-        delegaciones_actuales_ids = set()
-
-        if self.instance and self.instance.pk:
-            self.fields["password1"].help_text = (
-                "Déjala vacía si no quieres cambiar la contraseña."
-            )
-            self.fields["password2"].help_text = (
-                "Déjala vacía si no quieres cambiar la contraseña."
-            )
-
-            delegaciones_actuales_ids = set(
-                self.instance.delegaciones_autorizadas.values_list(
-                    "pk",
-                    flat=True,
-                )
-            )
-
-            funcionarios = Funcionario.objects.filter(
-                Q(usuario__isnull=True)
-                | Q(pk=self.instance.funcionario_id)
-            )
-
-        else:
-            self.fields["password1"].required = True
-            self.fields["password2"].required = True
-
-            funcionarios = Funcionario.objects.filter(
-                usuario__isnull=True
-            )
-
-        self.fields["funcionario"].queryset = funcionarios
-
-        self.fields["delegaciones_autorizadas"].queryset = (
-            Delegacion.objects.filter(
-                Q(estado=Delegacion.ESTADO_ACTIVA)
-                | Q(pk__in=delegaciones_actuales_ids)
-            ).distinct()
-        )
-
-        super().__init__(*args, **kwargs)
-
-        self.fields["email"].required = True
-        self.fields["delegaciones_autorizadas"].queryset = (
-            Delegacion.objects.all()
-        )
-
-        if self.instance and self.instance.pk:
-            self.fields["password1"].help_text = (
-                "Déjala vacía si no quieres cambiar la contraseña."
-            )
-            self.fields["password2"].help_text = (
-                "Déjala vacía si no quieres cambiar la contraseña."
-            )
-        else:
-            self.fields["password1"].required = True
-            self.fields["password2"].required = True
-
-        # --- MODIFICACIÓN INTEGRADA ---
-        if self.instance and self.instance.pk and self.instance.funcionario_id:
-            funcionarios = Funcionario.objects.filter(
-                Q(usuario__isnull=True)
-                | Q(pk=self.instance.funcionario_id)
-            )
-        else:
-            funcionarios = Funcionario.objects.filter(
-                usuario__isnull=True
-            )
-
-        self.fields["funcionario"].queryset = funcionarios 
-
-    def clean_username(self):
-        username = self.cleaned_data["username"].strip()
-        duplicados = Usuario.objects.filter(
-            username__iexact=username
-        )
-
-        if self.instance and self.instance.pk:
-            duplicados = duplicados.exclude(pk=self.instance.pk)
-
-        if duplicados.exists():
-            raise ValidationError(
-                "Ese nombre de usuario ya está registrado."
-            )
-
-        return username
-
-    def clean_email(self):
-        email = self.cleaned_data["email"].strip().lower()
-        duplicados = Usuario.objects.filter(email__iexact=email)
-
-        if self.instance and self.instance.pk:
-            duplicados = duplicados.exclude(pk=self.instance.pk)
-
-        if duplicados.exists():
-            raise ValidationError(
-                "Ese correo ya está asociado a otra cuenta."
-            )
-
-        return email
-
-    def clean(self):
-        datos = super().clean()
-
-        password1 = datos.get("password1")
-        password2 = datos.get("password2")
-        funcionario = datos.get("funcionario")
-        delegaciones = datos.get("delegaciones_autorizadas")
-
-        es_nuevo = not bool(self.instance and self.instance.pk)
-
-        # --------------------------------------------------
-        # 1. Validación de contraseña
-        # --------------------------------------------------
-        if es_nuevo and not password1:
-            self.add_error(
-                "password1",
-                "Debes definir una contraseña para la nueva cuenta.",
-            )
-
-        if password1 or password2:
-            if password1 != password2:
-                self.add_error(
-                    "password2",
-                    "Las contraseñas no coinciden.",
-                )
-            elif password1:
-                try:
-                    validate_password(password1, user=self.instance)
-                except ValidationError as exc:
-                    self.add_error("password1", exc)
-
-        # --------------------------------------------------
-        # 2. Validación de funcionario
-        # --------------------------------------------------
-        if funcionario:
-            duplicados = Usuario.objects.filter(
-                funcionario=funcionario
-            )
-
-            if self.instance and self.instance.pk:
-                duplicados = duplicados.exclude(pk=self.instance.pk)
-
-            if duplicados.exists():
-                self.add_error(
-                    "funcionario",
-                    "Este funcionario ya tiene una cuenta de acceso.",
-                )
-
-        # --------------------------------------------------
-        # 3. Cuenta sin funcionario
-        # --------------------------------------------------
-        if not funcionario:
-            datos["activo_acceso"] = False
-
-            if delegaciones and delegaciones.exists():
-                self.add_error(
-                    "delegaciones_autorizadas",
-                    "Una cuenta sin funcionario no puede tener delegaciones autorizadas.",
-                )
-
-            return datos
-
-        # --------------------------------------------------
-        # 4. Funcionario inactivo
-        # --------------------------------------------------
         if not funcionario.activo:
             datos["activo_acceso"] = False
 
-        # --------------------------------------------------
-        # 5. Validar delegaciones seleccionadas
-        # --------------------------------------------------
-        if delegaciones is None:
-            return datos
-
-        delegaciones = list(delegaciones)
-
-        inactivas = [
-            delegacion.nombre
-            for delegacion in delegaciones
-            if not delegacion.activa
-        ]
-
-        if inactivas:
-            self.add_error(
-                "delegaciones_autorizadas",
-                "No puedes autorizar delegaciones inactivas: "
-                + ", ".join(inactivas),
-            )
-
-        # --------------------------------------------------
-        # 6. Revisar alcance de los roles del funcionario
-        # --------------------------------------------------
-        alcances = set(
-            funcionario.roles.values_list(
-                "alcance_autorizado",
-                flat=True,
-            )
-        )
-
-        if "global" in alcances:
-            alcance = "global"
-        elif "multiples" in alcances:
-            alcance = "multiples"
-        else:
-            alcance = "propia"
-
-        # Con alcance propia no se permiten delegaciones adicionales.
-        if alcance == "propia" and delegaciones:
-            self.add_error(
-                "delegaciones_autorizadas",
-                "El funcionario tiene alcance propio. "
-                "No corresponde asignarle delegaciones adicionales.",
-            )
-
         return datos
 
     def save(self, commit=True):
         usuario = super().save(commit=False)
+
         password = self.cleaned_data.get("password1")
 
         if password:
             usuario.set_password(password)
 
-        if not usuario.funcionario:
+        if (
+            not usuario.funcionario
+            or not usuario.funcionario.activo
+        ):
             usuario.activo_acceso = False
 
         if commit:

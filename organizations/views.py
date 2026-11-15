@@ -39,6 +39,7 @@ from openpyxl import Workbook
 from core.mixins import (
     filtrar_por_ambito,
     tiene_rol,
+    tiene_permiso,
 )
 from core.pagination import PageSizeMixin
 from django.utils import timezone
@@ -354,6 +355,8 @@ class RolListView(PageSizeMixin, LecturaMixin, ModoMixin, ListView):
     paginate_by = 10
     page_size_session_key = "rol_page_size"
     titulo = "Roles y permisos"
+    permisos_permitidos = ("roles.ver",)
+    permisos_edicion = ("roles.editar",)
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -397,6 +400,7 @@ class RolCreateView(EscrituraMixin,ModalFormPageMixin, ModoMixin, GuardarMixin, 
     success_url_name = "organizations:rol_list"
     mensaje_exito = "Rol creado."
     list_view_class = RolListView
+    permisos_permitidos = ("roles.editar",)
 
     def guardar(self, form):
         self.object = CRUDRol.crear_rol(form.instance, self.request.user)
@@ -410,6 +414,7 @@ class RolUpdateView(EscrituraMixin,ModalFormPageMixin, ModoMixin, GuardarMixin, 
     success_url_name = "organizations:rol_list"
     mensaje_exito = "Rol actualizado."
     list_view_class = RolListView
+    permisos_permitidos = ("roles.editar",)
 
     def guardar(self, form):
         self.object = CRUDRol.modificar_rol(form.instance, self.request.user)
@@ -417,6 +422,7 @@ class RolUpdateView(EscrituraMixin,ModalFormPageMixin, ModoMixin, GuardarMixin, 
 
 class RolDeleteView(AccionPostView):
     redirect_name = "organizations:rol_list"
+    permisos_permitidos = ("roles.editar",)
 
     def get_objeto(self, pk):
         return get_object_or_404(Rol, pk=pk)
@@ -659,18 +665,33 @@ def post(self, request, pk):
     )
 
 
-class UsuarioListView(PageSizeMixin, EscrituraMixin, ListView):
+class UsuarioListView(
+    PageSizeMixin,
+    EscrituraMixin,
+    ModoMixin,
+    ListView,
+):
     model = Usuario
     template_name = "organization/usuario_.html"
     context_object_name = "usuarios"
     paginate_by = 15
     page_size_session_key = "usuario_page_size"
 
+    permisos_permitidos = ("usuarios.ver",)
+    permisos_edicion = ("usuarios.editar",)
+
     def get_queryset(self):
         queryset = (
             Usuario.objects
-            .select_related("funcionario")
-            .prefetch_related("delegaciones_autorizadas")
+            .select_related(
+                "funcionario",
+                "funcionario__cargo",
+                "funcionario__delegacion",
+            )
+            .prefetch_related(
+                "delegaciones_autorizadas",
+                "funcionario__funcionario_roles__rol",
+            )
             .order_by("username")
         )
 
@@ -682,7 +703,9 @@ class UsuarioListView(PageSizeMixin, EscrituraMixin, ListView):
                 Q(username__icontains=q)
                 | Q(email__icontains=q)
                 | Q(funcionario__nombre__icontains=q)
-            )
+                | Q(funcionario__identificador_institucional__icontains=q)
+                | Q(funcionario__funcionario_roles__rol__nombre_rol__icontains=q)
+            ).distinct()
 
         queryset = _filtrar_usuarios_por_estado(
             queryset,
@@ -702,6 +725,7 @@ class UsuarioListView(PageSizeMixin, EscrituraMixin, ListView):
                 ("INACTIVO", "Inactivo o pendiente"),
             ],
             "titulo": "Usuarios",
+            "total_resultados": self.get_queryset().count(),
         })
 
         return context
@@ -720,6 +744,7 @@ class UsuarioCreateView(
     success_url_name = "organizations:usuario_list"
     mensaje_exito = "Usuario creado correctamente."
     list_view_class = UsuarioListView
+    permisos_permitidos = ("usuarios.editar",)
 
     def guardar(self, form):
         self.object = Seguridad.guardar_usuario(
@@ -737,6 +762,7 @@ class UsuarioUpdateView(
     model = Usuario
     form_class = UsuarioAdminForm
     template_name = "organization/usuario_.html"
+    permisos_permitidos = ("usuarios.editar",)
 
     # CORRECCIÓN: se asignan dos valores a las dos variables.
     modo, titulo = "form", "Editar usuario"
@@ -754,6 +780,7 @@ class UsuarioUpdateView(
 
 class UsuarioToggleView(EscrituraMixin, AccionPostView):
     redirect_name = "organizations:usuario_list"
+    permisos_permitidos = ("usuarios.editar",)
 
     def get_objeto(self, pk):
         return get_object_or_404(Usuario, pk=pk)
@@ -839,9 +866,13 @@ def exportar_delegaciones_excel(request):
     )
 
 
+
 @login_required
 def exportar_roles_excel(request):
-    if not tiene_rol(request.user, *ROLES_SUPERVISION):
+    if not (
+        tiene_rol(request.user, *ROLES_SUPERVISION)
+        or tiene_permiso(request.user, "roles.ver")
+    ):
         return HttpResponse("No autorizado", status=403)
 
     queryset = Rol.objects.all()
@@ -856,13 +887,15 @@ def exportar_roles_excel(request):
         )
 
     if alcance:
-        queryset = queryset.filter(alcance_autorizado=alcance)
+        queryset = queryset.filter(
+            alcance_autorizado=alcance
+        )
 
     filas = [
         [
             rol.nombre_rol,
             rol.descripcion,
-            ", ".join(map(str, rol.permisos or [])),
+            ", ".join(rol.permisos or []),
             rol.get_alcance_autorizado_display(),
         ]
         for rol in queryset.order_by("nombre_rol")
@@ -871,19 +904,34 @@ def exportar_roles_excel(request):
     return _respuesta_excel(
         "roles_filtrados.xlsx",
         "Roles",
-        ["Nombre", "Descripción", "Permisos", "Alcance autorizado"],
+        [
+            "Nombre",
+            "Descripción",
+            "Permisos",
+            "Alcance autorizado",
+        ],
         filas,
     )
 
+
 @login_required
 def exportar_usuarios_excel(request):
-    if not tiene_rol(request.user, *ROLES_CONFIGURACION):
+    if not (
+        tiene_rol(request.user, *ROLES_CONFIGURACION)
+        or tiene_permiso(request.user, "usuarios.ver")
+    ):
         return HttpResponse("No autorizado", status=403)
 
     queryset = (
         Usuario.objects
-        .select_related("funcionario", "funcionario__delegacion")
-        .prefetch_related("delegaciones_autorizadas")
+        .select_related(
+            "funcionario",
+            "funcionario__delegacion",
+        )
+        .prefetch_related(
+            "delegaciones_autorizadas",
+            "funcionario__funcionario_roles__rol",
+        )
         .order_by("username")
     )
 
@@ -895,7 +943,8 @@ def exportar_usuarios_excel(request):
             Q(username__icontains=q)
             | Q(email__icontains=q)
             | Q(funcionario__nombre__icontains=q)
-        )
+            | Q(funcionario__funcionario_roles__rol__nombre_rol__icontains=q)
+        ).distinct()
 
     queryset = _filtrar_usuarios_por_estado(
         queryset,
@@ -905,11 +954,13 @@ def exportar_usuarios_excel(request):
     filas = []
 
     for usuario in queryset:
+        funcionario = usuario.funcionario
+
         delegaciones = []
 
-        if usuario.funcionario and usuario.funcionario.delegacion:
+        if funcionario and funcionario.delegacion_id:
             delegaciones.append(
-                usuario.funcionario.delegacion.nombre
+                funcionario.delegacion.nombre
             )
 
         delegaciones.extend(
@@ -919,10 +970,20 @@ def exportar_usuarios_excel(request):
             )
         )
 
+        roles = (
+            funcionario.roles.values_list(
+                "nombre_rol",
+                flat=True,
+            )
+            if funcionario
+            else []
+        )
+
         filas.append([
             usuario.username,
             usuario.email or "",
-            usuario.funcionario.nombre if usuario.funcionario else "",
+            funcionario.nombre if funcionario else "",
+            ", ".join(roles),
             ", ".join(dict.fromkeys(delegaciones)),
             "Activo" if usuario.is_active else "Inactivo",
         ])
@@ -934,6 +995,7 @@ def exportar_usuarios_excel(request):
             "Usuario",
             "Correo",
             "Funcionario",
+            "Roles",
             "Delegaciones autorizadas",
             "Estado de acceso",
         ],

@@ -94,6 +94,50 @@ def tiene_rol(user, *roles):
     return bool(get_roles(user) & set(roles))
 
 
+def get_permisos(user):
+    """
+    Obtiene todos los permisos funcionales de los roles asignados
+    al funcionario del usuario autenticado.
+    """
+    if not getattr(user, "is_authenticated", False):
+        return set()
+
+    if getattr(user, "is_superuser", False):
+        return {"*"}
+
+    cache = getattr(user, "_sgr_permisos", None)
+
+    if cache is not None:
+        return cache
+
+    permisos = set()
+    funcionario = get_funcionario(user)
+
+    if funcionario is not None:
+        for rol in funcionario.roles.all():
+            permisos.update(rol.permisos or [])
+
+    user._sgr_permisos = permisos
+
+    return permisos
+
+
+def tiene_permiso(user, *permisos):
+    """
+    Comprueba si el usuario posee al menos uno de los permisos
+    funcionales indicados.
+    """
+    if not permisos:
+        return False
+
+    asignados = get_permisos(user)
+
+    if "*" in asignados:
+        return True
+
+    return bool(asignados.intersection(permisos))
+
+
 def get_rol_principal(user):
     roles = get_roles(user)
     for rol in ROLES_PRIORIDAD:
@@ -373,25 +417,63 @@ def denegar_acceso(request, detalle="No tiene permisos para acceder a esta secci
 # ---------------------------------------------------------------------------
 # Mixins para vistas basadas en clases
 # ---------------------------------------------------------------------------
+
 class RolRequeridoMixin(LoginRequiredMixin):
     """
-    Exige sesión iniciada y al menos uno de los `roles_permitidos`.
-    Si `roles_permitidos` está vacío, basta con estar autenticado.
+    Exige autenticación y uno de estos requisitos:
+    - Alguno de los roles permitidos.
+    - Alguno de los permisos funcionales permitidos.
     """
+
     roles_permitidos = ()
+    permisos_permitidos = ()
 
     def dispatch(self, request, *args, **kwargs):
         if not request.user.is_authenticated:
             return self.handle_no_permission()
-        if not tiene_rol(request.user, *self.roles_permitidos):
+
+        autorizado = False
+
+        if self.roles_permitidos:
+            autorizado = tiene_rol(
+                request.user,
+                *self.roles_permitidos,
+            )
+
+        if (
+            not autorizado
+            and self.permisos_permitidos
+        ):
+            autorizado = tiene_permiso(
+                request.user,
+                *self.permisos_permitidos,
+            )
+
+        if (
+            not self.roles_permitidos
+            and not self.permisos_permitidos
+        ):
+            autorizado = True
+
+        if not autorizado:
             return denegar_acceso(request)
-        return super().dispatch(request, *args, **kwargs)
+
+        return super().dispatch(
+            request,
+            *args,
+            **kwargs,
+        )
 
     def get_paginate_by(self, queryset):
         valores_permitidos = (10, 15, 20)
 
         try:
-            cantidad = int(self.request.GET.get("page_size", self.paginate_by))
+            cantidad = int(
+                self.request.GET.get(
+                    "page_size",
+                    self.paginate_by,
+                )
+            )
         except (TypeError, ValueError):
             cantidad = self.paginate_by
 
@@ -417,22 +499,41 @@ class AmbitoDelegacionMixin:
 # ---------------------------------------------------------------------------
 # Bloques reutilizables para vistas CRUD (todas las apps)
 # ---------------------------------------------------------------------------
+
 class ModoMixin:
     """
-    Una plantilla por entidad con la variable `modo`: 'lista', 'form' o 'detalle'.
-    `puede_editar` indica si el usuario puede mostrar botones de escritura.
+    Reutiliza la plantilla de lista, formulario o detalle.
+    También determina si el usuario puede mostrar acciones de edición.
     """
+
     modo = "lista"
     titulo = ""
     roles_edicion = ROLES_CONFIGURACION
+    permisos_edicion = ()
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
+
+        puede_editar = tiene_rol(
+            self.request.user,
+            *self.roles_edicion,
+        )
+
+        if (
+            not puede_editar
+            and self.permisos_edicion
+        ):
+            puede_editar = tiene_permiso(
+                self.request.user,
+                *self.permisos_edicion,
+            )
+
         contexto.update(
             modo=self.modo,
             titulo=self.titulo,
-            puede_editar=tiene_rol(self.request.user, *self.roles_edicion),
+            puede_editar=puede_editar,
         )
+
         return contexto
 
 
