@@ -18,9 +18,12 @@ from .models import (
     Periodo,
     ReglaCalculoVersion,
 )
-from .services import CalculoIndicadores, CRUDAjuste, CRUDMeta, CRUDPeriodo
-
-
+from .services import (
+    CalculoIndicadores,
+    CRUDAjuste,
+    CRUDMeta,
+    CRUDPeriodo,
+)
 
 CLAVE = "Clave-Segura-2026"
 D = Decimal
