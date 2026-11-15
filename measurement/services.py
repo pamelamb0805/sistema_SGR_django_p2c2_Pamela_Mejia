@@ -18,7 +18,12 @@ from django.db import transaction
 from django.utils import timezone
 
 from core.exceptions import ReglaNegocioError
-from core.mixins import auditar
+from core.mixins import (
+    auditar,
+    tiene_rol,
+    ROLES_CONFIGURACION,
+    ROLES_MEDICION,
+)
 from core.services import eliminar, guardar, snapshot, _notificar_crud
 from organizations.models import Funcionario
 
@@ -28,7 +33,25 @@ from .models import Ajuste, Indicador, Meta, Periodo
 ACTIVIDAD_VALIDADA = "Validada"
 COMPROMISO_REALIZADO = "Realizado"
 
+def _exigir_rol(actor, roles, mensaje):
+    """Valida permisos en la capa de servicios, no solo en las vistas."""
+    if not tiene_rol(actor, *roles):
+        raise ReglaNegocioError(mensaje)
 
+
+def _validar_periodo(periodo):
+    """Valida fechas, superposición y reglas del modelo."""
+    try:
+        periodo.full_clean()
+    except Exception as exc:
+        from django.core.exceptions import ValidationError
+
+        if isinstance(exc, ValidationError):
+            raise ReglaNegocioError(
+                "; ".join(exc.messages)
+            ) from exc
+        raise
+    
 def _exigir_abierto(periodo, accion="modificar"):
     """RN-013: los períodos cerrados no se modifican (salvo reapertura autorizada y auditada)."""
     actual = Periodo.objects.get(pk=periodo.pk)
@@ -52,7 +75,15 @@ class CRUDPeriodo:
 
     @staticmethod
     def crear_periodo(periodo, actor=None):
+        _exigir_rol(
+            actor,
+            ROLES_MEDICION,
+            "No tiene permiso para crear períodos.",
+        )
+
         periodo.estado = Periodo.ESTADO_ABIERTO
+        _validar_periodo(periodo)
+
         return guardar(periodo, actor, "periodo")
 
     @staticmethod
@@ -61,10 +92,27 @@ class CRUDPeriodo:
 
     @staticmethod
     def modificar_periodo(periodo, actor=None):
-        _exigir_abierto(periodo)
+        _exigir_rol(
+            actor,
+            ROLES_MEDICION,
+            "No tiene permiso para modificar períodos.",
+        )
+
         with transaction.atomic():
+            original = Periodo.objects.select_for_update().get(
+                pk=periodo.pk
+            )
+
+            if not original.abierto:
+                raise ReglaNegocioError(
+                    "No se puede modificar un período cerrado."
+                )
+
+            _validar_periodo(periodo)
+
             guardar(periodo, actor, "periodo")
             CalculoIndicadores.recalcular_periodo(periodo)
+
         return periodo
 
     @staticmethod
@@ -94,22 +142,44 @@ class CRUDPeriodo:
 
     @staticmethod
     def reabrir_periodo(periodo, motivo, actor=None):
-        """Reapertura autorizada y auditada."""
+        """
+        Solo Administrador puede reabrir períodos.
+        La operación exige motivo, aumenta la versión y deja auditoría.
+        """
+        _exigir_rol(
+            actor,
+            ROLES_CONFIGURACION,
+            "Solo un Administrador puede reabrir períodos.",
+        )
+
         motivo = (motivo or "").strip()
 
         if not motivo:
-            raise ReglaNegocioError("Debe indicar el motivo de la reapertura.")
+            raise ReglaNegocioError(
+                "Debe indicar el motivo de la reapertura."
+            )
 
         with transaction.atomic():
-            periodo = Periodo.objects.select_for_update().get(pk=periodo.pk)
+            periodo = Periodo.objects.select_for_update().get(
+                pk=periodo.pk
+            )
 
             if periodo.abierto:
-                raise ReglaNegocioError("El período ya está abierto.")
+                raise ReglaNegocioError(
+                    "El período ya está abierto."
+                )
 
             anterior = snapshot(periodo)
+
             periodo.estado = Periodo.ESTADO_ABIERTO
             periodo.version_parametros += 1
-            periodo.save(update_fields=["estado", "version_parametros"])
+
+            periodo.save(
+                update_fields=[
+                    "estado",
+                    "version_parametros",
+                ]
+            )
 
             auditar(
                 actor,
@@ -120,16 +190,20 @@ class CRUDPeriodo:
                 json.dumps(
                     {
                         "motivo": motivo,
-                        "periodo": json.loads(snapshot(periodo))
+                        "periodo": json.loads(snapshot(periodo)),
                     },
-                    ensure_ascii=False
-                )
+                    ensure_ascii=False,
+                ),
             )
 
-            _notificar_crud("periodo", "actualizar", actor, periodo)
+            _notificar_crud(
+                "periodo",
+                "actualizar",
+                actor,
+                periodo,
+            )
 
         return periodo
-
 
 
 # ---------------------------------------------------------------------------
@@ -185,13 +259,20 @@ class CRUDMeta:
 
     # -- operaciones ----------------------------------------------------------
     @staticmethod
-    def crear_meta(meta, actor=None):
-        with transaction.atomic():
-            CRUDMeta._preparar(meta)
-            CRUDMeta._validar(meta, es_nueva=True)
-            guardar(meta, actor, "meta")
-            CalculoIndicadores.recalcular_indicador_meta(meta)
-        return meta
+        def crear_meta(meta, actor=None):
+            _exigir_rol(
+                getattr(meta, "_actor_validacion", None),
+                ROLES_MEDICION,
+                "No tiene permiso para configurar metas.",
+            )
+            
+            with transaction.atomic():
+                CRUDMeta._preparar(meta)
+                CRUDMeta._validar(meta, es_nueva=True)
+                guardar(meta, actor, "meta")
+                CalculoIndicadores.recalcular_indicador_meta(meta)
+            return meta
+    
 
     @staticmethod
     def crear_meta_para_cargo(meta_base, actor=None):
