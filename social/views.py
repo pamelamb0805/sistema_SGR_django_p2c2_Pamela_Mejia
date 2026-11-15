@@ -694,7 +694,7 @@ def exportar_estadisticas_excel(request):
         mes = fila["mes"]
 
         hoja.append([
-            mes.strftime("%m/%Y") if mes else "",
+            mes or "",
             fila["total"],
         ])
 
