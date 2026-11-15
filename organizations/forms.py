@@ -703,11 +703,34 @@ class UsuarioAdminForm(BootstrapFormMixin, forms.ModelForm):
                 "delegaciones adicionales.",
             )
 
-        if not funcionario.activo:
+        acceso_solicitado = datos.get("activo_acceso", False)
+
+        if acceso_solicitado and not funcionario.activo:
+            self.add_error(
+                "activo_acceso",
+                "No puede habilitar el acceso de un "
+                "funcionario inactivo.",
+            )
+            datos["activo_acceso"] = False
+
+        if (
+            acceso_solicitado
+            and not funcionario.delegacion.activa
+        ):
+            self.add_error(
+                "activo_acceso",
+                "No puede habilitar el acceso mientras "
+                "la delegación principal esté inactiva.",
+            )
+            datos["activo_acceso"] = False
+
+        if (
+            not funcionario.activo
+            or not funcionario.delegacion.activa
+        ):
             datos["activo_acceso"] = False
 
         return datos
-
     def save(self, commit=True):
         usuario = super().save(commit=False)
 
@@ -716,9 +739,12 @@ class UsuarioAdminForm(BootstrapFormMixin, forms.ModelForm):
         if password:
             usuario.set_password(password)
 
+        funcionario = usuario.funcionario
+
         if (
-            not usuario.funcionario
-            or not usuario.funcionario.activo
+            not funcionario
+            or not funcionario.activo
+            or not funcionario.delegacion.activa
         ):
             usuario.activo_acceso = False
 
@@ -727,6 +753,7 @@ class UsuarioAdminForm(BootstrapFormMixin, forms.ModelForm):
             self.save_m2m()
 
         return usuario
+    
 class PerfilUsuarioForm(BootstrapFormMixin, forms.ModelForm):
 
     class Meta:

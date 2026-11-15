@@ -376,6 +376,12 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
 
     @property
     def is_active(self):
+        """
+        La cuenta solo puede autenticarse cuando:
+        - El acceso está habilitado.
+        - El funcionario existe y está activo.
+        - La delegación principal está activa.
+        """
         if not self.activo_acceso:
             return False
 
@@ -384,8 +390,12 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
 
         funcionario = getattr(self, "funcionario", None)
 
-        return bool(funcionario and funcionario.activo)
+        if funcionario is None or not funcionario.activo:
+            return False
 
+        delegacion = getattr(funcionario, "delegacion", None)
+
+        return bool(delegacion and delegacion.activa)
     @property
     def is_staff(self):
         """Solo el superusuario técnico entra al /admin de Django."""

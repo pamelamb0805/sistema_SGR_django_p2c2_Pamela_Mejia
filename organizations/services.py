@@ -878,16 +878,14 @@ class Seguridad:
         auditar(actor, "CAMBIO_CONTRASENIA", "usuario_acceso", usuario.pk, None, None)  # sin guardar la clave
         return usuario
 
-
-
-    @staticmethod
+        @staticmethod
     def guardar_usuario(form, actor=None):
         """
         Crea o modifica un usuario de acceso.
 
-        Conserva las relaciones existentes con funcionarios y
-        delegaciones inactivas, pero impide nuevas asignaciones
-        fuera del ámbito autorizado.
+        Conserva relaciones existentes, valida el ámbito del actor
+        y evita habilitar cuentas de funcionarios o delegaciones
+        inactivas.
         """
 
         usuario = form.instance
@@ -899,6 +897,10 @@ class Seguridad:
             form.cleaned_data.get("delegaciones_autorizadas") or []
         )
         password = form.cleaned_data.get("password1")
+        acceso_solicitado = form.cleaned_data.get(
+            "activo_acceso",
+            False,
+        )
 
         if funcionario is None:
             raise ReglaNegocioError(
@@ -955,6 +957,18 @@ class Seguridad:
             raise ReglaNegocioError(
                 "No se puede asignar una cuenta "
                 "a una delegación inactiva."
+            )
+
+        if (
+            acceso_solicitado
+            and (
+                not funcionario.activo
+                or not funcionario.delegacion.activa
+            )
+        ):
+            raise ReglaNegocioError(
+                "No se puede habilitar el acceso de un funcionario "
+                "inactivo o perteneciente a una delegación inactiva."
             )
 
         _validar_ambito_asignacion(
@@ -1026,7 +1040,10 @@ class Seguridad:
             if password:
                 usuario.set_password(password)
 
-            if not funcionario.activo:
+            if (
+                not funcionario.activo
+                or not funcionario.delegacion.activa
+            ):
                 usuario.activo_acceso = False
 
             usuario.save()
@@ -1056,6 +1073,7 @@ class Seguridad:
             )
 
         return usuario
+    
     @staticmethod
     def cambiar_estado_acceso(usuario, actor=None):
         with transaction.atomic():
