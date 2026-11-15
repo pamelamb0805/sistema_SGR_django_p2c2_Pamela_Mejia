@@ -177,6 +177,80 @@ class MetaServicioTests(BaseTestCase):
         self.assertEqual(len(res2["creadas"]), 0)
         self.assertEqual(len(res2["omitidas"]), 3)
 
+    
+    def test_rf006_informa_porcentaje_faltante_e_item_pendiente(self):
+        CRUDMeta.crear_meta(
+            self.nueva_meta(
+                self.f,
+                self.item1,
+                "40",
+            )
+        )
+
+        resumen = CRUDMeta.resumen_configuracion_cargo(
+            self.cargo,
+            self.periodo,
+        )
+
+        fila = next(
+            r for r in resumen
+            if r["funcionario"].pk == self.f.pk
+        )
+
+        self.assertEqual(fila["suma"], D("40"))
+        self.assertEqual(fila["faltante"], D("60"))
+        self.assertEqual(fila["excedente"], D("0"))
+        self.assertEqual(fila["estado"], "Incompleta")
+        self.assertFalse(fila["completa"])
+        self.assertIn(self.item2, fila["items_pendientes"])
+
+    def test_rf006_identifica_item_pendiente_aunque_sume_100(self):
+        CRUDMeta.crear_meta(
+            self.nueva_meta(
+                self.f,
+                self.item1,
+                "100",
+            )
+        )
+
+        resumen = CRUDMeta.resumen_configuracion_cargo(
+            self.cargo,
+            self.periodo,
+        )
+
+        fila = next(
+            r for r in resumen
+            if r["funcionario"].pk == self.f.pk
+        )
+
+        self.assertEqual(fila["suma"], D("100"))
+        self.assertEqual(fila["faltante"], D("0"))
+        self.assertFalse(fila["completa"])
+        self.assertEqual(fila["estado"], "Pendiente")
+        self.assertIn(self.item2, fila["items_pendientes"])
+
+    def test_rf006_informa_excedente_al_superar_100(self):
+        CRUDMeta.crear_meta(
+            self.nueva_meta(
+                self.f,
+                self.item1,
+                "70",
+            )
+        )
+
+        with self.assertRaises(ReglaNegocioError) as contexto:
+            CRUDMeta.crear_meta(
+                self.nueva_meta(
+                    self.f,
+                    self.item2,
+                    "40",
+                )
+            )
+
+        self.assertIn("Excede el máximo permitido", str(contexto.exception))
+        self.assertIn("10.00 %", str(contexto.exception))
+
+
 
 class IndicadoresTests(BaseTestCase):
     def setUp(self):

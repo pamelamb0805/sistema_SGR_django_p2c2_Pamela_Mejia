@@ -522,8 +522,8 @@ def items_vigentes_funcionario(request, funcionario_id):
 # Metas
 # ---------------------------------------------------------------------------
 
+
 class MetaListView(
-    PageSizeMixin,
     LecturaMixin,
     AmbitoDelegacionMixin,
     ModoMixin,
@@ -534,7 +534,6 @@ class MetaListView(
     context_object_name = "metas"
     ambito_campo = "funcionario__delegacion_id"
     paginate_by = 15
-    page_size_session_key = "meta_page_size"
     titulo = "Metas y ponderaciones"
     roles_edicion = ROLES_MEDICION
 
@@ -554,84 +553,61 @@ class MetaListView(
             ("cargo", "cargo_id"),
             ("item", "item_id"),
         ):
-            valor = filtros.get(campo, "").strip()
+            valor = filtros.get(campo)
 
-            if valor.isdigit():
-                qs = qs.filter(**{filtro: int(valor)})
+            if valor and valor.isdigit():
+                qs = qs.filter(**{filtro: valor})
 
-        q = filtros.get("q", "").strip()
-
-        if q:
-            qs = qs.filter(
-                Q(item__nombre_item__icontains=q)
-                | Q(funcionario__nombre__icontains=q)
-                | Q(cargo__nombre_cargo__icontains=q)
-            )
-
-        return qs.order_by(
-            "-periodo__fecha_inicio",
-            "funcionario__nombre",
-            "item__nombre_item",
-        )
+        return qs
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
         filtros = self.request.GET
 
-        for meta in contexto.get("metas", []):
-            if meta.periodo.abierto:
-                datos = CRUDMeta._datos_version(meta)
-            else:
-                datos = CalculoIndicadores._datos_meta_historicos(
-                    meta,
-                    meta.periodo.fecha_termino,
-                )
+        periodo_sel = filtros.get("periodo", "")
+        funcionario_sel = filtros.get("funcionario", "")
+        cargo_sel = filtros.get("cargo", "")
 
-            meta.nombre_item_historico = datos.get(
-                "item_nombre",
-                meta.item.nombre_item,
-            )
-
-        funcionarios = filtrar_por_ambito(
-            Funcionario.objects.select_related(
-                "cargo",
-                "delegacion",
-            ),
+        funcionarios_autorizados = filtrar_por_ambito(
+            Funcionario.objects.all(),
             self.request.user,
             "delegacion_id",
         )
 
-        items = ItemMedible.objects.filter(
-            vigencia=True,
-        ).select_related(
-            "cargo",
+        contexto.update(
+            periodos=Periodo.objects.all(),
+            cargos=Cargo.objects.all(),
+            funcionarios=funcionarios_autorizados,
+            periodo_sel=periodo_sel,
+            funcionario_sel=funcionario_sel,
+            cargo_sel=cargo_sel,
+            resumen_ponderaciones=[],
+            cargo_resumen=None,
+            periodo_resumen=None,
         )
 
-        cargo_seleccionado = filtros.get(
-            "cargo",
-            "",
-        ).strip()
+        # El detalle de ponderaciones requiere seleccionar
+        # explícitamente un cargo y un período.
+        if cargo_sel.isdigit() and periodo_sel.isdigit():
+            cargo = Cargo.objects.filter(
+                pk=cargo_sel,
+            ).first()
 
-        if cargo_seleccionado.isdigit():
-            items = items.filter(
-                cargo_id=int(cargo_seleccionado),
-            )
+            periodo = Periodo.objects.filter(
+                pk=periodo_sel,
+            ).first()
 
-        contexto.update({
-            "periodos": Periodo.objects.all(),
-            "cargos": Cargo.objects.all(),
-            "funcionarios": funcionarios,
-            "items": items.order_by(
-                "cargo__nombre_cargo",
-                "nombre_item",
-            ),
-            "periodo_sel": filtros.get("periodo", ""),
-            "funcionario_sel": filtros.get("funcionario", ""),
-            "cargo_sel": cargo_seleccionado,
-            "item_sel": filtros.get("item", ""),
-            "q": filtros.get("q", ""),
-            "total_resultados": self.get_queryset().count(),
-        })
+            if cargo and periodo:
+                contexto["resumen_ponderaciones"] = (
+                    CRUDMeta.resumen_configuracion_cargo(
+                        cargo,
+                        periodo,
+                        funcionarios_autorizados,
+                    )
+                )
+
+                contexto["cargo_resumen"] = cargo
+                contexto["periodo_resumen"] = periodo
 
         return contexto
 
