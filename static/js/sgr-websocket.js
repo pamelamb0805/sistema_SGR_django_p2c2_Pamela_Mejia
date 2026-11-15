@@ -28,10 +28,18 @@
         "sgrNotificationDropdown"
     );
 
-
     const menuNotificaciones = document.getElementById(
-    "sgrNotificationMenu"
+        "sgrNotificationMenu"
     );
+
+    let socket = null;
+    let reintento = 1000;
+    let temporizador = null;
+    let actualizando = false;
+
+    // ---------------------------------------------------------
+    // MENÚ DE NOTIFICACIONES
+    // ---------------------------------------------------------
 
     if (dropdownNotificaciones && menuNotificaciones) {
         dropdownNotificaciones.addEventListener("click", (evento) => {
@@ -48,26 +56,25 @@
 
         document.addEventListener("click", (evento) => {
             if (
-                !dropdownNotificaciones.closest(".dropdown").contains(evento.target)
+                !dropdownNotificaciones.closest(".dropdown").contains(
+                    evento.target
+                )
             ) {
                 menuNotificaciones.classList.remove("show");
-                dropdownNotificaciones.setAttribute("aria-expanded", "false");
+
+                dropdownNotificaciones.setAttribute(
+                    "aria-expanded",
+                    "false"
+                );
             }
         });
     }
-    
-    let socket = null;
-    let reintento = 1000;
-    let temporizador = null;
-    let actualizando = false;
-
-    const MAX_NOTIFICACIONES = 15;
 
     // ---------------------------------------------------------
     // CONTADOR DE NOTIFICACIONES
     // ---------------------------------------------------------
 
-    function actualizarContador(resultado.pendientes) {
+    function actualizarContador(totalPendientes = null) {
         if (!listaNotificaciones || !contadorNotificaciones) {
             return;
         }
@@ -89,10 +96,155 @@
             contadorNotificaciones.hidden = true;
             contadorNotificaciones.classList.add("d-none");
         }
-
+    }
 
     // ---------------------------------------------------------
-    // MARCAR COMO LEÍDAS
+    // FORMATO DE FECHA
+    // ---------------------------------------------------------
+
+    function formatearFecha(fecha) {
+        if (!fecha) {
+            return "Fecha no disponible";
+        }
+
+        const valor = new Date(fecha);
+
+        if (Number.isNaN(valor.getTime())) {
+            return "Fecha no disponible";
+        }
+
+        return valor.toLocaleString("es-CL", {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit"
+        });
+    }
+
+    // ---------------------------------------------------------
+    // CARGAR NOTIFICACIONES PERSISTENTES
+    // ---------------------------------------------------------
+
+    async function cargarNotificaciones() {
+        if (!listaNotificaciones) {
+            return;
+        }
+
+        const url = listaNotificaciones.dataset.listUrl;
+
+        if (!url) {
+            console.error(
+                "[SGR] No se encontró la URL de notificaciones."
+            );
+            return;
+        }
+
+        try {
+            const respuesta = await fetch(url, {
+                method: "GET",
+                credentials: "same-origin",
+                headers: {
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Accept": "application/json"
+                }
+            });
+
+            if (!respuesta.ok) {
+                throw new Error(`Error HTTP ${respuesta.status}`);
+            }
+
+            const resultado = await respuesta.json();
+
+            if (!resultado.ok) {
+                throw new Error(
+                    "El servidor no pudo cargar las notificaciones."
+                );
+            }
+
+            listaNotificaciones.replaceChildren();
+
+            if (!resultado.notificaciones.length) {
+                const vacio = document.createElement("div");
+
+                vacio.id = "sgrNotificationEmpty";
+                vacio.className = "sgr-notification-empty";
+                vacio.textContent = "No hay notificaciones recientes.";
+
+                listaNotificaciones.appendChild(vacio);
+            } else {
+                resultado.notificaciones.forEach((notificacion) => {
+                    const elemento = document.createElement("div");
+
+                    elemento.className = "sgr-notification-item";
+
+                    if (!notificacion.leida) {
+                        elemento.classList.add(
+                            "sgr-notification-unread"
+                        );
+                    }
+
+                    elemento.dataset.notificationId = notificacion.id;
+
+                    const fila = document.createElement("div");
+                    fila.className = "d-flex align-items-start gap-2";
+
+                    const icono = document.createElement("i");
+                    icono.className =
+                        "bi bi-activity text-primary mt-1";
+
+                    const contenido = document.createElement("div");
+                    contenido.className = "flex-grow-1";
+
+                    const titulo = document.createElement("div");
+                    titulo.className = "sgr-notification-title";
+                    titulo.textContent =
+                        `${notificacion.modulo} · ${notificacion.accion}`;
+
+                    const objeto = document.createElement("span");
+                    objeto.className = "sgr-notification-detail";
+                    objeto.textContent = notificacion.objeto;
+
+                    const actor = document.createElement("span");
+                    actor.className = "sgr-notification-detail";
+                    actor.textContent = `● ${notificacion.actor}`;
+
+                    const delegacion = document.createElement("span");
+                    delegacion.className = "sgr-notification-detail";
+                    delegacion.textContent =
+                        `◆ ${notificacion.delegacion}`;
+
+                    const fecha = document.createElement("span");
+                    fecha.className = "sgr-notification-date";
+                    fecha.textContent =
+                        formatearFecha(notificacion.fecha);
+
+                    contenido.append(
+                        titulo,
+                        objeto,
+                        actor,
+                        delegacion,
+                        fecha
+                    );
+
+                    fila.append(icono, contenido);
+                    elemento.appendChild(fila);
+                    listaNotificaciones.appendChild(elemento);
+                });
+            }
+
+            actualizarContador(resultado.pendientes);
+
+        } catch (error) {
+            console.error(
+                "[SGR] No se pudieron cargar las notificaciones.",
+                error
+            );
+        }
+    }
+
+    // ---------------------------------------------------------
+    // MARCAR NOTIFICACIONES COMO LEÍDAS
     // ---------------------------------------------------------
 
     async function marcarLeidas() {
@@ -127,9 +279,7 @@
             });
 
             if (!respuesta.ok) {
-                throw new Error(
-                    `Error HTTP ${respuesta.status}`
-                );
+                throw new Error(`Error HTTP ${respuesta.status}`);
             }
 
             const resultado = await respuesta.json();
@@ -148,11 +298,7 @@
                     );
                 });
 
-            if (contadorNotificaciones) {
-                contadorNotificaciones.textContent = "0";
-                contadorNotificaciones.hidden = true;
-                contadorNotificaciones.classList.add("d-none");
-            }
+            actualizarContador(0);
 
         } catch (error) {
             console.error(
@@ -166,257 +312,11 @@
     }
 
     if (botonMarcarLeidas) {
-        botonMarcarLeidas.addEventListener(
-            "click",
-            (evento) => {
-                evento.preventDefault();
-                evento.stopPropagation();
-                marcarLeidas();
-            }
-        );
-    }
-
-    // ---------------------------------------------------------
-    // FORMATO DE FECHA
-    // ---------------------------------------------------------
-
-    function formatearFecha(fecha) {
-        if (!fecha) {
-            return "Fecha no disponible";
-        }
-
-        const valor = new Date(fecha);
-
-        if (Number.isNaN(valor.getTime())) {
-            return "Fecha no disponible";
-        }
-
-        return valor.toLocaleString("es-CL", {
-            day: "2-digit",
-            month: "2-digit",
-            year: "numeric",
-            hour: "2-digit",
-            minute: "2-digit"
+        botonMarcarLeidas.addEventListener("click", (evento) => {
+            evento.preventDefault();
+            evento.stopPropagation();
+            marcarLeidas();
         });
-    }
-
-    // ---------------------------------------------------------
-    // CREAR ELEMENTO DE NOTIFICACIÓN
-    // ---------------------------------------------------------
-
-    async function cargarNotificaciones() {
-        if (!listaNotificaciones) {
-            return;
-        }
-
-        const url = listaNotificaciones.dataset.listUrl;
-
-        if (!url) {
-            console.error("[SGR] No se encontró la URL de notificaciones.");
-            return;
-        }
-
-        try {
-            const respuesta = await fetch(url, {
-                method: "GET",
-                credentials: "same-origin",
-                headers: {
-                    "X-Requested-With": "XMLHttpRequest",
-                    "Accept": "application/json"
-                }
-            });
-
-            if (!respuesta.ok) {
-                throw new Error(`Error HTTP ${respuesta.status}`);
-            }
-
-            const resultado = await respuesta.json();
-
-            if (!resultado.ok) {
-                throw new Error("El servidor no pudo cargar las notificaciones.");
-            }
-
-            listaNotificaciones.replaceChildren();
-
-            if (!resultado.notificaciones.length) {
-                const vacio = document.createElement("div");
-                vacio.id = "sgrNotificationEmpty";
-                vacio.className = "sgr-notification-empty";
-                vacio.textContent = "No hay notificaciones recientes.";
-
-                listaNotificaciones.appendChild(vacio);
-            } else {
-                resultado.notificaciones.forEach((notificacion) => {
-                    const elemento = document.createElement("div");
-
-                    elemento.className = "sgr-notification-item";
-
-                    if (!notificacion.leida) {
-                        elemento.classList.add("sgr-notification-unread");
-                    }
-
-                    elemento.dataset.notificationId = notificacion.id;
-
-                    const fila = document.createElement("div");
-                    fila.className = "d-flex align-items-start gap-2";
-
-                    const icono = document.createElement("i");
-                    icono.className = "bi bi-activity text-primary mt-1";
-
-                    const contenido = document.createElement("div");
-                    contenido.className = "flex-grow-1";
-
-                    const titulo = document.createElement("div");
-                    titulo.className = "sgr-notification-title";
-                    titulo.textContent =
-                        `${notificacion.modulo} · ${notificacion.accion}`;
-
-                    const objeto = document.createElement("span");
-                    objeto.className = "sgr-notification-detail";
-                    objeto.textContent = notificacion.objeto;
-
-                    const actor = document.createElement("span");
-                    actor.className = "sgr-notification-detail";
-                    actor.textContent = `● ${notificacion.actor}`;
-
-                    const delegacion = document.createElement("span");
-                    delegacion.className = "sgr-notification-detail";
-                    delegacion.textContent = `◆ ${notificacion.delegacion}`;
-
-                    const fecha = document.createElement("span");
-                    fecha.className = "sgr-notification-date";
-                    fecha.textContent = formatearFecha(notificacion.fecha);
-
-                    contenido.append(
-                        titulo,
-                        objeto,
-                        actor,
-                        delegacion,
-                        fecha
-                    );
-
-                    fila.append(icono, contenido);
-                    elemento.appendChild(fila);
-                    listaNotificaciones.appendChild(elemento);
-                });
-            }
-
-            actualizarContador();
-
-        } catch (error) {
-            console.error(
-                "[SGR] No se pudieron cargar las notificaciones persistentes.",
-                error
-            );
-        }
-    }
-
-    // ---------------------------------------------------------
-    // CONEXIÓN WEBSOCKET
-    // ---------------------------------------------------------
-
-    function conectar() {
-        if (
-            socket &&
-            (
-                socket.readyState === WebSocket.OPEN ||
-                socket.readyState === WebSocket.CONNECTING
-            )
-        ) {
-            return;
-        }
-
-        socket = new WebSocket(ruta);
-
-        socket.addEventListener("open", () => {
-            reintento = 1000;
-            body.dataset.sgrWebsocket = "conectado";
-
-            console.info("[SGR] WebSocket conectado.");
-        });
-
-        socket.addEventListener(
-            "message",
-            async (evento) => {
-                let mensaje;
-
-                try {
-                    mensaje = JSON.parse(evento.data);
-                } catch (error) {
-                    console.warn(
-                        "[SGR] Mensaje WebSocket inválido.",
-                        error
-                    );
-                    return;
-                }
-
-                if (!mensaje.module || !mensaje.action) {
-                    return;
-                }
-
-                // 1. La notificación se procesa en cualquier módulo.
-                if (mensaje.type === "crud_update") {
-                await cargarNotificaciones();
-
-                document.dispatchEvent(
-                    new CustomEvent(
-                        "sgr:notification",
-                        {
-                            detail: mensaje
-                        }
-                    )
-                );
-}
-                // 2. La actualización de tabla solo ocurre
-                //    si el evento pertenece al módulo actual.
-                if (mensaje.module !== moduloActual) {
-                    return;
-                }
-
-                document.dispatchEvent(
-                    new CustomEvent(
-                        "sgr:crud-update",
-                        {
-                            detail: mensaje
-                        }
-                    )
-                );
-
-                await actualizarListado();
-            }
-        );
-
-        socket.addEventListener("close", () => {
-            body.dataset.sgrWebsocket = "desconectado";
-            programarReconexion();
-        });
-
-        socket.addEventListener("error", () => {
-            if (socket) {
-                socket.close();
-            }
-        });
-    }
-
-    // ---------------------------------------------------------
-    // RECONEXIÓN AUTOMÁTICA
-    // ---------------------------------------------------------
-
-    function programarReconexion() {
-        if (temporizador) {
-            return;
-        }
-
-        temporizador = window.setTimeout(() => {
-            temporizador = null;
-
-            conectar();
-
-            reintento = Math.min(
-                reintento * 2,
-                30000
-            );
-        }, reintento);
     }
 
     // ---------------------------------------------------------
@@ -428,9 +328,7 @@
             return;
         }
 
-        const contenidoActual = document.querySelector(
-            "#contenido"
-        );
+        const contenidoActual = document.querySelector("#contenido");
 
         if (
             !contenidoActual ||
@@ -442,16 +340,13 @@
         actualizando = true;
 
         try {
-            const respuesta = await fetch(
-                location.href,
-                {
-                    method: "GET",
-                    credentials: "same-origin",
-                    headers: {
-                        "X-Requested-With": "XMLHttpRequest"
-                    }
+            const respuesta = await fetch(location.href, {
+                method: "GET",
+                credentials: "same-origin",
+                headers: {
+                    "X-Requested-With": "XMLHttpRequest"
                 }
-            );
+            });
 
             if (!respuesta.ok) {
                 return;
@@ -479,19 +374,16 @@
                 contenidoNuevo.querySelectorAll("table");
 
             if (
-                tablasActuales.length !==
-                tablasNuevas.length
+                tablasActuales.length !== tablasNuevas.length
             ) {
                 return;
             }
 
-            tablasActuales.forEach(
-                (tabla, indice) => {
-                    tabla.replaceWith(
-                        tablasNuevas[indice].cloneNode(true)
-                    );
-                }
-            );
+            tablasActuales.forEach((tabla, indice) => {
+                tabla.replaceWith(
+                    tablasNuevas[indice].cloneNode(true)
+                );
+            });
 
             const selectores = [
                 ".pagination",
@@ -532,24 +424,125 @@
     }
 
     // ---------------------------------------------------------
+    // CONEXIÓN WEBSOCKET
+    // ---------------------------------------------------------
+
+    function conectar() {
+        if (
+            socket &&
+            (
+                socket.readyState === WebSocket.OPEN ||
+                socket.readyState === WebSocket.CONNECTING
+            )
+        ) {
+            return;
+        }
+
+        socket = new WebSocket(ruta);
+
+        socket.addEventListener("open", () => {
+            reintento = 1000;
+            body.dataset.sgrWebsocket = "conectado";
+
+            console.info("[SGR] WebSocket conectado.");
+        });
+
+        socket.addEventListener("message", async (evento) => {
+            let mensaje;
+
+            try {
+                mensaje = JSON.parse(evento.data);
+            } catch (error) {
+                console.warn(
+                    "[SGR] Mensaje WebSocket inválido.",
+                    error
+                );
+                return;
+            }
+
+            if (!mensaje.module || !mensaje.action) {
+                return;
+            }
+
+            // Actualizar notificaciones en cualquier módulo.
+            if (mensaje.type === "crud_update") {
+                await cargarNotificaciones();
+
+                document.dispatchEvent(
+                    new CustomEvent("sgr:notification", {
+                        detail: mensaje
+                    })
+                );
+            }
+
+            // Actualizar tabla solamente en el módulo correspondiente.
+            if (mensaje.module !== moduloActual) {
+                return;
+            }
+
+            document.dispatchEvent(
+                new CustomEvent("sgr:crud-update", {
+                    detail: mensaje
+                })
+            );
+
+            await actualizarListado();
+        });
+
+        socket.addEventListener("close", () => {
+            body.dataset.sgrWebsocket = "desconectado";
+            programarReconexion();
+        });
+
+        socket.addEventListener("error", () => {
+            if (socket) {
+                socket.close();
+            }
+        });
+    }
+
+    // ---------------------------------------------------------
+    // RECONEXIÓN AUTOMÁTICA
+    // ---------------------------------------------------------
+
+    function programarReconexion() {
+        if (temporizador) {
+            return;
+        }
+
+        temporizador = window.setTimeout(() => {
+            temporizador = null;
+
+            conectar();
+
+            reintento = Math.min(
+                reintento * 2,
+                30000
+            );
+        }, reintento);
+    }
+
+    // ---------------------------------------------------------
     // RECONEXIÓN AL VOLVER A LA PESTAÑA
     // ---------------------------------------------------------
 
-    document.addEventListener(
-        "visibilitychange",
-        () => {
-            if (
-                document.visibilityState === "visible" &&
-                (
-                    !socket ||
-                    socket.readyState === WebSocket.CLOSED
-                )
-            ) {
-                conectar();
-            }
+    document.addEventListener("visibilitychange", () => {
+        if (
+            document.visibilityState === "visible" &&
+            (
+                !socket ||
+                socket.readyState === WebSocket.CLOSED
+            )
+        ) {
+            conectar();
         }
-    );
+    });
 
+    // ---------------------------------------------------------
+    // INICIALIZACIÓN
+    // ---------------------------------------------------------
+
+    actualizarContador();
     cargarNotificaciones();
     conectar();
 
