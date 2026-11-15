@@ -238,8 +238,10 @@ class CargoListView(PageSizeMixin, LecturaMixin, ModoMixin, ListView):
 
 
 
+
 class CargoDetailView(LecturaMixin, ModoMixin, DetailView):
-    """Muestra los ítems del cargo y permite agregar nuevos (RF-003)."""
+    """Detalle de cargo e ítems medibles vigentes."""
+
     model = Cargo
     template_name = "organization/cargo_.html"
     context_object_name = "cargo"
@@ -247,9 +249,25 @@ class CargoDetailView(LecturaMixin, ModoMixin, DetailView):
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
-        contexto["titulo"] = f"Cargo: {self.object.nombre_cargo}"
-        contexto["items"] = self.object.items.all()
+
+        contexto["titulo"] = (
+            f"Cargo: {self.object.nombre_cargo}"
+        )
+
+        contexto["items"] = (
+            self.object.items.filter(
+                vigencia=True,
+            ).order_by(
+                "nombre_item",
+            )
+        )
+
         contexto["item_form"] = ItemMedibleForm()
+
+        contexto["total_items_vigentes"] = (
+            contexto["items"].count()
+        )
+
         return contexto
 
 
@@ -317,16 +335,39 @@ class ItemCreateView(EscrituraMixin, View):
         return redirect("organizations:cargo_detail", pk=cargo.pk)
 
 
+
 class ItemToggleView(AccionPostView):
+    roles_permitidos = ROLES_CONFIGURACION
+    redirect_name = "organizations:cargo_list"
+
     def get_objeto(self, pk):
-        return get_object_or_404(ItemMedible, pk=pk)
+        return get_object_or_404(
+            ItemMedible.objects.select_related("cargo"),
+            pk=pk,
+        )
 
     def accion(self, request, objeto):
-        CRUDCargo.cambiar_vigencia_item(objeto, request.user)
-        return f"Ítem «{objeto.nombre_item}» {'vigente' if objeto.vigencia else 'no vigente'}."
+        CRUDCargo.cambiar_vigencia_item(
+            objeto,
+            request.user,
+        )
+
+        estado = (
+            "vigente"
+            if objeto.vigencia
+            else "no vigente"
+        )
+
+        return (
+            f"Ítem «{objeto.nombre_item}» "
+            f"marcado como {estado}."
+        )
 
     def get_redirect(self, objeto):
-        return reverse("organizations:cargo_detail", args=[objeto.cargo_id])
+        return reverse(
+            "organizations:cargo_detail",
+            args=[objeto.cargo_id],
+        )
 
 class ItemHistorialView(LecturaMixin, DetailView):
     model = ItemMedible

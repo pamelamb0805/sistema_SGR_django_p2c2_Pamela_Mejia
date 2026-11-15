@@ -88,6 +88,101 @@
           </a>
         </div>
       </form>
+
+      {% if not form.instance.pk %}
+        <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            const funcionario = document.getElementById("id_funcionario");
+            const item = document.getElementById("id_item");
+
+            if (!funcionario || !item) {
+                return;
+            }
+
+            const urlBase = "{% url 'measurement:items_vigentes_funcionario' 0 %}";
+
+            async function cargarItems() {
+                const funcionarioId = funcionario.value;
+
+                item.innerHTML = "";
+
+                const opcionInicial = document.createElement("option");
+                opcionInicial.value = "";
+                opcionInicial.textContent = funcionarioId
+                    ? "Cargando ítems..."
+                    : "Primero selecciona un funcionario";
+
+                item.appendChild(opcionInicial);
+                item.disabled = true;
+
+                if (!funcionarioId) {
+                    return;
+                }
+
+                try {
+                    const url = urlBase.replace(
+                        "/0/",
+                        "/" + encodeURIComponent(funcionarioId) + "/"
+                    );
+
+                    const respuesta = await fetch(url, {
+                        headers: {
+                            "X-Requested-With": "XMLHttpRequest"
+                        }
+                    });
+
+                    const datos = await respuesta.json();
+
+                    if (!respuesta.ok) {
+                        throw new Error(
+                            datos.error || "No fue posible cargar los ítems."
+                        );
+                    }
+
+                    item.innerHTML = "";
+
+                    const opcionVacia = document.createElement("option");
+                    opcionVacia.value = "";
+                    opcionVacia.textContent = datos.items.length
+                        ? "Selecciona un ítem"
+                        : "Este cargo no tiene ítems vigentes";
+
+                    item.appendChild(opcionVacia);
+
+                    datos.items.forEach(function (registro) {
+                        const opcion = document.createElement("option");
+
+                        opcion.value = registro.id;
+                        opcion.textContent =
+                            registro.codigo + " - " +
+                            registro.nombre + " (" +
+                            registro.tipo + ")";
+
+                        item.appendChild(opcion);
+                    });
+
+                    item.disabled = datos.items.length === 0;
+
+                } catch (error) {
+                    item.innerHTML = "";
+
+                    const opcionError = document.createElement("option");
+                    opcionError.value = "";
+                    opcionError.textContent = error.message;
+
+                    item.appendChild(opcionError);
+                    item.disabled = true;
+                }
+            }
+
+            funcionario.addEventListener("change", cargarItems);
+
+            if (funcionario.value) {
+                cargarItems();
+            }
+        });
+        </script>
+      {% endif %}
     </div>
   </div>
 

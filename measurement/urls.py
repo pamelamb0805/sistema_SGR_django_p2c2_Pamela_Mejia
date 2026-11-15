@@ -24,6 +24,11 @@ urlpatterns = [
     name="periodo_reglas_historial",
     ),
     # Metas
+    path(
+    "metas/funcionario/<int:funcionario_id>/items-vigentes/",
+    views.items_vigentes_funcionario,
+    name="items_vigentes_funcionario",
+    ),
     path("metas/", views.MetaListView.as_view(), name="meta_list"),
     path("metas/nueva/", views.MetaCreateView.as_view(), name="meta_create"),
     path("metas/<int:pk>/editar/", views.MetaUpdateView.as_view(), name="meta_update"),

@@ -43,7 +43,7 @@ from .models import (
 from .services import CalculoIndicadores, CRUDAjuste, CRUDMeta, CRUDPeriodo
 
 from django.db.models import Q
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from openpyxl import Workbook
 from django.core.paginator import Paginator
 from core.pagination import PageSizeMixin, PAGE_SIZE_OPTIONS, get_page_size
@@ -449,10 +449,62 @@ class PeriodoRecalcularView(AccionPostView):
         return reverse("measurement:periodo_detail", args=[objeto.pk])
 
 
+    @login_required
+    def items_vigentes_funcionario(request, funcionario_id):
+        if not tiene_rol(request.user, *ROLES_MEDICION):
+            return JsonResponse(
+                {"error": "No tienes permiso para consultar estos ítems."},
+                status=403,
+            )
+
+        funcionario = (
+            filtrar_por_ambito(
+                Funcionario.objects.select_related("cargo"),
+                request.user,
+                "delegacion_id",
+            )
+            .filter(
+                pk=funcionario_id,
+                estado=Funcionario.ESTADO_ACTIVO,
+            )
+            .first()
+        )
+
+        if funcionario is None:
+            return JsonResponse(
+                {"error": "Funcionario no encontrado o fuera de tu ámbito."},
+                status=404,
+            )
+
+        items = ItemMedible.objects.filter(
+            cargo_id=funcionario.cargo_id,
+            vigencia=True,
+        ).order_by("nombre_item")
+
+        return JsonResponse({
+            "cargo": funcionario.cargo.nombre_cargo,
+            "items": [
+                {
+                    "id": item.pk,
+                    "codigo": item.codigo,
+                    "nombre": item.nombre_item,
+                    "tipo": item.tipo,
+                }
+                for item in items
+            ],
+        })
+
 # ---------------------------------------------------------------------------
 # Metas
 # ---------------------------------------------------------------------------
-class MetaListView(PageSizeMixin, LecturaMixin, AmbitoDelegacionMixin, ModoMixin, ListView):
+
+class MetaListView(
+    PageSizeMixin,
+    LecturaMixin,
+    AmbitoDelegacionMixin,
+    ModoMixin,
+    ListView,
+):
     model = MetaModel
     template_name = "measurement/meta_.html"
     context_object_name = "metas"
@@ -464,9 +516,13 @@ class MetaListView(PageSizeMixin, LecturaMixin, AmbitoDelegacionMixin, ModoMixin
 
     def get_queryset(self):
         qs = super().get_queryset().select_related(
-            "periodo", "funcionario", "item", "cargo"
+            "periodo",
+            "funcionario",
+            "item",
+            "cargo",
         )
-        g = self.request.GET
+
+        filtros = self.request.GET
 
         for campo, filtro in (
             ("periodo", "periodo_id"),
@@ -474,10 +530,13 @@ class MetaListView(PageSizeMixin, LecturaMixin, AmbitoDelegacionMixin, ModoMixin
             ("cargo", "cargo_id"),
             ("item", "item_id"),
         ):
-            if g.get(campo):
-                qs = qs.filter(**{filtro: g[campo]})
+            valor = filtros.get(campo, "").strip()
 
-        q = g.get("q", "").strip()
+            if valor.isdigit():
+                qs = qs.filter(**{filtro: int(valor)})
+
+        q = filtros.get("q", "").strip()
+
         if q:
             qs = qs.filter(
                 Q(item__nombre_item__icontains=q)
@@ -485,66 +544,73 @@ class MetaListView(PageSizeMixin, LecturaMixin, AmbitoDelegacionMixin, ModoMixin
                 | Q(cargo__nombre_cargo__icontains=q)
             )
 
-        return qs
+        return qs.order_by(
+            "-periodo__fecha_inicio",
+            "funcionario__nombre",
+            "item__nombre_item",
+        )
 
-    
-def get_context_data(self, **kwargs):
-    contexto = super().get_context_data(**kwargs)
-    g = self.request.GET
+    def get_context_data(self, **kwargs):
+        contexto = super().get_context_data(**kwargs)
+        filtros = self.request.GET
 
-    for meta in contexto.get("metas", []):
-        if meta.periodo.abierto:
-            datos = CRUDMeta._datos_version(meta)
-        else:
-            datos = CalculoIndicadores._datos_meta_historicos(
-                meta,
-                meta.periodo.fecha_termino,
+        for meta in contexto.get("metas", []):
+            if meta.periodo.abierto:
+                datos = CRUDMeta._datos_version(meta)
+            else:
+                datos = CalculoIndicadores._datos_meta_historicos(
+                    meta,
+                    meta.periodo.fecha_termino,
+                )
+
+            meta.nombre_item_historico = datos.get(
+                "item_nombre",
+                meta.item.nombre_item,
             )
 
-        meta.nombre_item_historico = datos.get(
-            "item_nombre",
-            meta.item.nombre_item,
+        funcionarios = filtrar_por_ambito(
+            Funcionario.objects.select_related(
+                "cargo",
+                "delegacion",
+            ),
+            self.request.user,
+            "delegacion_id",
         )
 
-    funcionarios = filtrar_por_ambito(
-        Funcionario.objects.select_related(
+        items = ItemMedible.objects.filter(
+            vigencia=True,
+        ).select_related(
             "cargo",
-            "delegacion",
-        ),
-        self.request.user,
-        "delegacion_id",
-    )
-
-    cargos = Cargo.objects.all()
-
-    items = ItemMedible.objects.filter(
-        vigencia=True
-    ).select_related("cargo")
-
-    cargo_seleccionado = g.get("cargo", "").strip()
-
-    if cargo_seleccionado.isdigit():
-        items = items.filter(
-            cargo_id=int(cargo_seleccionado)
         )
 
-    contexto.update({
-        "periodos": Periodo.objects.all(),
-        "cargos": cargos,
-        "funcionarios": funcionarios,
-        "periodo_sel": g.get("periodo", ""),
-        "funcionario_sel": g.get("funcionario", ""),
-        "cargo_sel": cargo_seleccionado,
-        "item_sel": g.get("item", ""),
-        "q": g.get("q", ""),
-        "total_resultados": self.get_queryset().count(),
-        "items": items.order_by(
-            "cargo__nombre_cargo",
-            "nombre_item",
-        ),
-    })
+        cargo_seleccionado = filtros.get(
+            "cargo",
+            "",
+        ).strip()
 
-    return contexto
+        if cargo_seleccionado.isdigit():
+            items = items.filter(
+                cargo_id=int(cargo_seleccionado),
+            )
+
+        contexto.update({
+            "periodos": Periodo.objects.all(),
+            "cargos": Cargo.objects.all(),
+            "funcionarios": funcionarios,
+            "items": items.order_by(
+                "cargo__nombre_cargo",
+                "nombre_item",
+            ),
+            "periodo_sel": filtros.get("periodo", ""),
+            "funcionario_sel": filtros.get("funcionario", ""),
+            "cargo_sel": cargo_seleccionado,
+            "item_sel": filtros.get("item", ""),
+            "q": filtros.get("q", ""),
+            "total_resultados": self.get_queryset().count(),
+        })
+
+        return contexto
+
 
 class MetaFormMixin(MedicionMixin, ModoMixin, GuardarMixin):
     model = MetaModel
