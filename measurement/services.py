@@ -78,6 +78,7 @@ def _exigir_abierto(periodo, accion="modificar"):
 # CRUDPeriodo
 # ---------------------------------------------------------------------------
 
+
 class CRUDPeriodo:
 
     @staticmethod
@@ -98,10 +99,16 @@ class CRUDPeriodo:
     def _registrar_version_reglas(periodo, actor=None):
         ahora = timezone.now()
 
-        anterior = ReglaCalculoVersion.objects.filter(
-            periodo=periodo,
-            vigente_hasta__isnull=True,
-        ).order_by("-numero_version").first()
+        anterior = (
+            ReglaCalculoVersion.objects
+            .select_for_update()
+            .filter(
+                periodo=periodo,
+                vigente_hasta__isnull=True,
+            )
+            .order_by("-numero_version")
+            .first()
+        )
 
         if anterior:
             anterior.vigente_hasta = ahora
@@ -112,7 +119,11 @@ class CRUDPeriodo:
             numero_version=periodo.version_parametros,
             vigente_desde=ahora,
             datos=CRUDPeriodo._datos_reglas_actuales(),
-            creado_por=actor if getattr(actor, "pk", None) else None,
+            creado_por=(
+                actor
+                if getattr(actor, "is_authenticated", False)
+                else None
+            ),
         )
 
     @staticmethod
@@ -136,9 +147,14 @@ class CRUDPeriodo:
         with transaction.atomic():
             periodo.estado = Periodo.ESTADO_ABIERTO
             periodo.version_parametros = 1
+
             _validar_periodo(periodo)
 
-            periodo = guardar(periodo, actor, "periodo")
+            periodo = guardar(
+                periodo,
+                actor,
+                "periodo",
+            )
 
             CRUDPeriodo._registrar_version_reglas(
                 periodo,
@@ -160,8 +176,10 @@ class CRUDPeriodo:
         )
 
         with transaction.atomic():
-            original = Periodo.objects.select_for_update().get(
-                pk=periodo.pk
+            original = (
+                Periodo.objects
+                .select_for_update()
+                .get(pk=periodo.pk)
             )
 
             if not original.abierto:
@@ -171,7 +189,11 @@ class CRUDPeriodo:
 
             _validar_periodo(periodo)
 
-            guardar(periodo, actor, "periodo")
+            guardar(
+                periodo,
+                actor,
+                "periodo",
+            )
 
             CalculoIndicadores.recalcular_periodo(periodo)
 
@@ -187,8 +209,10 @@ class CRUDPeriodo:
         )
 
         with transaction.atomic():
-            periodo = Periodo.objects.select_for_update().get(
-                pk=periodo.pk
+            periodo = (
+                Periodo.objects
+                .select_for_update()
+                .get(pk=periodo.pk)
             )
 
             if not periodo.abierto:
@@ -206,11 +230,6 @@ class CRUDPeriodo:
 
             periodo.estado = Periodo.ESTADO_CERRADO
             periodo.save(update_fields=["estado"])
-
-            CRUDPeriodo._registrar_version_reglas(
-                periodo,
-                actor,
-            )
 
             auditar(
                 actor,
@@ -232,7 +251,7 @@ class CRUDPeriodo:
 
     @staticmethod
     def reabrir_periodo(periodo, motivo, actor=None):
-        """Solo Administrador puede reabrir períodos."""
+        """Reabre un período y registra una nueva versión de reglas."""
         _exigir_rol(
             actor,
             ROLES_CONFIGURACION,
@@ -247,8 +266,10 @@ class CRUDPeriodo:
             )
 
         with transaction.atomic():
-            periodo = Periodo.objects.select_for_update().get(
-                pk=periodo.pk
+            periodo = (
+                Periodo.objects
+                .select_for_update()
+                .get(pk=periodo.pk)
             )
 
             if periodo.abierto:
@@ -266,6 +287,12 @@ class CRUDPeriodo:
                     "estado",
                     "version_parametros",
                 ]
+            )
+
+            # RF-038: registrar la nueva versión al reabrir.
+            CRUDPeriodo._registrar_version_reglas(
+                periodo,
+                actor,
             )
 
             auditar(
