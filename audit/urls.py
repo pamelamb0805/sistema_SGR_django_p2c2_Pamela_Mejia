@@ -37,4 +37,10 @@ urlpatterns = [
         views.marcar_notificaciones_leidas,
         name="notificaciones_marcar_leidas",
     ),
+
+    path(
+    "notificaciones/historial/",
+    views.NotificacionHistorialView.as_view(),
+    name="notificaciones_historial",
+    ),
 ]

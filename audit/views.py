@@ -23,6 +23,8 @@ from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
 from django.views.decorators.http import require_GET
+from django.contrib.auth.mixins import LoginRequiredMixin
+from .models import Auditoria, Notificacion
 
 class AuditoriaMixin(RolRequeridoMixin):
     roles_permitidos = ROLES_AUDITORIA
@@ -298,3 +300,43 @@ def obtener_notificaciones(request):
         "pendientes": pendientes,
         "notificaciones": resultado,
     })
+
+class NotificacionHistorialView(LoginRequiredMixin, ListView):
+    """
+    Historial permanente de notificaciones del usuario autenticado.
+
+    Incluye notificaciones leídas y pendientes.
+    No modifica ni elimina registros.
+    """
+    model = Notificacion
+    template_name = "audit/notificaciones.html"
+    context_object_name = "notificaciones"
+    paginate_by = 25
+
+    def get_queryset(self):
+        return (
+            Notificacion.objects
+            .filter(usuario=self.request.user)
+            .select_related(
+                "auditoria",
+                "auditoria__funcionario",
+                "delegacion",
+            )
+            .order_by(
+                "-fecha_creacion",
+                "-id_notificacion",
+            )
+        )
+
+    def get_context_data(self, **kwargs):
+        contexto = super().get_context_data(**kwargs)
+
+        contexto["total_notificaciones"] = (
+            self.get_queryset().count()
+        )
+
+        contexto["total_pendientes"] = (
+            self.get_queryset().filter(leida=False).count()
+        )
+
+        return contexto
