@@ -277,14 +277,19 @@ class CRUDMeta:
     @staticmethod
     def validar_suma_ponderaciones(cargo, periodo):
         """
-        RN-001: comprueba la suma de ponderadores por funcionario.
+        RF-006: verifica las ponderaciones por funcionario,
+        cargo y período.
+
+        Permite identificar configuraciones pendientes,
+        completas o excedidas sin impedir su configuración
+        progresiva.
         """
         resultado = []
 
         funcionarios = Funcionario.objects.filter(
             cargo=cargo,
             estado=Funcionario.ESTADO_ACTIVO,
-        )
+        ).select_related("cargo", "delegacion")
 
         for funcionario in funcionarios:
             suma = CRUDMeta.suma_ponderaciones(
@@ -292,14 +297,37 @@ class CRUDMeta:
                 periodo,
             )
 
+            faltante = max(
+                Decimal("0.00"),
+                Decimal("100.00") - suma,
+            )
+
+            excedente = max(
+                Decimal("0.00"),
+                suma - Decimal("100.00"),
+            )
+
+            completa = suma == Decimal("100.00")
+
+            if completa:
+                estado = "Completa"
+            elif suma < Decimal("100.00"):
+                estado = "Pendiente"
+            else:
+                estado = "Excedida"
+
             resultado.append({
                 "funcionario": funcionario,
+                "cargo": cargo,
+                "periodo": periodo,
                 "suma": suma,
-                "completa": suma == Decimal("100"),
+                "faltante": faltante,
+                "excedente": excedente,
+                "completa": completa,
+                "estado": estado,
             })
 
         return resultado
-
     @staticmethod
     def _preparar(meta):
         meta.cargo_id = meta.funcionario.cargo_id
