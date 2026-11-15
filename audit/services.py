@@ -48,10 +48,11 @@ def registrar_evento(usuario=None, evento="", entidad="", id_entidad=0, valor_an
         valor_anterior=_como_texto(valor_anterior), valor_nuevo=_como_texto(valor_nuevo),
         funcionario=funcionario)
 
+
 def crear_notificaciones(auditoria, delegacion_id=None):
     """
-    Crea notificaciones persistentes según la responsabilidad del perfil
-    y el tipo de evento. No modifica ni elimina registros de auditoría.
+    Crea notificaciones persistentes según el rol responsable
+    y el tipo de evento. Respeta el ámbito territorial.
     """
     from django.contrib.auth import get_user_model
     from core.mixins import (
@@ -63,13 +64,9 @@ def crear_notificaciones(auditoria, delegacion_id=None):
     entidad = (auditoria.entidad_afectada or "").lower()
     evento = (auditoria.evento or "").upper()
 
-    # Inicio de sesión: aviso informativo para Administración.
-    # No reemplaza el registro obligatorio en auditoría.
     if entidad == "usuario" and evento == "LOGIN":
         roles_permitidos = {"Administrador"}
-
     else:
-        # Destinatarios según la responsabilidad funcional.
         destinatarios = {
             "delegacion": {"Administrador"},
             "cargo": {"Administrador"},
@@ -78,22 +75,14 @@ def crear_notificaciones(auditoria, delegacion_id=None):
             "funcionario": {"Administrador"},
             "usuario": {"Administrador"},
             "catalogo": {"Administrador"},
-
             "periodo": {"Administrador", "Coordinador"},
             "meta": {"Administrador", "Coordinador"},
             "ajuste": {"Administrador", "Coordinador"},
             "indicador": {"Administrador", "Coordinador"},
-
-            # Las evidencias requieren revisión del Verificador.
             "actividad": {"Funcionario", "Delegado"},
             "evidencia": {"Verificador"},
-            # El resultado de la validación debe llegar al Funcionario.
             "validacion": {"Funcionario"},
-
-            # Seguimiento de compromisos en la delegación.
             "compromiso": {"Funcionario", "Delegado"},
-
-            # Atención social: perfiles operativos y jefatura territorial.
             "usuario_social": {"Funcionario", "Delegado"},
             "caso": {"Funcionario", "Delegado"},
             "atencion_social": {"Funcionario", "Delegado"},
@@ -107,29 +96,33 @@ def crear_notificaciones(auditoria, delegacion_id=None):
 
     Usuario = get_user_model()
 
+    # is_active es una propiedad Python en nuestro modelo Usuario.
+    # No debe utilizarse como filtro SQL.
     usuarios = Usuario.objects.filter(
         activo_acceso=True,
-        is_active=True,
     ).select_related(
         "funcionario",
         "funcionario__delegacion",
     ).prefetch_related(
-        "funcionario__roles",
+        "funcionario__funcionario_roles__rol",
         "delegaciones_autorizadas",
     )
 
     notificaciones = []
 
     for usuario in usuarios:
-        roles = get_roles(usuario)
-
-        if not roles.intersection(roles_permitidos):
+        if not usuario.is_active:
             continue
 
-        # Para eventos asociados a una delegación, limitar destinatarios
-        # a quienes tienen autorización territorial sobre ella.
+        roles_usuario = get_roles(usuario)
+
+        if not roles_usuario.intersection(roles_permitidos):
+            continue
+
         if delegacion_id and not es_transversal(usuario):
-            autorizadas = set(get_delegaciones_autorizadas_ids(usuario))
+            autorizadas = set(
+                get_delegaciones_autorizadas_ids(usuario)
+            )
 
             if delegacion_id not in autorizadas:
                 continue
