@@ -115,40 +115,67 @@ class PeriodoListView(PageSizeMixin, LecturaMixin, ModoMixin, ListView):
 
         return qs.order_by("-fecha_inicio")
 
-    def get_context_data(self, **kwargs):
-        contexto = super().get_context_data(**kwargs)
-        for meta in contexto.get("metas", []):
-            if meta.periodo.abierto:
-                datos = CRUDMeta._datos_version(meta)
-            else:
-                datos = CalculoIndicadores._datos_meta_historicos(
-                    meta,
-                    meta.periodo.fecha_termino,
-                )
+def get_context_data(self, **kwargs):
+    contexto = super().get_context_data(**kwargs)
 
-            meta.nombre_item_historico = datos.get(
-                "item_nombre",
-                meta.item.nombre_item,
-            )
-        filtros = self.request.GET
+    funcionarios = filtrar_por_ambito(
+        Funcionario.objects.filter(
+            estado=Funcionario.ESTADO_ACTIVO
+        ).select_related("cargo", "delegacion"),
+        self.request.user,
+        "delegacion_id",
+    )
 
-        contexto.update(
-            puede_reabrir=tiene_rol(
-                self.request.user, *ROLES_CONFIGURACION
-            ),
-            reabrir_form=ReabrirPeriodoForm(),
-            q=filtros.get("q", ""),
-            estado_sel=filtros.get("estado", ""),
-            fecha_desde=filtros.get("fecha_desde", ""),
-            fecha_hasta=filtros.get("fecha_hasta", ""),
-            total_resultados=self.get_queryset().count(),
-            puede_configurar_reglas=tiene_rol(
+    configuracion = []
+
+    for funcionario in funcionarios:
+        suma = CRUDMeta.suma_ponderaciones(
+            funcionario,
+            self.object,
+        )
+
+        faltante = max(0, 100 - suma)
+        excedente = max(0, suma - 100)
+
+        if suma == 100:
+            estado = "Completa"
+        elif suma < 100:
+            estado = "Pendiente"
+        else:
+            estado = "Excedida"
+
+        configuracion.append({
+            "funcionario": funcionario,
+            "suma": suma,
+            "faltante": faltante,
+            "excedente": excedente,
+            "completa": estado == "Completa",
+            "estado": estado,
+            "metas": funcionario.metas.filter(
+                periodo=self.object
+            ).count(),
+        })
+
+    contexto.update(
+        titulo=f"Período {self.object}",
+        configuracion=configuracion,
+        total_metas=self.object.metas.count(),
+        puede_reabrir=tiene_rol(
             self.request.user,
             *ROLES_CONFIGURACION,
         ),
-        )
-        return contexto
+        puede_configurar_reglas=tiene_rol(
+            self.request.user,
+            *ROLES_CONFIGURACION,
+        ),
+        puede_editar=tiene_rol(
+            self.request.user,
+            *ROLES_MEDICION,
+        ),
+        reabrir_form=ReabrirPeriodoForm(),
+    )
 
+    return contexto
 
 class PeriodoDetailView(LecturaMixin, ModoMixin, DetailView):
     """Resumen del período y estado de ponderaciones por funcionario."""
@@ -359,6 +386,37 @@ def configurar_reglas_periodo(request, pk):
         },
     )
 
+@login_required
+def historial_reglas_periodo(request, pk):
+    """
+    Consulta el historial de versiones de reglas de cálculo
+    de un período, sin permitir modificar versiones anteriores.
+    """
+    if not tiene_rol(request.user, *ROLES_SUPERVISION):
+        return denegar_acceso(request)
+
+    periodo = get_object_or_404(
+        Periodo,
+        pk=pk,
+    )
+
+    versiones = (
+        ReglaCalculoVersion.objects
+        .filter(periodo=periodo)
+        .select_related("creado_por")
+        .order_by("-numero_version")
+    )
+
+    return render(
+        request,
+        "measurement/reglas_historial.html",
+        {
+            "titulo": "Historial de reglas de cálculo",
+            "periodo": periodo,
+            "versiones": versiones,
+            "total_versiones": versiones.count(),
+        },
+    )
 class PeriodoRecalcularView(AccionPostView):
     roles_permitidos = ROLES_MEDICION
     redirect_name = "measurement:periodo_list"

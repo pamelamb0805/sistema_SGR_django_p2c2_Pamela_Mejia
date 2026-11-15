@@ -1,447 +1,151 @@
 
 {% extends "base.html" %}
 
-{% block title %}{{ titulo|default:"Períodos de medición" }}{% endblock %}
-{% block page_title %}{{ titulo|default:"Períodos de medición" }}{% endblock %}
+{% block title %}{{ titulo }} · SGR{% endblock %}
+{% block page_title %}{{ titulo }}{% endblock %}
 
 {% block page_actions %}
+
     {% if modo == "lista" %}
+
         <div class="d-flex flex-wrap gap-2">
-            <a href="{% url 'measurement:periodo_exportar_excel' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}"
-               class="btn btn-outline-success">
+
+            <a
+                href="{% url 'measurement:periodo_exportar_excel' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}"
+                class="btn btn-outline-success"
+            >
                 <i class="bi bi-file-earmark-excel me-1"></i>
                 Exportar Excel
             </a>
 
             {% if puede_editar %}
-                <a href="{% url 'measurement:periodo_create' %}"
-                   class="btn btn-primary">
-                    <i class="bi bi-plus-circle"></i>
+                <a
+                    href="{% url 'measurement:periodo_create' %}"
+                    class="btn btn-primary"
+                >
+                    <i class="bi bi-plus-circle me-1"></i>
                     Nuevo período
                 </a>
             {% endif %}
+
         </div>
 
     {% elif modo == "detalle" %}
-        <a href="{% url 'measurement:periodo_list' %}"
-           class="btn btn-outline-secondary">
-            Volver al listado
-            {% if puede_configurar_reglas and periodo.abierto %}
-            <a
-                href="{% url 'measurement:periodo_reglas' periodo.pk %}"
-                class="btn btn-outline-primary"
-            >
-                <i class="bi bi-sliders me-1"></i>
-                Configurar reglas
-            </a>
-            {% endif %}
-        </a>
 
-        {% if puede_editar and periodo.abierto %}
-            <a href="{% url 'measurement:periodo_update' periodo.pk %}"
-               class="btn btn-primary">
-                Editar período
+        <div class="d-flex flex-wrap gap-2">
+
+            <a
+                href="{% url 'measurement:periodo_list' %}"
+                class="btn btn-outline-secondary"
+            >
+                <i class="bi bi-arrow-left me-1"></i>
+                Volver al listado
             </a>
-        {% endif %}
+
+            {% if puede_configurar_reglas and periodo.abierto %}
+                <a
+                    href="{% url 'measurement:periodo_reglas' periodo.pk %}"
+                    class="btn btn-outline-primary"
+                >
+                    <i class="bi bi-sliders me-1"></i>
+                    Configurar reglas
+                </a>
+            {% endif %}
+
+            <a
+                href="{% url 'measurement:periodo_reglas_historial' periodo.pk %}"
+                class="btn btn-outline-info"
+            >
+                <i class="bi bi-clock-history me-1"></i>
+                Historial de reglas
+            </a>
+
+            {% if puede_editar and periodo.abierto %}
+                <a
+                    href="{% url 'measurement:periodo_update' periodo.pk %}"
+                    class="btn btn-primary"
+                >
+                    <i class="bi bi-pencil me-1"></i>
+                    Editar período
+                </a>
+            {% endif %}
+
+        </div>
 
     {% elif modo == "form" %}
-        <a href="{% url 'measurement:periodo_list' %}"
-           class="btn btn-outline-secondary">
+
+        <a
+            href="{% url 'measurement:periodo_list' %}"
+            class="btn btn-outline-secondary"
+        >
+            <i class="bi bi-arrow-left me-1"></i>
             Cancelar
         </a>
+
     {% endif %}
+
 {% endblock %}
+
 
 {% block content %}
 
-{% if modo == "form" %}
+    {% if modo == "lista" %}
 
-    <div class="card shadow-sm">
-        <div class="card-header">
-            <h5 class="mb-0">{{ titulo }}</h5>
-        </div>
+        <div class="card shadow-sm">
 
-        <div class="card-body">
-            <form method="post" novalidate>
-                {% csrf_token %}
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="bi bi-calendar-range me-2"></i>
+                    Períodos de medición
+                </h5>
 
-                {% if form.non_field_errors %}
-                    <div class="alert alert-danger">
-                        {{ form.non_field_errors }}
-                    </div>
+                <span class="badge text-bg-secondary">
+                    {{ periodos|length }} registros
+                </span>
+            </div>
+
+            <div class="card-body">
+
+                {% if filtros %}
+                    <form method="get" class="row g-3 mb-4">
+
+                        {% for field in filtros %}
+                            <div class="col-md-4">
+                                <label
+                                    for="{{ field.id_for_label }}"
+                                    class="form-label"
+                                >
+                                    {{ field.label }}
+                                </label>
+
+                                {{ field }}
+                            </div>
+                        {% endfor %}
+
+                        <div class="col-12 d-flex gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-search me-1"></i>
+                                Filtrar
+                            </button>
+
+                            <a
+                                href="{% url 'measurement:periodo_list' %}"
+                                class="btn btn-outline-secondary"
+                            >
+                                Limpiar
+                            </a>
+                        </div>
+
+                    </form>
                 {% endif %}
 
-                <div class="row">
-                    {% for field in form %}
-                        <div class="col-md-6 mb-3">
-                            <label for="{{ field.id_for_label }}"
-                                   class="form-label">
-                                {{ field.label }}
-                                {% if field.field.required %}*{% endif %}
-                            </label>
-
-                            {{ field }}
-
-                            {% if field.help_text %}
-                                <div class="form-text">
-                                    {{ field.help_text }}
-                                </div>
-                            {% endif %}
-
-                            {% for error in field.errors %}
-                                <div class="text-danger small">
-                                    {{ error }}
-                                </div>
-                            {% endfor %}
-                        </div>
-                    {% endfor %}
-                </div>
-
-                <div class="alert alert-info">
-                    <i class="bi bi-info-circle"></i>
-                    Los días computables se calcularán automáticamente
-                    a partir de las fechas ingresadas. No se permite crear
-                    períodos que se superpongan con otros existentes.
-                </div>
-
-                <button type="submit" class="btn btn-primary">
-                    Guardar período
-                </button>
-
-                <a href="{% url 'measurement:periodo_list' %}"
-                   class="btn btn-outline-secondary">
-                    Cancelar
-                </a>
-            </form>
-        </div>
-    </div>
-
-{% elif modo == "detalle" %}
-
-    <!-- INFORMACIÓN GENERAL DEL PERÍODO -->
-    <div class="card shadow-sm mb-4">
-        <div class="card-header d-flex justify-content-between align-items-center">
-            <h5 class="mb-0">Información del período</h5>
-
-            {% if periodo.abierto %}
-                <span class="badge bg-success">Abierto</span>
-            {% else %}
-                <span class="badge bg-secondary">Cerrado</span>
-            {% endif %}
-        </div>
-
-        <div class="card-body">
-            <div class="row">
-                <div class="col-md-4 mb-3">
-                    <div class="text-muted small">Fecha de inicio</div>
-                    <strong>{{ periodo.fecha_inicio|date:"d/m/Y" }}</strong>
-                </div>
-
-                <div class="col-md-4 mb-3">
-                    <div class="text-muted small">Fecha de término</div>
-                    <strong>{{ periodo.fecha_termino|date:"d/m/Y" }}</strong>
-                </div>
-
-                <div class="col-md-4 mb-3">
-                    <div class="text-muted small">Días computables</div>
-                    <strong>{{ periodo.dias_computables }}</strong>
-                </div>
-
-                <div class="col-md-4 mb-3">
-                    <div class="text-muted small">Versión de parámetros</div>
-                    <strong>{{ periodo.version_parametros }}</strong>
-                </div>
-
-                <div class="col-md-4 mb-3">
-                    <div class="text-muted small">Total de metas asociadas</div>
-                    <strong>{{ total_metas }}</strong>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- CONFIGURACIÓN DE PONDERACIONES -->
-    <div class="card shadow-sm mb-4">
-        <div class="card-header">
-            <h5 class="mb-0">
-                Configuración de metas y ponderaciones por funcionario
-            </h5>
-        </div>
-
-        <div class="card-body">
-            {% if configuracion %}
                 <div class="table-responsive">
+
                     <table class="table table-hover align-middle">
+
                         <thead>
                             <tr>
-                                <th>Funcionario</th>
-                                <th>Delegación</th>
-                                <th>Cargo</th>
-                                <th>Metas registradas</th>
-                                <th>Ponderación asignada</th>
-                                <th>Faltante</th>
-                                <th>Excedente</th>
-                                <th>Estado</th>
-                            </tr>
-                        </thead>
-
-                        <tbody>
-                            {% for fila in configuracion %}
-                                <tr>
-                                    <td>
-                                        {{ fila.funcionario.nombre }}
-                                    </td>
-
-                                    <td>
-                                        {{ fila.funcionario.delegacion|default:"—" }}
-                                    </td>
-
-                                    <td>
-                                        {{ fila.funcionario.cargo|default:"—" }}
-                                    </td>
-
-                                    <td>
-                                        {{ fila.metas }}
-                                    </td>
-
-                                    <td>
-                                        <strong>
-                                            {{ fila.suma|floatformat:2 }} %
-                                        </strong>
-                                    </td>
-
-                                    <td>
-                                        {% if fila.faltante > 0 %}
-                                            <span class="text-warning fw-semibold">
-                                                {{ fila.faltante|floatformat:2 }} %
-                                            </span>
-                                        {% else %}
-                                            <span class="text-muted">
-                                                0,00 %
-                                            </span>
-                                        {% endif %}
-                                    </td>
-
-                                    <td>
-                                        {% if fila.excedente > 0 %}
-                                            <span class="text-danger fw-semibold">
-                                                {{ fila.excedente|floatformat:2 }} %
-                                            </span>
-                                        {% else %}
-                                            <span class="text-muted">
-                                                0,00 %
-                                            </span>
-                                        {% endif %}
-                                    </td>
-
-                                    <td>
-                                        {% if fila.estado == "Completa" %}
-                                            <span class="badge bg-success">
-                                                Completa
-                                            </span>
-
-                                        {% elif fila.estado == "Excedida" %}
-                                            <span class="badge bg-danger">
-                                                Excedida
-                                            </span>
-
-                                        {% else %}
-                                            <span class="badge bg-warning text-dark">
-                                                Pendiente
-                                            </span>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="alert alert-info mb-0 mt-3">
-                    <i class="bi bi-info-circle me-1"></i>
-                    La ponderación total esperada por funcionario es del
-                    100 %. Una configuración pendiente indica que todavía
-                    falta asignar ponderación. Una configuración excedida
-                    indica que se supera el máximo permitido.
-                </div>
-
-            {% else %}
-                <div class="alert alert-info mb-0">
-                    No hay funcionarios activos dentro del ámbito autorizado
-                    para mostrar.
-                </div>
-            {% endif %}
-        </div>
-    </div>
-
-    <!-- ACCIONES DEL PERÍODO -->
-    <div class="card shadow-sm">
-        <div class="card-header">
-            <h5 class="mb-0">Acciones del período</h5>
-        </div>
-
-        <div class="card-body d-flex flex-wrap gap-2">
-
-            {% if periodo.abierto and puede_editar %}
-                <form method="post"
-                      action="{% url 'measurement:periodo_cerrar' periodo.pk %}">
-                    {% csrf_token %}
-
-                    <button type="submit"
-                            class="btn btn-outline-danger"
-                            onclick="return confirm('¿Confirmas el cierre de este período?');">
-                        <i class="bi bi-lock me-1"></i>
-                        Cerrar período
-                    </button>
-                </form>
-
-                <form method="post"
-                      action="{% url 'measurement:periodo_recalcular' periodo.pk %}">
-                    {% csrf_token %}
-
-                    <button type="submit"
-                            class="btn btn-outline-primary">
-                        <i class="bi bi-arrow-repeat me-1"></i>
-                        Recalcular indicadores
-                    </button>
-                </form>
-            {% endif %}
-
-            {% if puede_reabrir and not periodo.abierto %}
-                <form method="post"
-                      action="{% url 'measurement:periodo_reabrir' periodo.pk %}"
-                      class="w-100 mt-3">
-                    {% csrf_token %}
-
-                    <label for="motivo-reapertura" class="form-label">
-                        Motivo de la reapertura
-                    </label>
-
-                    {{ reabrir_form.motivo }}
-
-                    {% for error in reabrir_form.motivo.errors %}
-                        <div class="text-danger small">
-                            {{ error }}
-                        </div>
-                    {% endfor %}
-
-                    <button type="submit"
-                            class="btn btn-warning mt-2"
-                            onclick="return confirm('¿Confirmas la reapertura de este período?');">
-                        <i class="bi bi-unlock me-1"></i>
-                        Reabrir período
-                    </button>
-                </form>
-            {% endif %}
-
-        </div>
-    </div>
-
-{% else %}
-
-    <!-- FILTROS -->
-    <div class="card shadow-sm mb-3">
-        <div class="card-header">
-            <h5 class="mb-0">Buscar y filtrar períodos</h5>
-        </div>
-
-        <div class="card-body">
-            <form method="get" class="row g-3 align-items-end">
-
-                <div class="col-md-4">
-                    <label for="q" class="form-label">
-                        Buscar fecha
-                    </label>
-
-                    <input type="text"
-                           name="q"
-                           id="q"
-                           class="form-control"
-                           value="{{ q }}"
-                           placeholder="dd/mm/aaaa o aaaa-mm-dd">
-                </div>
-
-                <div class="col-md-3">
-                    <label for="estado" class="form-label">
-                        Estado
-                    </label>
-
-                    <select name="estado"
-                            id="estado"
-                            class="form-select">
-                        <option value="">Todos</option>
-
-                        <option value="Abierto"
-                            {% if estado_sel == "Abierto" %}selected{% endif %}>
-                            Abierto
-                        </option>
-
-                        <option value="Cerrado"
-                            {% if estado_sel == "Cerrado" %}selected{% endif %}>
-                            Cerrado
-                        </option>
-                    </select>
-                </div>
-
-                <div class="col-md-2">
-                    <label for="fecha_desde" class="form-label">
-                        Desde
-                    </label>
-
-                    <input type="date"
-                           name="fecha_desde"
-                           id="fecha_desde"
-                           class="form-control"
-                           value="{{ fecha_desde }}">
-                </div>
-
-                <div class="col-md-2">
-                    <label for="fecha_hasta" class="form-label">
-                        Hasta
-                    </label>
-
-                    <input type="date"
-                           name="fecha_hasta"
-                           id="fecha_hasta"
-                           class="form-control"
-                           value="{{ fecha_hasta }}">
-                </div>
-
-                <div class="col-md-1 d-flex gap-2">
-                    <button type="submit"
-                            class="btn btn-primary"
-                            title="Buscar">
-                        <i class="bi bi-search"></i>
-                    </button>
-                </div>
-
-                <div class="col-12">
-                    <a href="{% url 'measurement:periodo_list' %}"
-                       class="btn btn-outline-secondary btn-sm">
-                        <i class="bi bi-x-circle me-1"></i>
-                        Limpiar filtros
-                    </a>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- LISTADO DE PERÍODOS -->
-    <div class="card shadow-sm">
-        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <h5 class="mb-0">Períodos registrados</h5>
-
-            <span class="text-muted small">
-                Resultados: {{ total_resultados }}
-            </span>
-        </div>
-
-        <div class="card-body">
-            {% if periodos %}
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle">
-                        <thead>
-                            <tr>
+                                <th>ID</th>
                                 <th>Fecha de inicio</th>
                                 <th>Fecha de término</th>
                                 <th>Días computables</th>
@@ -452,8 +156,13 @@
                         </thead>
 
                         <tbody>
+
                             {% for periodo in periodos %}
+
                                 <tr>
+
+                                    <td>{{ periodo.pk }}</td>
+
                                     <td>
                                         {{ periodo.fecha_inicio|date:"d/m/Y" }}
                                     </td>
@@ -468,85 +177,369 @@
 
                                     <td>
                                         {% if periodo.abierto %}
-                                            <span class="badge bg-success">
+                                            <span class="badge text-bg-success">
                                                 Abierto
                                             </span>
                                         {% else %}
-                                            <span class="badge bg-secondary">
+                                            <span class="badge text-bg-secondary">
                                                 Cerrado
                                             </span>
                                         {% endif %}
                                     </td>
 
                                     <td>
-                                        {{ periodo.version_parametros }}
+                                        V{{ periodo.version_parametros }}
                                     </td>
 
                                     <td class="text-end">
-                                        <a href="{% url 'measurement:periodo_detail' periodo.pk %}"
-                                           class="btn btn-sm btn-outline-info">
+
+                                        <a
+                                            href="{% url 'measurement:periodo_detail' periodo.pk %}"
+                                            class="btn btn-sm btn-outline-primary"
+                                            title="Ver detalle"
+                                        >
                                             <i class="bi bi-eye"></i>
-                                            Ver detalle
                                         </a>
 
                                         {% if puede_editar and periodo.abierto %}
-                                            <a href="{% url 'measurement:periodo_update' periodo.pk %}"
-                                               class="btn btn-sm btn-outline-primary">
+                                            <a
+                                                href="{% url 'measurement:periodo_update' periodo.pk %}"
+                                                class="btn btn-sm btn-outline-warning"
+                                                title="Editar"
+                                            >
                                                 <i class="bi bi-pencil"></i>
-                                                Editar
                                             </a>
-
-                                            <form method="post"
-                                                  action="{% url 'measurement:periodo_cerrar' periodo.pk %}"
-                                                  class="d-inline">
-                                                {% csrf_token %}
-
-                                                <button type="submit"
-                                                        class="btn btn-sm btn-outline-danger"
-                                                        onclick="return confirm('¿Confirmas el cierre de este período?');">
-                                                    <i class="bi bi-lock"></i>
-                                                    Cerrar
-                                                </button>
-                                            </form>
                                         {% endif %}
 
-                                        {% if puede_reabrir and not periodo.abierto %}
-                                            <form method="post"
-                                                  action="{% url 'measurement:periodo_reabrir' periodo.pk %}"
-                                                  class="mt-2">
-                                                {% csrf_token %}
+                                    </td>
 
-                                                <input type="text"
-                                                       name="motivo"
-                                                       class="form-control form-control-sm mb-1"
-                                                       placeholder="Motivo de reapertura"
-                                                       required>
+                                </tr>
 
-                                                <button type="submit"
-                                                        class="btn btn-sm btn-outline-warning"
-                                                        onclick="return confirm('¿Confirmas la reapertura?');">
-                                                    <i class="bi bi-unlock"></i>
-                                                    Reabrir
-                                                </button>
-                                            </form>
-                                        {% endif %}
+                            {% empty %}
+
+                                <tr>
+                                    <td colspan="7" class="text-center py-4 text-muted">
+                                        No existen períodos registrados.
                                     </td>
                                 </tr>
+
                             {% endfor %}
+
                         </tbody>
+
                     </table>
+
                 </div>
 
-            {% else %}
-                <div class="alert alert-info mb-0">
-                    No hay períodos que coincidan con los filtros seleccionados.
-                </div>
-            {% endif %}
+                {% if is_paginated %}
+                    <nav aria-label="Paginación de períodos">
+                        <ul class="pagination justify-content-center">
 
-            {% include "partials/_pagination.html" %}
+                            {% if page_obj.has_previous %}
+                                <li class="page-item">
+                                    <a
+                                        class="page-link"
+                                        href="?page={{ page_obj.previous_page_number }}{% if request.GET.urlencode %}&{{ request.GET.urlencode }}{% endif %}"
+                                    >
+                                        Anterior
+                                    </a>
+                                </li>
+                            {% endif %}
+
+                            <li class="page-item active">
+                                <span class="page-link">
+                                    {{ page_obj.number }} / {{ page_obj.paginator.num_pages }}
+                                </span>
+                            </li>
+
+                            {% if page_obj.has_next %}
+                                <li class="page-item">
+                                    <a
+                                        class="page-link"
+                                        href="?page={{ page_obj.next_page_number }}{% if request.GET.urlencode %}&{{ request.GET.urlencode }}{% endif %}"
+                                    >
+                                        Siguiente
+                                    </a>
+                                </li>
+                            {% endif %}
+
+                        </ul>
+                    </nav>
+                {% endif %}
+
+            </div>
         </div>
-    </div>
 
-{% endif %}
+
+    {% elif modo == "detalle" %}
+
+        <div class="row g-3 mb-4">
+
+            <div class="col-md-3">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="text-muted small">Fecha de inicio</div>
+                        <h5 class="mb-0">
+                            {{ periodo.fecha_inicio|date:"d/m/Y" }}
+                        </h5>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-3">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="text-muted small">Fecha de término</div>
+                        <h5 class="mb-0">
+                            {{ periodo.fecha_termino|date:"d/m/Y" }}
+                        </h5>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-3">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="text-muted small">Días computables</div>
+                        <h5 class="mb-0">
+                            {{ periodo.dias_computables }}
+                        </h5>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-3">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="text-muted small">Estado</div>
+
+                        {% if periodo.abierto %}
+                            <span class="badge text-bg-success fs-6">
+                                Abierto
+                            </span>
+                        {% else %}
+                            <span class="badge text-bg-secondary fs-6">
+                                Cerrado
+                            </span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="card shadow-sm mb-4">
+
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-gear me-2"></i>
+                    Configuración y versionamiento
+                </h5>
+            </div>
+
+            <div class="card-body">
+
+                <div class="row g-3">
+
+                    <div class="col-md-4">
+                        <div class="text-muted small">
+                            Versión de parámetros
+                        </div>
+                        <h5>V{{ periodo.version_parametros }}</h5>
+                    </div>
+
+                    <div class="col-md-4">
+                        <div class="text-muted small">
+                            Total de metas
+                        </div>
+                        <h5>{{ total_metas|default:periodo.metas.count }}</h5>
+                    </div>
+
+                    <div class="col-md-4">
+                        <div class="text-muted small">
+                            Funcionarios configurados
+                        </div>
+                        <h5>{{ configuracion|length }}</h5>
+                    </div>
+
+                </div>
+
+                {% if periodo.abierto %}
+                    <div class="alert alert-info mt-3 mb-0">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Este período está abierto. Los parámetros pueden
+                        modificarse mediante nuevas versiones de configuración.
+                    </div>
+                {% else %}
+                    <div class="alert alert-secondary mt-3 mb-0">
+                        <i class="bi bi-lock me-1"></i>
+                        Este período está cerrado. Sus resultados y parámetros
+                        históricos deben conservarse sin modificaciones.
+                    </div>
+                {% endif %}
+
+            </div>
+        </div>
+
+        {% if configuracion %}
+
+            <div class="card shadow-sm">
+
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-bar-chart me-2"></i>
+                        Ponderaciones por funcionario
+                    </h5>
+                </div>
+
+                <div class="table-responsive">
+
+                    <table class="table table-hover align-middle mb-0">
+
+                        <thead>
+                            <tr>
+                                <th>Funcionario</th>
+                                <th>Metas</th>
+                                <th>Ponderación acumulada</th>
+                                <th>Faltante</th>
+                                <th>Estado</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+
+                            {% for item in configuracion %}
+
+                                <tr>
+
+                                    <td>
+                                        {{ item.funcionario }}
+                                    </td>
+
+                                    <td>
+                                        {{ item.metas }}
+                                    </td>
+
+                                    <td>
+                                        {{ item.suma }} %
+                                    </td>
+
+                                    <td>
+                                        {{ item.faltante }} %
+                                    </td>
+
+                                    <td>
+
+                                        {% if item.estado == "Completa" %}
+                                            <span class="badge text-bg-success">
+                                                Completa
+                                            </span>
+
+                                        {% elif item.estado == "Pendiente" %}
+                                            <span class="badge text-bg-warning">
+                                                Pendiente
+                                            </span>
+
+                                        {% else %}
+                                            <span class="badge text-bg-danger">
+                                                Excedida
+                                            </span>
+                                        {% endif %}
+
+                                    </td>
+
+                                </tr>
+
+                            {% endfor %}
+
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+            </div>
+
+        {% endif %}
+
+
+    {% elif modo == "form" %}
+
+        <div class="card shadow-sm">
+
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-calendar-plus me-2"></i>
+                    {{ titulo }}
+                </h5>
+            </div>
+
+            <div class="card-body">
+
+                <form method="post" novalidate>
+
+                    {% csrf_token %}
+
+                    {% if form.non_field_errors %}
+                        <div class="alert alert-danger">
+                            {{ form.non_field_errors }}
+                        </div>
+                    {% endif %}
+
+                    <div class="row g-3">
+
+                        {% for field in form %}
+
+                            <div class="col-md-6">
+
+                                <label
+                                    for="{{ field.id_for_label }}"
+                                    class="form-label"
+                                >
+                                    {{ field.label }}
+                                </label>
+
+                                {{ field }}
+
+                                {% if field.help_text %}
+                                    <div class="form-text">
+                                        {{ field.help_text }}
+                                    </div>
+                                {% endif %}
+
+                                {% for error in field.errors %}
+                                    <div class="text-danger small">
+                                        {{ error }}
+                                    </div>
+                                {% endfor %}
+
+                            </div>
+
+                        {% endfor %}
+
+                    </div>
+
+                    <div class="d-flex flex-wrap gap-2 mt-4">
+
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-save me-1"></i>
+                            Guardar
+                        </button>
+
+                        <a
+                            href="{% url 'measurement:periodo_list' %}"
+                            class="btn btn-outline-secondary"
+                        >
+                            Cancelar
+                        </a>
+
+                    </div>
+
+                </form>
+
+            </div>
+        </div>
+
+    {% endif %}
 
 {% endblock %}

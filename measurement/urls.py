@@ -18,6 +18,11 @@ urlpatterns = [
     views.configurar_reglas_periodo,
     name="periodo_reglas",
     ),
+    path(
+    "periodos/<int:pk>/reglas/historial/",
+    views.historial_reglas_periodo,
+    name="periodo_reglas_historial",
+    ),
     # Metas
     path("metas/", views.MetaListView.as_view(), name="meta_list"),
     path("metas/nueva/", views.MetaCreateView.as_view(), name="meta_create"),
