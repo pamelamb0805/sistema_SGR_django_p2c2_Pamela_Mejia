@@ -139,6 +139,12 @@ class Catalogo(models.Model):
         if not self.area:
             errores["area"] = "El área es obligatoria."
 
+        if self.tipo_catalogo not in dict(self.TIPOS):
+            errores["tipo_catalogo"] = "Seleccione un tipo de catálogo válido."
+
+        if self.estado not in dict(self.ESTADOS):
+            errores["estado"] = "Seleccione un estado válido."
+
         if (
             self.tipo_catalogo == self.TIPO_SUBATENCION
             and not self.tipo_atencion_padre_id
@@ -193,6 +199,8 @@ class Catalogo(models.Model):
                     "en el mismo catálogo y área."
                 )
 
+        if errores:
+            raise ValidationError(errores)
     def en_uso(self):
         """True si algún registro (actividad, atención social...) ya referencia este elemento."""
         if not self.pk:
