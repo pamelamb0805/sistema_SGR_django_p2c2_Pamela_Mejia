@@ -19,6 +19,9 @@ from .services import (
 )
 
 from openpyxl import Workbook
+from django.contrib.auth.decorators import login_required
+from django.http import JsonResponse
+from django.views.decorators.http import require_POST
 
 class AuditoriaMixin(RolRequeridoMixin):
     roles_permitidos = ROLES_AUDITORIA
@@ -174,3 +177,31 @@ class AuditoriaExportarView(AuditoriaMixin, FiltrosMixin, View):
 
         libro.save(respuesta)
         return respuesta
+
+@login_required
+@require_POST
+def marcar_notificaciones_leidas(request):
+    """
+    Marca como leídas solamente las notificaciones
+    pertenecientes al usuario autenticado.
+    """
+    from .models import Notificacion
+
+    actualizadas = Notificacion.objects.filter(
+        usuario=request.user,
+        leida=False,
+    ).update(
+        leida=True,
+        fecha_lectura=timezone.now(),
+    )
+
+    pendientes = Notificacion.objects.filter(
+        usuario=request.user,
+        leida=False,
+    ).count()
+
+    return JsonResponse({
+        "ok": True,
+        "actualizadas": actualizadas,
+        "pendientes": pendientes,
+    })
