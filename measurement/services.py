@@ -460,7 +460,7 @@ class CRUDMeta:
             )
 
             guardar(meta, actor, "meta")
-            
+
             CRUDMeta._registrar_version(meta, actor)
 
             CalculoIndicadores.recalcular_indicador_meta(meta)
@@ -515,8 +515,54 @@ class CRUDMeta:
             "omitidas": omitidas,
         }
 
+
     @staticmethod
     def modificar_meta(meta, actor=None):
+        _exigir_rol(
+            actor,
+            ROLES_MEDICION,
+            "No tiene permiso para modificar metas.",
+        )
+
+        with transaction.atomic():
+            original = Meta.objects.select_for_update().get(
+                pk=meta.pk
+            )
+
+            if (
+                original.funcionario_id,
+                original.item_id,
+                original.periodo_id,
+            ) != (
+                meta.funcionario_id,
+                meta.item_id,
+                meta.periodo_id,
+            ):
+                raise ReglaNegocioError(
+                    "No se puede cambiar el funcionario, "
+                    "el ítem ni el período de una meta."
+                )
+
+            # Conserva la validación del período abierto.
+            CRUDMeta._preparar(meta)
+
+            CRUDMeta._validar(
+                meta,
+                es_nueva=False,
+                actor=actor,
+            )
+
+            # Guarda los nuevos parámetros.
+            guardar(meta, actor, "meta")
+
+            # RF-038: cierra la versión anterior y registra la nueva.
+            CRUDMeta._registrar_version(meta, actor)
+
+            # Actualiza el indicador con los parámetros vigentes.
+            CalculoIndicadores.recalcular_indicador_meta(meta)
+
+        return meta
+
         _exigir_rol(
             actor,
             ROLES_MEDICION,
