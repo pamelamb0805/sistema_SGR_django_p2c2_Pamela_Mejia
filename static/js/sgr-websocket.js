@@ -67,27 +67,29 @@
     // CONTADOR DE NOTIFICACIONES
     // ---------------------------------------------------------
 
-    function actualizarContador() {
-    if (!listaNotificaciones || !contadorNotificaciones) {
-        return;
-    }
+    function actualizarContador(resultado.pendientes) {
+        if (!listaNotificaciones || !contadorNotificaciones) {
+            return;
+        }
 
-    const pendientes = listaNotificaciones.querySelectorAll(
-        ".sgr-notification-unread"
-    ).length;
+        const pendientes = totalPendientes === null
+            ? listaNotificaciones.querySelectorAll(
+                ".sgr-notification-unread"
+            ).length
+            : Number(totalPendientes);
 
-    if (pendientes > 0) {
-        contadorNotificaciones.textContent =
-            pendientes > 99 ? "99+" : pendientes;
+        if (pendientes > 0) {
+            contadorNotificaciones.textContent =
+                pendientes > 99 ? "99+" : String(pendientes);
 
-        contadorNotificaciones.hidden = false;
-        contadorNotificaciones.classList.remove("d-none");
-    } else {
-        contadorNotificaciones.textContent = "0";
-        contadorNotificaciones.hidden = true;
-        contadorNotificaciones.classList.add("d-none");
-    }
-}
+            contadorNotificaciones.hidden = false;
+            contadorNotificaciones.classList.remove("d-none");
+        } else {
+            contadorNotificaciones.textContent = "0";
+            contadorNotificaciones.hidden = true;
+            contadorNotificaciones.classList.add("d-none");
+        }
+
 
     // ---------------------------------------------------------
     // MARCAR COMO LEÍDAS
@@ -172,15 +174,6 @@
                 marcarLeidas();
             }
         );
-    }
-
-    if (dropdownNotificaciones) {
-        dropdownNotificaciones
-            .closest(".dropdown")
-            ?.addEventListener(
-                "shown.bs.dropdown",
-                marcarLeidas
-            );
     }
 
     // ---------------------------------------------------------
