@@ -143,8 +143,9 @@ class CasoListView(PageSizeMixin, SocialMixin, ModoMixin, ListView):
         return contexto
 
 
+
 def exportar_casos_excel(request):
-    """Exporta los casos sociales y sus gestiones respetando filtros y permisos."""
+    """Exporta casos y gestiones respetando filtros, permisos e historia."""
 
     if not request.user.is_authenticated:
         return redirect("login")
@@ -152,7 +153,6 @@ def exportar_casos_excel(request):
     if not tiene_rol(request.user, *ROLES_SOCIAL):
         return denegar_acceso(request)
 
-    # Se replica el queryset del listado para conservar sus filtros.
     casos = (
         casos_visibles(request.user)
         .annotate(total_gestiones=Count("gestiones"))
@@ -168,7 +168,9 @@ def exportar_casos_excel(request):
 
     territorio = filtros.get("territorio", "").strip()
     if territorio:
-        casos = casos.filter(territorio__icontains=territorio)
+        casos = casos.filter(
+            territorio__icontains=territorio
+        )
 
     for campo, filtro in (
         ("estado_caso", "estado_caso"),
@@ -177,12 +179,12 @@ def exportar_casos_excel(request):
         ("fecha_hasta", "fecha_primer_registro__lte"),
     ):
         valor = filtros.get(campo, "").strip()
+
         if valor:
             casos = casos.filter(**{filtro: valor})
 
     libro = Workbook()
 
-    # Hoja 1: casos.
     hoja_casos = libro.active
     hoja_casos.title = "Casos"
 
@@ -190,24 +192,28 @@ def exportar_casos_excel(request):
         "N.º de caso",
         "Persona atendida",
         "Territorio",
-        "Delegación",
+        "Delegación histórica",
         "Fecha de primer registro",
         "Estado del caso",
         "Total de gestiones",
     ])
 
     for caso in casos:
+        delegacion_historica = caso.delegacion_historica or {}
+
         hoja_casos.append([
             caso.pk,
             caso.nombre,
             caso.territorio,
-            caso.delegacion_historica.get("nombre", caso.delegacion.nombre)
+            delegacion_historica.get(
+                "nombre",
+                caso.delegacion.nombre,
+            ),
             caso.fecha_primer_registro,
             caso.estado_caso,
             caso.total_gestiones,
         ])
 
-    # Hoja 2: gestiones de los casos incluidos en el listado filtrado.
     hoja_gestiones = libro.create_sheet("Gestiones")
 
     hoja_gestiones.append([
@@ -220,7 +226,7 @@ def exportar_casos_excel(request):
         "Fecha de atención",
         "Fecha de registro",
         "Funcionario responsable",
-        "Delegación",
+        "Delegación histórica",
         "Estado",
         "Resultado",
     ])
@@ -228,30 +234,49 @@ def exportar_casos_excel(request):
     gestiones = (
         gestiones_visibles(request.user)
         .filter(usuario_id__in=casos.values("pk"))
+        .select_related(
+            "usuario",
+            "tipo_atencion",
+            "subatencion",
+            "funcionario",
+            "delegacion",
+        )
         .order_by("usuario_id", "numero_gestion")
     )
 
     for gestion in gestiones:
+        delegacion_historica = (
+            gestion.delegacion_historica or {}
+        )
+
         hoja_gestiones.append([
             gestion.usuario_id,
             gestion.usuario.nombre,
             gestion.numero_gestion,
-            gestion.tipo_atencion_nombre or gestion.tipo_atencion.nombre,
-            gestion.subatencion_nombre or gestion.subatencion.nombre,
+            (
+                gestion.tipo_atencion_nombre
+                or gestion.tipo_atencion.nombre
+            ),
+            (
+                gestion.subatencion_nombre
+                or gestion.subatencion.nombre
+            ),
             gestion.descripcion,
             gestion.fecha,
-            gestion.fecha_registro.replace(tzinfo=None)
-            if gestion.fecha_registro else None,
+            (
+                gestion.fecha_registro.replace(tzinfo=None)
+                if gestion.fecha_registro
+                else None
+            ),
             gestion.funcionario.nombre,
-            gestion.delegacion_historica.get(
-            "nombre",
-            gestion.delegacion.nombre,
-        )
+            delegacion_historica.get(
+                "nombre",
+                gestion.delegacion.nombre,
+            ),
             gestion.estado,
             gestion.resultado,
         ])
 
-    # Formato general de las hojas.
     for hoja in libro.worksheets:
         hoja.freeze_panes = "A2"
         hoja.auto_filter.ref = hoja.dimensions
@@ -261,6 +286,7 @@ def exportar_casos_excel(request):
                 len(str(celda.value or ""))
                 for celda in columna
             )
+
             hoja.column_dimensions[
                 columna[0].column_letter
             ].width = min(ancho + 3, 45)
@@ -281,6 +307,7 @@ def exportar_casos_excel(request):
     respuesta["Cache-Control"] = "private, no-store"
 
     libro.save(respuesta)
+
     return respuesta
 
 class CasoDetailView(SocialMixin, ModoMixin, DetailView):
