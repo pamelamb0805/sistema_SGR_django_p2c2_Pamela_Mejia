@@ -523,6 +523,7 @@ def items_vigentes_funcionario(request, funcionario_id):
 # ---------------------------------------------------------------------------
 
 
+
 class MetaListView(
     LecturaMixin,
     AmbitoDelegacionMixin,
@@ -541,6 +542,7 @@ class MetaListView(
         qs = super().get_queryset().select_related(
             "periodo",
             "funcionario",
+            "funcionario__delegacion",
             "item",
             "cargo",
         )
@@ -553,43 +555,76 @@ class MetaListView(
             ("cargo", "cargo_id"),
             ("item", "item_id"),
         ):
-            valor = filtros.get(campo)
+            valor = filtros.get(campo, "").strip()
 
-            if valor and valor.isdigit():
+            if valor.isdigit():
                 qs = qs.filter(**{filtro: valor})
 
-        return qs
+        return qs.order_by(
+            "periodo",
+            "funcionario__nombre",
+            "item__nombre_item",
+        )
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
         filtros = self.request.GET
 
-        periodo_sel = filtros.get("periodo", "")
-        funcionario_sel = filtros.get("funcionario", "")
-        cargo_sel = filtros.get("cargo", "")
+        periodo_sel = filtros.get("periodo", "").strip()
+        funcionario_sel = filtros.get("funcionario", "").strip()
+        cargo_sel = filtros.get("cargo", "").strip()
+        item_sel = filtros.get("item", "").strip()
 
+        # Solo funcionarios dentro del ámbito autorizado.
         funcionarios_autorizados = filtrar_por_ambito(
-            Funcionario.objects.all(),
+            Funcionario.objects.filter(
+                estado=Funcionario.ESTADO_ACTIVO,
+            ).select_related(
+                "cargo",
+                "delegacion",
+            ),
             self.request.user,
             "delegacion_id",
         )
 
+        # Los cargos disponibles se limitan a los de funcionarios
+        # que el usuario está autorizado a consultar.
+        cargos_autorizados = Cargo.objects.filter(
+            pk__in=funcionarios_autorizados.values_list(
+                "cargo_id",
+                flat=True,
+            )
+        ).distinct()
+
+        # Los ítems disponibles también respetan esos cargos.
+        items_autorizados = ItemMedible.objects.filter(
+            cargo__in=cargos_autorizados,
+            vigencia=True,
+        ).select_related(
+            "cargo",
+        ).order_by(
+            "cargo__nombre_cargo",
+            "nombre_item",
+        )
+
         contexto.update(
             periodos=Periodo.objects.all(),
-            cargos=Cargo.objects.all(),
+            cargos=cargos_autorizados,
             funcionarios=funcionarios_autorizados,
+            items=items_autorizados,
             periodo_sel=periodo_sel,
             funcionario_sel=funcionario_sel,
             cargo_sel=cargo_sel,
+            item_sel=item_sel,
             resumen_ponderaciones=[],
             cargo_resumen=None,
             periodo_resumen=None,
         )
 
-        # El detalle de ponderaciones requiere seleccionar
-        # explícitamente un cargo y un período.
+        # El resumen se calcula solamente cuando se seleccionan
+        # un cargo y un período válidos dentro del ámbito autorizado.
         if cargo_sel.isdigit() and periodo_sel.isdigit():
-            cargo = Cargo.objects.filter(
+            cargo = cargos_autorizados.filter(
                 pk=cargo_sel,
             ).first()
 
@@ -598,11 +633,20 @@ class MetaListView(
             ).first()
 
             if cargo and periodo:
+                funcionarios_resumen = funcionarios_autorizados.filter(
+                    cargo=cargo,
+                )
+
+                if funcionario_sel.isdigit():
+                    funcionarios_resumen = funcionarios_resumen.filter(
+                        pk=funcionario_sel,
+                    )
+
                 contexto["resumen_ponderaciones"] = (
                     CRUDMeta.resumen_configuracion_cargo(
                         cargo,
                         periodo,
-                        funcionarios_autorizados,
+                        funcionarios_resumen,
                     )
                 )
 

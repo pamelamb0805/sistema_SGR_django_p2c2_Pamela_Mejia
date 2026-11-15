@@ -5,70 +5,31 @@
 {% block content %}
 <div class="container-fluid py-4">
 
-    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
         <div>
             <h2 class="mb-1">Metas y ponderaciones</h2>
             <p class="text-muted mb-0">
-                Configuración y seguimiento de ponderaciones por funcionario y período.
+                Configuración y seguimiento de metas por funcionario y período.
             </p>
         </div>
 
         {% if puede_editar %}
-            <button class="btn btn-primary" type="button"
-                    data-bs-toggle="collapse" data-bs-target="#formMeta"
-                    aria-expanded="false" aria-controls="formMeta">
+            <a href="{% url 'measurement:meta_create' %}" class="btn btn-primary">
                 <i class="bi bi-plus-circle"></i> Nueva meta
-            </button>
+            </a>
         {% endif %}
     </div>
 
-    {# FORMULARIO #}
-    {% if puede_editar %}
-    <div class="collapse mb-4" id="formMeta">
-        <div class="card shadow-sm">
-            <div class="card-header">
-                <h5 class="mb-0">Registrar meta</h5>
+    {# MENSAJES #}
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show"
+                 role="alert">
+                {{ message }}
+                <button type="button" class="btn-close"
+                        data-bs-dismiss="alert" aria-label="Cerrar"></button>
             </div>
-            <div class="card-body">
-                <form method="post">
-                    {% csrf_token %}
-
-                    {% if form.non_field_errors %}
-                        <div class="alert alert-danger">
-                            {{ form.non_field_errors }}
-                        </div>
-                    {% endif %}
-
-                    <div class="row g-3">
-                        {% for field in form %}
-                            <div class="col-md-6 col-lg-4">
-                                <label class="form-label" for="{{ field.id_for_label }}">
-                                    {{ field.label }}
-                                </label>
-                                {{ field }}
-                                {% if field.help_text %}
-                                    <div class="form-text">{{ field.help_text }}</div>
-                                {% endif %}
-                                {% for error in field.errors %}
-                                    <div class="text-danger small">{{ error }}</div>
-                                {% endfor %}
-                            </div>
-                        {% endfor %}
-                    </div>
-
-                    <div class="mt-3 d-flex gap-2">
-                        <button type="submit" class="btn btn-success">
-                            Guardar meta
-                        </button>
-                        <button type="button" class="btn btn-outline-secondary"
-                                data-bs-toggle="collapse" data-bs-target="#formMeta">
-                            Cancelar
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
+        {% endfor %}
     {% endif %}
 
     {# FILTROS #}
@@ -76,6 +37,7 @@
         <div class="card-header">
             <h5 class="mb-0">Filtros de consulta</h5>
         </div>
+
         <div class="card-body">
             <form method="get" class="row g-3 align-items-end">
 
@@ -98,11 +60,7 @@
                         <option value="">Todos los cargos</option>
                         {% for cargo in cargos %}
                             <option value="{{ cargo.pk }}"
-                                {% if cargo_resumen and cargo_resumen.pk == cargo.pk %}
-                                    selected
-                                {% elif cargo_sel == cargo.pk|stringformat:"s" %}
-                                    selected
-                                {% endif %}>
+                                {% if cargo_sel == cargo.pk|stringformat:"s" %}selected{% endif %}>
                                 {{ cargo }}
                             </option>
                         {% endfor %}
@@ -135,125 +93,153 @@
                     </select>
                 </div>
 
-                <div class="col-12 d-flex gap-2">
+                <div class="col-12 d-flex flex-wrap gap-2">
                     <button type="submit" class="btn btn-primary">
                         <i class="bi bi-search"></i> Filtrar
                     </button>
-                    <a href="{% url 'measurement:metas' %}"
+
+                    <a href="{% url 'measurement:meta_list' %}"
                        class="btn btn-outline-secondary">
-                        Limpiar filtros
+                        <i class="bi bi-x-circle"></i> Limpiar filtros
                     </a>
                 </div>
             </form>
         </div>
     </div>
 
-    {# RESUMEN RF-006 #}
+    {# RESUMEN DE PONDERACIONES RF-006 #}
     {% if cargo_resumen and periodo_resumen %}
-    <div class="card shadow-sm mb-4">
-        <div class="card-header">
-            <h5 class="mb-1">Resumen de ponderaciones</h5>
-            <div class="text-muted small">
-                Cargo: {{ cargo_resumen }}
-                <span class="mx-2">|</span>
-                Período: {{ periodo_resumen }}
+        <div class="card shadow-sm mb-4">
+            <div class="card-header">
+                <h5 class="mb-1">Resumen de ponderaciones</h5>
+                <div class="text-muted small">
+                    Cargo: {{ cargo_resumen }}
+                    <span class="mx-2">|</span>
+                    Período: {{ periodo_resumen }}
+                </div>
+            </div>
+
+            <div class="card-body">
+
+                <div class="alert alert-info">
+                    La suma de ponderaciones por funcionario debe ser exactamente
+                    del 100 %. Los ítems vigentes sin una meta asignada se
+                    identificarán como pendientes.
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Funcionario</th>
+                                <th class="text-end">Suma actual</th>
+                                <th class="text-end">Faltante</th>
+                                <th class="text-end">Excedente</th>
+                                <th>Ítems pendientes</th>
+                                <th>Estado</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            {% for fila in resumen_ponderaciones %}
+                                <tr>
+                                    <td>
+                                        <strong>{{ fila.funcionario }}</strong>
+                                    </td>
+
+                                    <td class="text-end">
+                                        <strong>
+                                            {{ fila.suma|floatformat:2 }} %
+                                        </strong>
+                                    </td>
+
+                                    <td class="text-end">
+                                        {% if fila.faltante > 0 %}
+                                            <span class="text-warning fw-semibold">
+                                                {{ fila.faltante|floatformat:2 }} %
+                                            </span>
+                                        {% else %}
+                                            0,00 %
+                                        {% endif %}
+                                    </td>
+
+                                    <td class="text-end">
+                                        {% if fila.excedente > 0 %}
+                                            <span class="text-danger fw-semibold">
+                                                {{ fila.excedente|floatformat:2 }} %
+                                            </span>
+                                        {% else %}
+                                            0,00 %
+                                        {% endif %}
+                                    </td>
+
+                                    <td>
+                                        {% if fila.items_pendientes %}
+                                            <ul class="mb-0 ps-3">
+                                                {% for item in fila.items_pendientes %}
+                                                    <li class="mb-1">
+                                                        {{ item.nombre_item }}
+                                                        <span class="badge bg-warning text-dark">
+                                                            Pendiente
+                                                        </span>
+                                                    </li>
+                                                {% endfor %}
+                                            </ul>
+                                        {% else %}
+                                            <span class="text-success">
+                                                <i class="bi bi-check-circle"></i>
+                                                Sin ítems pendientes
+                                            </span>
+                                        {% endif %}
+                                    </td>
+
+                                    <td>
+                                        {% if fila.estado == "Completa" %}
+                                            <span class="badge bg-success">
+                                                Completa
+                                            </span>
+                                        {% elif fila.estado == "Excedida" %}
+                                            <span class="badge bg-danger">
+                                                Excedida
+                                            </span>
+                                        {% elif fila.estado == "Pendiente" %}
+                                            <span class="badge bg-warning text-dark">
+                                                Pendiente
+                                            </span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">
+                                                Incompleta
+                                            </span>
+                                        {% endif %}
+
+                                        <div class="small text-muted mt-1">
+                                            {{ fila.detalle }}
+                                        </div>
+                                    </td>
+                                </tr>
+                            {% empty %}
+                                <tr>
+                                    <td colspan="6"
+                                        class="text-center text-muted py-4">
+                                        No hay funcionarios activos para el
+                                        cargo seleccionado dentro de tu ámbito.
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="small text-muted">
+                    El resumen corresponde exclusivamente al período seleccionado.
+                </div>
             </div>
         </div>
-
-        <div class="card-body">
-            <div class="alert alert-info">
-                La suma de ponderaciones debe ser exactamente del 100 %.
-                Los ítems vigentes sin una meta asignada se muestran como pendientes.
-            </div>
-
-            <div class="table-responsive">
-                <table class="table table-bordered table-hover align-middle">
-                    <thead class="table-light">
-                        <tr>
-                            <th>Funcionario</th>
-                            <th class="text-end">Suma actual</th>
-                            <th class="text-end">Faltante</th>
-                            <th class="text-end">Excedente</th>
-                            <th>Ítems pendientes</th>
-                            <th>Estado</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for fila in resumen_ponderaciones %}
-                        <tr>
-                            <td>{{ fila.funcionario }}</td>
-
-                            <td class="text-end">
-                                <strong>{{ fila.suma|floatformat:2 }} %</strong>
-                            </td>
-
-                            <td class="text-end">
-                                {% if fila.faltante > 0 %}
-                                    <span class="text-warning fw-semibold">
-                                        {{ fila.faltante|floatformat:2 }} %
-                                    </span>
-                                {% else %}
-                                    0,00 %
-                                {% endif %}
-                            </td>
-
-                            <td class="text-end">
-                                {% if fila.excedente > 0 %}
-                                    <span class="text-danger fw-semibold">
-                                        {{ fila.excedente|floatformat:2 }} %
-                                    </span>
-                                {% else %}
-                                    0,00 %
-                                {% endif %}
-                            </td>
-
-                            <td>
-                                {% if fila.items_pendientes %}
-                                    <ul class="mb-0 ps-3">
-                                        {% for item in fila.items_pendientes %}
-                                            <li>
-                                                {{ item }}
-                                                <span class="badge bg-warning text-dark">
-                                                    Pendiente
-                                                </span>
-                                            </li>
-                                        {% endfor %}
-                                    </ul>
-                                {% else %}
-                                    <span class="text-success">Sin ítems pendientes</span>
-                                {% endif %}
-                            </td>
-
-                            <td>
-                                {% if fila.estado == "Completa" %}
-                                    <span class="badge bg-success">Completa</span>
-                                {% elif fila.estado == "Excedida" %}
-                                    <span class="badge bg-danger">Excedida</span>
-                                {% elif fila.estado == "Pendiente" %}
-                                    <span class="badge bg-warning text-dark">Pendiente</span>
-                                {% else %}
-                                    <span class="badge bg-secondary">Incompleta</span>
-                                {% endif %}
-                                <div class="small text-muted mt-1">
-                                    {{ fila.detalle }}
-                                </div>
-                            </td>
-                        </tr>
-                        {% empty %}
-                        <tr>
-                            <td colspan="6" class="text-center text-muted py-4">
-                                No hay funcionarios activos para el cargo seleccionado.
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
     {% else %}
         <div class="alert alert-secondary">
-            Selecciona un cargo y un período para consultar el resumen de ponderaciones.
+            <i class="bi bi-info-circle"></i>
+            Selecciona un cargo y un período para consultar el resumen de
+            ponderaciones.
         </div>
     {% endif %}
 
@@ -261,8 +247,13 @@
     <div class="card shadow-sm">
         <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
             <h5 class="mb-0">Metas registradas</h5>
+
             <span class="badge bg-secondary">
-                {{ page_obj.paginator.count|default:metas.count }} registros
+                {% if page_obj %}
+                    {{ page_obj.paginator.count }} registros
+                {% else %}
+                    {{ metas|length }} registros
+                {% endif %}
             </span>
         </div>
 
@@ -284,98 +275,112 @@
                             {% endif %}
                         </tr>
                     </thead>
+
                     <tbody>
                         {% for meta in metas %}
-                        <tr>
-                            <td>{{ meta.periodo }}</td>
-                            <td>{{ meta.funcionario }}</td>
-                            <td>{{ meta.cargo }}</td>
-                            <td>{{ meta.item }}</td>
-                            <td>{{ meta.valor_objetivo }}</td>
-                            <td>{{ meta.unidad }}</td>
-                            <td class="text-end">
-                                <strong>{{ meta.ponderador|floatformat:2 }} %</strong>
-                            </td>
-                            <td>{{ meta.fecha_version|default:"—" }}</td>
+                            <tr>
+                                <td>{{ meta.periodo }}</td>
+                                <td>{{ meta.funcionario }}</td>
+                                <td>{{ meta.cargo }}</td>
+                                <td>{{ meta.item }}</td>
+                                <td>{{ meta.valor_objetivo }}</td>
+                                <td>{{ meta.unidad }}</td>
 
-                            {% if puede_editar %}
-                            <td class="text-center">
-                                {% if meta.pk %}
-                                    <a href="{% url 'measurement:meta_editar' meta.pk %}"
-                                       class="btn btn-sm btn-outline-primary"
-                                       title="Editar meta">
-                                        <i class="bi bi-pencil"></i> Editar
-                                    </a>
+                                <td class="text-end">
+                                    <strong>
+                                        {{ meta.ponderador|floatformat:2 }} %
+                                    </strong>
+                                </td>
 
-                                    <form method="post"
-                                          action="{% url 'measurement:meta_eliminar' meta.pk %}"
-                                          class="d-inline"
-                                          onsubmit="return confirm('¿Seguro que deseas eliminar esta meta?');">
-                                        {% csrf_token %}
-                                        <button type="submit"
-                                                class="btn btn-sm btn-outline-danger"
-                                                title="Eliminar meta">
-                                            <i class="bi bi-trash"></i> Eliminar
-                                        </button>
-                                    </form>
+                                <td>
+                                    {{ meta.fecha_version|default:"—" }}
+                                </td>
+
+                                {% if puede_editar %}
+                                    <td class="text-center text-nowrap">
+                                        <a href="{% url 'measurement:meta_update' meta.pk %}"
+                                           class="btn btn-sm btn-outline-primary"
+                                           title="Editar meta">
+                                            <i class="bi bi-pencil"></i>
+                                            Editar
+                                        </a>
+
+                                        <form method="post"
+                                              action="{% url 'measurement:meta_delete' meta.pk %}"
+                                              class="d-inline"
+                                              onsubmit="return confirm('¿Seguro que deseas eliminar esta meta?');">
+                                            {% csrf_token %}
+                                            <button type="submit"
+                                                    class="btn btn-sm btn-outline-danger"
+                                                    title="Eliminar meta">
+                                                <i class="bi bi-trash"></i>
+                                                Eliminar
+                                            </button>
+                                        </form>
+                                    </td>
                                 {% endif %}
-                            </td>
-                            {% endif %}
-                        </tr>
+                            </tr>
                         {% empty %}
-                        <tr>
-                            <td colspan="9" class="text-center text-muted py-4">
-                                No hay metas registradas con los filtros seleccionados.
-                            </td>
-                        </tr>
+                            <tr>
+                                <td colspan="{% if puede_editar %}9{% else %}8{% endif %}"
+                                    class="text-center text-muted py-4">
+                                    <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+                                    No hay metas registradas con los filtros
+                                    seleccionados.
+                                </td>
+                            </tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
 
-            {# PAGINACIÓN #}
+            {# PAGINACIÓN CONSERVANDO LOS FILTROS #}
             {% if is_paginated %}
-            <nav aria-label="Paginación de metas">
-                <ul class="pagination justify-content-center mb-0">
+                <nav aria-label="Paginación de metas" class="mt-3">
+                    <ul class="pagination justify-content-center mb-0">
 
-                    {% if page_obj.has_previous %}
-                    <li class="page-item">
-                        <a class="page-link"
-                           href="?{% if request.GET.urlencode %}{{ request.GET.urlencode }}&{% endif %}page=1">
-                            Primera
-                        </a>
-                    </li>
-                    <li class="page-item">
-                        <a class="page-link"
-                           href="?{% if request.GET.urlencode %}{{ request.GET.urlencode }}&{% endif %}page={{ page_obj.previous_page_number }}">
-                            Anterior
-                        </a>
-                    </li>
-                    {% endif %}
+                        {% if page_obj.has_previous %}
+                            <li class="page-item">
+                                <a class="page-link"
+                                   href="?{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value|urlencode }}&{% endif %}{% endfor %}page=1">
+                                    Primera
+                                </a>
+                            </li>
 
-                    <li class="page-item active">
-                        <span class="page-link">
-                            {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}
-                        </span>
-                    </li>
+                            <li class="page-item">
+                                <a class="page-link"
+                                   href="?{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value|urlencode }}&{% endif %}{% endfor %}page={{ page_obj.previous_page_number }}">
+                                    Anterior
+                                </a>
+                            </li>
+                        {% endif %}
 
-                    {% if page_obj.has_next %}
-                    <li class="page-item">
-                        <a class="page-link"
-                           href="?{% if request.GET.urlencode %}{{ request.GET.urlencode }}&{% endif %}page={{ page_obj.next_page_number }}">
-                            Siguiente
-                        </a>
-                    </li>
-                    <li class="page-item">
-                        <a class="page-link"
-                           href="?{% if request.GET.urlencode %}{{ request.GET.urlencode }}&{% endif %}page={{ page_obj.paginator.num_pages }}">
-                            Última
-                        </a>
-                    </li>
-                    {% endif %}
+                        <li class="page-item active" aria-current="page">
+                            <span class="page-link">
+                                {{ page_obj.number }}
+                                de
+                                {{ page_obj.paginator.num_pages }}
+                            </span>
+                        </li>
 
-                </ul>
-            </nav>
+                        {% if page_obj.has_next %}
+                            <li class="page-item">
+                                <a class="page-link"
+                                   href="?{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value|urlencode }}&{% endif %}{% endfor %}page={{ page_obj.next_page_number }}">
+                                    Siguiente
+                                </a>
+                            </li>
+
+                            <li class="page-item">
+                                <a class="page-link"
+                                   href="?{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value|urlencode }}&{% endif %}{% endfor %}page={{ page_obj.paginator.num_pages }}">
+                                    Última
+                                </a>
+                            </li>
+                        {% endif %}
+
+                    </ul>
+                </nav>
             {% endif %}
         </div>
     </div>
