@@ -12,6 +12,7 @@ from django.db import models
 from django.db.models import Q
 from django.utils import timezone
 import uuid
+from django.conf import settings
 
 def generar_codigo_delegacion():
     return uuid.uuid4().hex[:20].upper()
@@ -300,3 +301,45 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
     def is_staff(self):
         """Solo el superusuario técnico entra al /admin de Django."""
         return self.is_superuser
+
+# ---------------------------------------------------------------------------
+# VERSIONAMIENTO DE ÍTEMS MEDIBLES (RF-038)
+# ---------------------------------------------------------------------------
+
+class ItemMedibleVersion(models.Model):
+    """
+    Conserva fotografías históricas de los ítems medibles.
+    Los cambios posteriores no modifican la configuración histórica.
+    """
+
+    objeto_id = models.PositiveIntegerField(db_index=True)
+    numero_version = models.PositiveIntegerField()
+
+    vigente_desde = models.DateTimeField(default=timezone.now)
+    vigente_hasta = models.DateTimeField(null=True, blank=True)
+
+    datos = models.JSONField(default=dict)
+
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="versiones_item_medible_creadas",
+    )
+
+    class Meta:
+        db_table = "item_medible_version"
+        ordering = ["objeto_id", "-numero_version"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["objeto_id", "numero_version"],
+                name="uq_item_medible_version_numero",
+            )
+        ]
+
+    def __str__(self):
+        return (
+            f"Ítem {self.objeto_id} "
+            f"- versión {self.numero_version}"
+        )

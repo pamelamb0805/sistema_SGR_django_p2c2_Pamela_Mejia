@@ -60,9 +60,61 @@ class CRUDDelegacion:
 
 
 # ---------------------------------------------------------------------------
-# CRUDCargo (RF-003)
+# CRUDCargo (RF-003 y versionamiento RF-038)
 # ---------------------------------------------------------------------------
+
 class CRUDCargo:
+
+    @staticmethod
+    def _datos_version_item(item):
+        return {
+            "codigo": item.codigo,
+            "nombre_item": item.nombre_item,
+            "descripcion": item.descripcion,
+            "tipo": item.tipo,
+            "vigencia": item.vigencia,
+            "cargo_id": item.cargo_id,
+            "cargo_nombre": (
+                item.cargo.nombre_cargo
+                if item.cargo_id
+                else None
+            ),
+        }
+
+    @staticmethod
+    def _registrar_version_item(item, actor=None):
+        from django.utils import timezone
+        from .models import ItemMedibleVersion
+
+        ultima = (
+            ItemMedibleVersion.objects
+            .select_for_update()
+            .filter(objeto_id=item.pk)
+            .order_by("-numero_version")
+            .first()
+        )
+
+        ahora = timezone.now()
+
+        if ultima:
+            ultima.vigente_hasta = ahora
+            ultima.save(update_fields=["vigente_hasta"])
+            numero = ultima.numero_version + 1
+        else:
+            numero = 1
+
+        ItemMedibleVersion.objects.create(
+            objeto_id=item.pk,
+            numero_version=numero,
+            vigente_desde=ahora,
+            datos=CRUDCargo._datos_version_item(item),
+            creado_por=(
+                actor
+                if getattr(actor, "is_authenticated", False)
+                else None
+            ),
+        )
+
     @staticmethod
     def crear_cargo(cargo, actor=None):
         return _guardar(cargo, actor, "cargo")
@@ -73,16 +125,58 @@ class CRUDCargo:
 
     @staticmethod
     def asociar_funcion_al_cargo(item, actor=None):
-        """Asocia un ítem medible a un cargo (item.cargo ya debe estar asignado)."""
+        """Registra el ítem y su primera versión histórica."""
+
         if item.cargo_id is None:
-            raise ReglaNegocioError("El ítem debe pertenecer a un cargo.")
-        return _guardar(item, actor, "item_medible")
+            raise ReglaNegocioError(
+                "El ítem debe pertenecer a un cargo."
+            )
+
+        with transaction.atomic():
+            item = _guardar(item, actor, "item_medible")
+            CRUDCargo._registrar_version_item(item, actor)
+
+        return item
+
+    @staticmethod
+    def modificar_item(item, actor=None):
+        """Modifica el ítem conservando su versión anterior."""
+
+        with transaction.atomic():
+            original = (
+                ItemMedible.objects
+                .select_for_update()
+                .get(pk=item.pk)
+            )
+
+            if original.cargo_id != item.cargo_id:
+                raise ReglaNegocioError(
+                    "No se puede cambiar el cargo de un ítem medible "
+                    "que ya está registrado. Cree un nuevo ítem."
+                )
+
+            item = _guardar(item, actor, "item_medible")
+            CRUDCargo._registrar_version_item(item, actor)
+
+        return item
 
     @staticmethod
     def cambiar_vigencia_item(item, actor=None):
-        """Un ítem no vigente deja de cargarse a futuro, sin alterar registros históricos."""
-        item.vigencia = not item.vigencia
-        return _guardar(item, actor, "item_medible")
+        """Cambia la vigencia y conserva el historial."""
+
+        with transaction.atomic():
+            item = (
+                ItemMedible.objects
+                .select_for_update()
+                .get(pk=item.pk)
+            )
+
+            item.vigencia = not item.vigencia
+            item = _guardar(item, actor, "item_medible")
+
+            CRUDCargo._registrar_version_item(item, actor)
+
+        return item
 
     @staticmethod
     def modificar_cargo(cargo, actor=None):
@@ -90,10 +184,14 @@ class CRUDCargo:
 
     @staticmethod
     def eliminar_cargo(cargo, actor=None):
-        _eliminar(cargo, actor, "cargo",
-                  "No se puede eliminar: el cargo tiene funcionarios o registros asociados. "
-                  "Defina una fecha de vigencia final en su lugar.")
-
+        _eliminar(
+            cargo,
+            actor,
+            "cargo",
+            "No se puede eliminar: el cargo tiene funcionarios "
+            "o registros asociados. Defina una fecha de vigencia "
+            "final en su lugar.",
+        )
 
 # ---------------------------------------------------------------------------
 # CRUDRol (RF-002)
