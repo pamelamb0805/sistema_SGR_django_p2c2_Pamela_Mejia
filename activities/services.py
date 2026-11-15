@@ -8,7 +8,6 @@ verificador recalcula los indicadores mediante measurement.CalculoIndicadores.re
 import hashlib
 import json
 import re
-
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
@@ -22,8 +21,8 @@ from core.services import guardar, snapshot, _notificar_crud
 from catalogs.models import Catalogo
 from measurement.models import Periodo
 from measurement.services import CalculoIndicadores
-
 from .models import Actividad, Evidencia, Validacion
+from django.core.exceptions import ValidationError as DjangoValidationError
 
 TIPOS_CATALOGO_ACTIVIDAD = (Catalogo.TIPO_ACTIVIDAD, Catalogo.TIPO_SERVICIO)
 
@@ -103,33 +102,106 @@ def _recalcular_estado(actividad):
 class CRUDActividad:
     @staticmethod
     def validar_campos_actividad(actividad, original=None):
-        """Obligatoriedad, formatos y coherencia (RF-010). Asigna el período según la fecha."""
+        """
+        Validación integral RF-010:
+        - Campos obligatorios y formatos.
+        - Fecha y período de medición.
+        - Estado y tipo de registro.
+        - Teléfono y coherencia con el contacto.
+        - Vigencia y correspondencia del ítem.
+        - Vigencia y tipo del catálogo.
+        """
+        # Normalizar textos antes de validar.
+        actividad.accion = (actividad.accion or "").strip()
+        actividad.contacto = (actividad.contacto or "").strip()
+        actividad.telefono = (actividad.telefono or "").strip()
+
         if not actividad.fecha:
-            raise ReglaNegocioError("La fecha es obligatoria.")
+            raise ReglaNegocioError("La fecha de la actividad es obligatoria.")
+
         if actividad.fecha > timezone.localdate():
-            raise ReglaNegocioError("La fecha de la actividad no puede ser futura.")
+            raise ReglaNegocioError(
+                "La fecha de la actividad no puede ser futura."
+            )
+
         periodo = Periodo.objects.para_fecha(actividad.fecha)
+
         if periodo is None:
-            raise ReglaNegocioError("No existe un período de medición para esa fecha.")
+            raise ReglaNegocioError(
+                "No existe un período de medición para la fecha indicada."
+            )
+
         if not periodo.abierto:
-            raise ReglaNegocioError(f"El período {periodo} está cerrado: no se pueden registrar actividades.")
+            raise ReglaNegocioError(
+                f"El período {periodo} está cerrado: "
+                "no se pueden registrar ni modificar actividades."
+            )
+
+        # Asignar el período antes de ejecutar la validación completa.
+        actividad.periodo = periodo
+
+        # Ejecuta validadores de campos, choices y clean() del modelo.
+        # Así también se validan los guardados que no pasan por el formulario.
+        try:
+            actividad.full_clean()
+        except DjangoValidationError as exc:
+            errores = []
+
+            for campo, mensajes in exc.message_dict.items():
+                if campo == "__all__":
+                    etiqueta = "Registro"
+                else:
+                    etiqueta = (
+                        actividad._meta.get_field(campo)
+                        .verbose_name.capitalize()
+                    )
+
+                for mensaje in mensajes:
+                    errores.append(f"{etiqueta}: {mensaje}")
+
+            raise ReglaNegocioError(
+                "Corrija los siguientes datos: " + " ".join(errores)
+            )
+
         funcionario = actividad.funcionario
+
         if not funcionario.activo:
-            raise ReglaNegocioError("El funcionario está inactivo.")
+            raise ReglaNegocioError(
+                "El funcionario está inactivo y no puede registrar actividades."
+            )
+
         if actividad.item.cargo_id != funcionario.cargo_id:
-            raise ReglaNegocioError("El ítem no corresponde al cargo del funcionario.")
-        cambia_item = original is None or original.item_id != actividad.item_id
-        cambia_catalogo = original is None or original.catalogo_id != actividad.catalogo_id
+            raise ReglaNegocioError(
+                "El ítem medible no corresponde al cargo del funcionario."
+            )
+
+        cambia_item = (
+            original is None
+            or original.item_id != actividad.item_id
+        )
+
+        cambia_catalogo = (
+            original is None
+            or original.catalogo_id != actividad.catalogo_id
+        )
+
         if cambia_item and not actividad.item.vigencia:
-            raise ReglaNegocioError("El ítem medible no está vigente.")
+            raise ReglaNegocioError(
+                "El ítem medible seleccionado no está vigente."
+            )
+
         if cambia_catalogo:
             if not actividad.catalogo.activo:
-                raise ReglaNegocioError("El elemento de catálogo está desactivado.")
-            if actividad.catalogo.tipo_catalogo not in TIPOS_CATALOGO_ACTIVIDAD:
-                raise ReglaNegocioError("El catálogo debe ser de tipo Actividad o Servicio.")
-        actividad.periodo = periodo
-        return periodo
+                raise ReglaNegocioError(
+                    "El elemento del catálogo seleccionado está desactivado."
+                )
 
+            if actividad.catalogo.tipo_catalogo not in TIPOS_CATALOGO_ACTIVIDAD:
+                raise ReglaNegocioError(
+                    "El catálogo debe ser de tipo Actividad o Servicio."
+                )
+
+        return periodo
     @staticmethod
     def crear_actividad(actividad, actor=None):
         with transaction.atomic():
