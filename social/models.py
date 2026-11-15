@@ -46,19 +46,7 @@ class UsuarioSocial(models.Model):
         verbose_name_plural = "usuarios sociales"
 
     def __str__(self):
-        tipo = (
-            self.tipo_atencion_nombre
-            or (
-                self.tipo_atencion.nombre
-                if self.tipo_atencion_id
-                else "Sin tipo"
-            )
-        )
-
-        return (
-            f"Gestión {self.numero_gestion} – "
-            f"{tipo} ({self.fecha:%d/%m/%Y})"
-        )
+        return f"{self.nombre} – {self.territorio}"
     
     @property
     def cerrado(self):
@@ -188,12 +176,18 @@ class AtencionSocial(models.Model):
         verbose_name_plural = "atenciones sociales"
 
     def __str__(self):
+        tipo = (
+            self.tipo_atencion_nombre
+            or (
+                self.tipo_atencion.nombre
+                if self.tipo_atencion_id
+                else "Sin tipo"
+            )
+        )
         return (
             f"Gestión {self.numero_gestion} – "
-            f"{self.tipo_atencion.nombre} "
-            f"({self.fecha:%d/%m/%Y})"
+            f"{tipo} ({self.fecha:%d/%m/%Y})"
         )
-
     def clean(self):
         errores = {}
 
