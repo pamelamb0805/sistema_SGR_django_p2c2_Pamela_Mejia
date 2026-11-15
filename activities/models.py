@@ -20,7 +20,12 @@ from django.utils import timezone
 
 from catalogs.models import Catalogo
 from measurement.models import Periodo
-from organizations.models import Funcionario, ItemMedible
+from organizations.models import (
+    Funcionario,
+    ItemMedible,
+    ItemMedibleVersion,
+)
+from django.db.models import Q
 
 validar_telefono = RegexValidator(
     r"^\+?\d[\d\s-]{7,14}$", "Teléfono inválido. Use solo números, espacios o guiones (8 a 15 dígitos).")
@@ -81,7 +86,39 @@ class Actividad(models.Model):
     def codigo(self):
         """Identificador único e inmutable de la actividad (RF-011)."""
         return f"ACT-{self.pk:07d}" if self.pk else ""
+    
+    @property
+    def item_nombre_historico(self):
+        """
+        Recupera el nombre del ítem medible vigente en la fecha
+        de la actividad. No utiliza el nombre actual si existe
+        una versión histórica correspondiente.
+        """
+        if not self.item_id:
+            return ""
 
+        versiones = (
+            ItemMedibleVersion.objects
+            .filter(
+                objeto_id=self.item_id,
+                vigente_desde__date__lte=self.fecha,
+            )
+            .filter(
+                Q(vigente_hasta__isnull=True)
+                | Q(vigente_hasta__date__gt=self.fecha)
+            )
+            .order_by("-numero_version")
+        )
+
+        version = versiones.first()
+
+        if version:
+            return (
+                version.datos.get("nombre_item")
+                or self.item.nombre_item
+            )
+
+        return self.item.nombre_item
     @property
     def editable(self):
         return self.estado in self.ESTADOS_EDITABLES

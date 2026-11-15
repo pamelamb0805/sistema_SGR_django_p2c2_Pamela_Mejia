@@ -77,11 +77,13 @@
         <dd class="col-sm-9">{{ actividad.funcionario.delegacion }}</dd>
 
         <dt class="col-sm-3">Cargo / ítem</dt>
-        <dd class="col-sm-9">{{ actividad.item.nombre_item }}</dd>
+        <dd class="col-sm-9">
+          {{ actividad.item_nombre_historico|default:actividad.item.nombre_item }}
+        </dd>
 
         <dt class="col-sm-3">Catálogo</dt>
         <dd class="col-sm-9">
-            {{ actividad.catalogo_nombre|default:actividad.catalogo.nombre|default:actividad.catalogo }}
+          {{ actividad.catalogo_nombre|default:actividad.catalogo.nombre|default:actividad.catalogo }}
         </dd>
 
         <dt class="col-sm-3">Período</dt>
@@ -305,7 +307,9 @@
               <td>{{ a.codigo }}</td>
               <td>{{ a.fecha|date:"d/m/Y" }}</td>
               <td>{{ a.funcionario }}</td>
-              <td>{{ a.item.nombre_item }}</td>
+              <td>
+                {{ a.item_nombre_historico|default:a.item.nombre_item }}
+              </td>
               <td>{{ a.accion|truncatechars:65 }}</td>
               <td>{{ a.estado }}</td>
               <td>

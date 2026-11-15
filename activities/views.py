@@ -478,7 +478,7 @@ def exportar_actividades_excel(request):
             actividad.tipo_registro,
             actividad.funcionario.nombre,
             actividad.funcionario.delegacion.nombre,
-            actividad.item.nombre_item,
+            actividad.item_nombre_historico,
             actividad.catalogo_nombre or actividad.catalogo.nombre,
             actividad.accion,
             actividad.contacto,
