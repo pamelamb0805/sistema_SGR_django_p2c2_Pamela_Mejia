@@ -406,6 +406,10 @@ class CRUDMeta:
             "funcionario_id": meta.funcionario_id,
             "periodo_id": meta.periodo_id,
             "cargo_id": meta.cargo_id,
+            "item_codigo": meta.item.codigo,
+            "item_nombre": meta.item.nombre_item,
+            "item_descripcion": meta.item.descripcion,
+            "item_tipo": meta.item.tipo,
         }
 
     @staticmethod
@@ -856,15 +860,27 @@ class CalculoIndicadores:
         fecha=None,
         forzar=False,
     ):
-        """No recalcula períodos cerrados salvo operación forzada."""
+        """Recalcula usando los parámetros vigentes en la fecha indicada."""
         if not meta.periodo.abierto and not forzar:
             return Indicador.objects.filter(
                 meta=meta
             ).first()
 
+        fecha_calculo = fecha or timezone.localdate()
+
+        if not meta.periodo.abierto or forzar:
+            datos_historicos = (
+                CalculoIndicadores._datos_meta_historicos(
+                    meta,
+                    fecha_calculo,
+                )
+            )
+        else:
+            datos_historicos = CRUDMeta._datos_version(meta)
+
         valores = CalculoIndicadores._valores_meta(
             meta,
-            fecha,
+            fecha_calculo,
             datos_historicos=datos_historicos,
         )
 
@@ -880,7 +896,6 @@ class CalculoIndicadores:
         )
 
         return indicador
-
     @staticmethod
     def recalcular_para(
         funcionario_id,
@@ -991,6 +1006,7 @@ class CalculoIndicadores:
                 valores = CalculoIndicadores._valores_meta(
                     meta,
                     fecha,
+                    datos_historicos=datos_historicos,
                 )
 
             cumple = valores["cumplimiento"] >= 100
