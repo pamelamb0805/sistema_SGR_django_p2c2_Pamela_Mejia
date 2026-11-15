@@ -234,6 +234,7 @@ def filtrar_por_ambito(queryset, user, campo="delegacion_id"):
 # Auditoría y denegación de acceso
 # ---------------------------------------------------------------------------
 
+
 def auditar(
     usuario,
     evento,
@@ -243,14 +244,18 @@ def auditar(
     valor_nuevo=None,
 ):
     """
-    Registra auditoría y publica notificaciones para acciones especiales.
-    Las operaciones CREAR, MODIFICAR y ELIMINAR ya se notifican
-    desde core.services, por lo que aquí no se duplican.
+    Registra auditoría y crea notificaciones persistentes.
+
+    Las operaciones CREAR, MODIFICAR y ELIMINAR ya generan
+    notificaciones desde core.services, por lo que aquí no se duplican.
     """
     try:
-        from audit.services import registrar_evento
+        from audit.services import (
+            registrar_evento,
+            crear_notificaciones,
+        )
 
-        registrar_evento(
+        auditoria = registrar_evento(
             usuario=usuario,
             evento=evento,
             entidad=entidad,
@@ -258,6 +263,21 @@ def auditar(
             valor_anterior=valor_anterior,
             valor_nuevo=valor_nuevo,
         )
+
+        # Las operaciones CRUD ya notifican desde core.services.
+        if evento not in ("CREAR", "MODIFICAR", "ELIMINAR"):
+
+            # Los inicios de sesión se notifican a todos los
+            # Administradores, sin limitar por delegación.
+            if evento == "LOGIN" and entidad == "usuario":
+                delegacion_notificacion = None
+            else:
+                delegacion_notificacion = get_delegacion_id(usuario)
+
+            crear_notificaciones(
+                auditoria,
+                delegacion_id=delegacion_notificacion,
+            )
 
     except ImportError:
         logger.debug(
@@ -273,7 +293,8 @@ def auditar(
         )
         return
 
-    # Las operaciones normales ya se publican desde core.services.
+    # Las operaciones CRUD normales ya publican su evento
+    # desde core.services.
     if evento in ("CREAR", "MODIFICAR", "ELIMINAR"):
         return
 
