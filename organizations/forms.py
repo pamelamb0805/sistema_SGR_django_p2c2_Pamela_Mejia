@@ -83,47 +83,49 @@ class ItemMedibleForm(BootstrapFormMixin, forms.ModelForm):
         fields = ["codigo", "nombre_item", "descripcion", "tipo", "vigencia"]
 
 
+
 class RolForm(BootstrapFormMixin, forms.ModelForm):
+    permisos = forms.MultipleChoiceField(
+        choices=[
+            ("usuarios.ver", "Ver usuarios"),
+            ("usuarios.editar", "Administrar usuarios"),
+            ("catalogos.ver", "Ver catálogos"),
+            ("catalogos.editar", "Administrar catálogos"),
+            ("atenciones.ver", "Ver atenciones"),
+            ("atenciones.registrar", "Registrar atenciones"),
+            ("reportes.ver", "Ver reportes"),
+            ("delegaciones.editar", "Administrar delegaciones"),
+        ],
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+    )
+
     class Meta:
         model = Rol
-        fields = ["nombre_rol", "descripcion", "permisos", "alcance_autorizado"]
-
-    permisos = forms.MultipleChoiceField(choices=[
-        ("usuarios.ver", "Ver usuarios"), ("usuarios.editar", "Administrar usuarios"),
-        ("catalogos.ver", "Ver catálogos"), ("catalogos.editar", "Administrar catálogos"),
-        ("atenciones.ver", "Ver atenciones"), ("atenciones.registrar", "Registrar atenciones"),
-        ("reportes.ver", "Ver reportes"), ("delegaciones.editar", "Administrar delegaciones")
-    ], required=False, widget=forms.CheckboxSelectMultiple)
+        fields = [
+            "nombre_rol",
+            "descripcion",
+            "permisos",
+            "alcance_autorizado",
+        ]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
         if self.instance and self.instance.pk:
             self.initial["permisos"] = self.instance.permisos or []
-            
-            delegaciones_actuales = (
-            usuario.delegaciones_autorizadas.values_list(
-                "pk",
-                flat=True,
-            )
-            if usuario
-            else []
-        )
 
-        self.fields["delegaciones_autorizadas"].queryset = (
-            Delegacion.objects.filter(
-                Q(estado=Delegacion.ESTADO_ACTIVA)
-                | Q(pk__in=delegaciones_actuales)
-            ).distinct()
-        )
     def clean_permisos(self):
         return self.cleaned_data.get("permisos", [])
 
     def save(self, commit=True):
         obj = super().save(commit=False)
         obj.permisos = self.cleaned_data.get("permisos", [])
+
         if commit:
             obj.save()
             self.save_m2m()
+
         return obj
 
 
@@ -221,21 +223,39 @@ class AccesoForm(BootstrapFormMixin, forms.Form):
         ),
     )
 
-    def __init__(self, *args, usuario=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.usuario = usuario
-        if usuario is not None:
-            self.fields["username"].initial = usuario.username
-            self.fields["username"].disabled = True
-        if usuario:
-            self.fields["username"].initial = usuario.username
-            self.fields["username"].disabled = True
-            self.fields["email"].initial = usuario.email
-            self.fields["delegaciones_autorizadas"].initial = (
-                usuario.delegaciones_autorizadas.all()
+
+def __init__(self, *args, usuario=None, **kwargs):
+    super().__init__(*args, **kwargs)
+
+    self.usuario = usuario
+
+    delegaciones_actuales_ids = set()
+
+    if usuario is not None:
+        self.fields["username"].initial = usuario.username
+        self.fields["username"].disabled = True
+        self.fields["email"].initial = usuario.email
+
+        delegaciones_actuales_ids = set(
+            usuario.delegaciones_autorizadas.values_list(
+                "pk",
+                flat=True,
             )
-            self.fields["password1"].required = False
-            self.fields["password2"].required = False
+        )
+
+        self.fields["delegaciones_autorizadas"].initial = (
+            usuario.delegaciones_autorizadas.all()
+        )
+
+        self.fields["password1"].required = False
+        self.fields["password2"].required = False
+
+    self.fields["delegaciones_autorizadas"].queryset = (
+        Delegacion.objects.filter(
+            Q(estado=Delegacion.ESTADO_ACTIVA)
+            | Q(pk__in=delegaciones_actuales_ids)
+        ).distinct()
+    )
 
     def clean(self):
         datos = super().clean()
@@ -290,7 +310,51 @@ class UsuarioAdminForm(BootstrapFormMixin, forms.ModelForm):
             "activo_acceso",
         ]
 
+
     def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.fields["email"].required = True
+
+        delegaciones_actuales_ids = set()
+
+        if self.instance and self.instance.pk:
+            self.fields["password1"].help_text = (
+                "Déjala vacía si no quieres cambiar la contraseña."
+            )
+            self.fields["password2"].help_text = (
+                "Déjala vacía si no quieres cambiar la contraseña."
+            )
+
+            delegaciones_actuales_ids = set(
+                self.instance.delegaciones_autorizadas.values_list(
+                    "pk",
+                    flat=True,
+                )
+            )
+
+            funcionarios = Funcionario.objects.filter(
+                Q(usuario__isnull=True)
+                | Q(pk=self.instance.funcionario_id)
+            )
+
+        else:
+            self.fields["password1"].required = True
+            self.fields["password2"].required = True
+
+            funcionarios = Funcionario.objects.filter(
+                usuario__isnull=True
+            )
+
+        self.fields["funcionario"].queryset = funcionarios
+
+        self.fields["delegaciones_autorizadas"].queryset = (
+            Delegacion.objects.filter(
+                Q(estado=Delegacion.ESTADO_ACTIVA)
+                | Q(pk__in=delegaciones_actuales_ids)
+            ).distinct()
+        )
+
         super().__init__(*args, **kwargs)
 
         self.fields["email"].required = True
