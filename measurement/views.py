@@ -620,15 +620,21 @@ def semaforo(request):
         "page_size_options": PAGE_SIZE_OPTIONS,
     })
 
+
 @login_required
 def exportar_metas_excel(request):
+    """Exporta metas respetando el nombre histórico del ítem en períodos cerrados."""
+
     if not tiene_rol(request.user, *ROLES_SUPERVISION):
         return HttpResponse("No autorizado", status=403)
 
     queryset = filtrar_por_ambito(
         MetaModel.objects.select_related(
-            "periodo", "funcionario", "funcionario__delegacion",
-            "cargo", "item",
+            "periodo",
+            "funcionario",
+            "funcionario__delegacion",
+            "cargo",
+            "item",
         ),
         request.user,
         "funcionario__delegacion_id",
@@ -671,14 +677,29 @@ def exportar_metas_excel(request):
     ])
 
     for meta in queryset.order_by(
-        "periodo", "funcionario__nombre", "item__nombre_item"
+        "periodo",
+        "funcionario__nombre",
+        "item__nombre_item",
     ):
+        if meta.periodo.abierto:
+            datos_historicos = CRUDMeta._datos_version(meta)
+        else:
+            datos_historicos = CalculoIndicadores._datos_meta_historicos(
+                meta,
+                meta.periodo.fecha_termino,
+            )
+
+        nombre_item = datos_historicos.get(
+            "item_nombre",
+            meta.item.nombre_item,
+        )
+
         hoja.append([
             str(meta.periodo),
             meta.funcionario.nombre,
             meta.funcionario.delegacion.nombre,
             meta.cargo.nombre_cargo,
-            meta.item.nombre_item,
+            nombre_item,
             float(meta.valor_objetivo),
             meta.unidad,
             float(meta.ponderador),
@@ -695,6 +716,8 @@ def exportar_metas_excel(request):
     respuesta["Content-Disposition"] = (
         'attachment; filename="metas_filtradas.xlsx"'
     )
+    respuesta["Cache-Control"] = "private, no-store"
+
     libro.save(respuesta)
     return respuesta
 
