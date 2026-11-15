@@ -62,8 +62,10 @@ def _puede_anular(user, actividad):
 # ---------------------------------------------------------------------------
 # Actividades
 # ---------------------------------------------------------------------------
+
 class ActividadListView(PageSizeMixin, RolRequeridoMixin, ModoMixin, ListView):
-    """Historial filtrable (RF-032): cada usuario ve solo lo que su ámbito permite."""
+    """Historial de actividades con filtros completos y ámbito autorizado (RF-032)."""
+
     template_name = "activities/actividad_.html"
     context_object_name = "actividades"
     paginate_by = 15
@@ -72,44 +74,155 @@ class ActividadListView(PageSizeMixin, RolRequeridoMixin, ModoMixin, ListView):
     roles_edicion = ROLES_OPERATIVOS
 
     def get_queryset(self):
-        qs = actividades_visibles(self.request.user)
-        g = self.request.GET
+        from django.utils.dateparse import parse_date
 
+        qs = actividades_visibles(
+            self.request.user
+        ).select_related(
+            "funcionario",
+            "funcionario__delegacion",
+            "funcionario__cargo",
+            "item",
+            "periodo",
+            "catalogo",
+        )
+
+        filtros = self.request.GET
+
+        # Filtros por identificadores.
         for campo, filtro in (
             ("estado", "estado"),
             ("tipo_registro", "tipo_registro"),
             ("item", "item_id"),
             ("periodo", "periodo_id"),
             ("funcionario", "funcionario_id"),
-            ("fecha_desde", "fecha__gte"),
-            ("fecha_hasta", "fecha__lte"),
+            ("delegacion", "funcionario__delegacion_id"),
+            ("cargo", "funcionario__cargo_id"),
         ):
-            if g.get(campo):
-                qs = qs.filter(**{filtro: g[campo]})
+            valor = filtros.get(campo, "").strip()
 
-        if g.get("q", "").strip():
-            q = g["q"].strip()
-            qs = qs.filter(accion__icontains=q) | qs.filter(contacto__icontains=q)
+            if valor:
+                if campo in {
+                    "item",
+                    "periodo",
+                    "funcionario",
+                    "delegacion",
+                    "cargo",
+                }:
+                    if valor.isdigit():
+                        qs = qs.filter(**{filtro: valor})
+                else:
+                    qs = qs.filter(**{filtro: valor})
 
-        return qs
+        # Área corresponde al ámbito definido para la delegación.
+        area = filtros.get("area", "").strip()
+
+        if area:
+            qs = qs.filter(
+                funcionario__delegacion__ambito__icontains=area
+            )
+
+        # Rango de fechas: solo se aplican fechas válidas.
+        fecha_desde = parse_date(
+            filtros.get("fecha_desde", "").strip()
+        )
+        fecha_hasta = parse_date(
+            filtros.get("fecha_hasta", "").strip()
+        )
+
+        if fecha_desde:
+            qs = qs.filter(fecha__gte=fecha_desde)
+
+        if fecha_hasta:
+            qs = qs.filter(fecha__lte=fecha_hasta)
+
+        # Búsqueda general en los datos principales del registro.
+        termino = filtros.get("q", "").strip()
+
+        if termino:
+            qs = qs.filter(
+                Q(accion__icontains=termino)
+                | Q(contacto__icontains=termino)
+                | Q(funcionario__nombre__icontains=termino)
+                | Q(
+                    funcionario__identificador_institucional__icontains=termino
+                )
+                | Q(item__nombre_item__icontains=termino)
+                | Q(catalogo__nombre__icontains=termino)
+                | Q(catalogo_nombre__icontains=termino)
+            )
+
+        return qs.order_by("-fecha", "-id_actividad")
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
-        g = self.request.GET
+
+        base = actividades_visibles(self.request.user)
+
+        funcionarios_autorizados = (
+            Funcionario.objects.filter(
+                pk__in=base.values("funcionario_id")
+            )
+            .select_related("delegacion", "cargo")
+            .distinct()
+            .order_by("nombre")
+        )
+
+        delegaciones_autorizadas = (
+            funcionarios_autorizados
+            .values_list(
+                "delegacion_id",
+                "delegacion__nombre",
+            )
+            .distinct()
+            .order_by("delegacion__nombre")
+        )
+
+        cargos_autorizados = (
+            funcionarios_autorizados
+            .values_list(
+                "cargo_id",
+                "cargo__nombre_cargo",
+            )
+            .distinct()
+            .order_by("cargo__nombre_cargo")
+        )
+
+        areas_autorizadas = (
+            funcionarios_autorizados
+            .values_list(
+                "delegacion__ambito",
+                flat=True,
+            )
+            .exclude(delegacion__ambito="")
+            .distinct()
+            .order_by("delegacion__ambito")
+        )
+
+        items_autorizados = (
+            ItemMedible.objects.filter(
+                pk__in=base.values("item_id")
+            )
+            .select_related("cargo")
+            .distinct()
+            .order_by("nombre_item")
+        )
 
         contexto.update(
-            filtros=g,
+            filtros=self.request.GET,
             estados=Actividad.ESTADOS,
             tipos=Actividad.TIPOS,
-            periodos=Periodo.objects.all(),
-            items=ItemMedible.objects.select_related("cargo"),
-            funcionarios=Funcionario.objects.filter(
-                pk__in=actividades_visibles(
-                    self.request.user
-                ).values("funcionario_id")
-            ),
+            periodos=Periodo.objects.all().order_by("-fecha_inicio"),
+            items=items_autorizados,
+            funcionarios=funcionarios_autorizados,
+            delegaciones=delegaciones_autorizadas,
+            cargos=cargos_autorizados,
+            areas=areas_autorizadas,
+            total_resultados=self.get_queryset().count(),
         )
+
         return contexto
+
 
 class ActividadDetailView(RolRequeridoMixin, ModoMixin, DetailView):
     template_name = "activities/actividad_.html"
@@ -442,10 +555,23 @@ class ValidacionCreateView(VerificadorMixin, ModoMixin, GuardarMixin, FormView):
                 "Se solicitó corrección al funcionario.",
         }[decision]
 
-@login_required
+
 def exportar_actividades_excel(request):
-    queryset = actividades_visibles(request.user)
-    g = request.GET
+    """Exporta las actividades aplicando los mismos filtros y permisos (RF-032/RF-033)."""
+    from django.utils.dateparse import parse_date
+
+    queryset = actividades_visibles(
+        request.user
+    ).select_related(
+        "funcionario",
+        "funcionario__delegacion",
+        "funcionario__cargo",
+        "item",
+        "catalogo",
+        "periodo",
+    )
+
+    filtros = request.GET
 
     for campo, filtro in (
         ("estado", "estado"),
@@ -453,16 +579,59 @@ def exportar_actividades_excel(request):
         ("item", "item_id"),
         ("periodo", "periodo_id"),
         ("funcionario", "funcionario_id"),
-        ("fecha_desde", "fecha__gte"),
-        ("fecha_hasta", "fecha__lte"),
+        ("delegacion", "funcionario__delegacion_id"),
+        ("cargo", "funcionario__cargo_id"),
     ):
-        if g.get(campo):
-            queryset = queryset.filter(**{filtro: g[campo]})
+        valor = filtros.get(campo, "").strip()
 
-    q = g.get("q", "").strip()
-    if q:
+        if not valor:
+            continue
+
+        if campo in {
+            "item",
+            "periodo",
+            "funcionario",
+            "delegacion",
+            "cargo",
+        }:
+            if valor.isdigit():
+                queryset = queryset.filter(**{filtro: valor})
+        else:
+            queryset = queryset.filter(**{filtro: valor})
+
+    area = filtros.get("area", "").strip()
+
+    if area:
         queryset = queryset.filter(
-            Q(accion__icontains=q) | Q(contacto__icontains=q)
+            funcionario__delegacion__ambito__icontains=area
+        )
+
+    fecha_desde = parse_date(
+        filtros.get("fecha_desde", "").strip()
+    )
+    fecha_hasta = parse_date(
+        filtros.get("fecha_hasta", "").strip()
+    )
+
+    if fecha_desde:
+        queryset = queryset.filter(fecha__gte=fecha_desde)
+
+    if fecha_hasta:
+        queryset = queryset.filter(fecha__lte=fecha_hasta)
+
+    termino = filtros.get("q", "").strip()
+
+    if termino:
+        queryset = queryset.filter(
+            Q(accion__icontains=termino)
+            | Q(contacto__icontains=termino)
+            | Q(funcionario__nombre__icontains=termino)
+            | Q(
+                funcionario__identificador_institucional__icontains=termino
+            )
+            | Q(item__nombre_item__icontains=termino)
+            | Q(catalogo__nombre__icontains=termino)
+            | Q(catalogo_nombre__icontains=termino)
         )
 
     libro = Workbook()
@@ -475,6 +644,8 @@ def exportar_actividades_excel(request):
         "Tipo",
         "Funcionario",
         "Delegación",
+        "Área / ámbito",
+        "Cargo",
         "Ítem medible",
         "Actividad o servicio",
         "Acción ejecutada",
@@ -483,15 +654,23 @@ def exportar_actividades_excel(request):
         "Período",
     ])
 
-    for actividad in queryset.order_by("-fecha", "-id_actividad"):
+    for actividad in queryset.order_by(
+        "-fecha",
+        "-id_actividad",
+    ):
         hoja.append([
             actividad.codigo,
             actividad.fecha.strftime("%d/%m/%Y"),
             actividad.tipo_registro,
             actividad.funcionario.nombre,
             actividad.funcionario.delegacion.nombre,
+            actividad.funcionario.delegacion.ambito,
+            actividad.funcionario.cargo.nombre_cargo,
             actividad.item_nombre_historico,
-            actividad.catalogo_nombre or actividad.catalogo.nombre,
+            (
+                actividad.catalogo_nombre
+                or actividad.catalogo.nombre
+            ),
             actividad.accion,
             actividad.contacto,
             actividad.estado,
@@ -504,10 +683,14 @@ def exportar_actividades_excel(request):
             "spreadsheetml.sheet"
         )
     )
+
     respuesta["Content-Disposition"] = (
         'attachment; filename="actividades_filtradas.xlsx"'
     )
+    respuesta["Cache-Control"] = "private, no-store"
+
     libro.save(respuesta)
+
     return respuesta
 
 
