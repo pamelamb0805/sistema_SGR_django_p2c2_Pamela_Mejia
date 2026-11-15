@@ -211,124 +211,111 @@
     // CREAR ELEMENTO DE NOTIFICACIÓN
     // ---------------------------------------------------------
 
-    function crearNotificacion(mensaje) {
+    async function cargarNotificaciones() {
         if (!listaNotificaciones) {
             return;
         }
 
-        const identificador = String(
-            mensaje.object_id || mensaje.object_pk || ""
-        );
+        const url = listaNotificaciones.dataset.listUrl;
 
-        const actor = mensaje.actor_name || "Usuario";
-        const modulo = mensaje.module_display || mensaje.module;
-        const accion = mensaje.action_display || mensaje.action;
-        const objeto = mensaje.object_label || (
-            `${mensaje.object_type || "Registro"} #${identificador}`
-        );
-
-        const delegacion =
-            mensaje.delegacion_name ||
-            mensaje.organization_name ||
-            "General";
-
-        const fecha = formatearFecha(
-            mensaje.created_at || mensaje.timestamp
-        );
-
-        const elemento = document.createElement("div");
-
-        elemento.className =
-            "sgr-notification-item sgr-notification-unread";
-
-        elemento.dataset.notificationId =
-            mensaje.notification_id || "";
-
-        const fila = document.createElement("div");
-        fila.className = "d-flex gap-2";
-
-        const icono = document.createElement("div");
-        icono.className = "sgr-notification-icon";
-
-        const iconoInterno = document.createElement("i");
-        iconoInterno.className = "bi bi-activity";
-
-        icono.appendChild(iconoInterno);
-
-        const contenido = document.createElement("div");
-        contenido.className = "flex-grow-1 min-width-0";
-
-        const encabezado = document.createElement("div");
-        encabezado.className =
-            "d-flex justify-content-between gap-2";
-
-        const titulo = document.createElement("strong");
-        titulo.className = "small";
-        titulo.textContent = modulo;
-
-        const fechaElemento = document.createElement("span");
-        fechaElemento.className =
-            "small text-body-secondary text-nowrap";
-        fechaElemento.textContent = fecha;
-
-        encabezado.append(titulo, fechaElemento);
-
-        const descripcion = document.createElement("p");
-        descripcion.className = "small mb-1";
-        descripcion.textContent = `${accion} ${objeto}`;
-
-        const responsable = document.createElement("div");
-        responsable.className = "small text-body-secondary";
-        responsable.textContent = `● ${actor}`;
-
-        const delegacionElemento = document.createElement("div");
-        delegacionElemento.className =
-            "small text-body-secondary";
-        delegacionElemento.textContent = `◆ ${delegacion}`;
-
-        contenido.append(
-            encabezado,
-            descripcion,
-            responsable,
-            delegacionElemento
-        );
-
-        fila.append(icono, contenido);
-        elemento.appendChild(fila);
-
-        const vacio = document.getElementById(
-            "sgrNotificationEmpty"
-        );
-
-        if (vacio) {
-            vacio.remove();
+        if (!url) {
+            console.error("[SGR] No se encontró la URL de notificaciones.");
+            return;
         }
 
-        // Evitar insertar dos veces el mismo evento.
-        if (mensaje.notification_id) {
-            const duplicado = listaNotificaciones.querySelector(
-                `[data-notification-id="${CSS.escape(String(mensaje.notification_id))}"]`
+        try {
+            const respuesta = await fetch(url, {
+                method: "GET",
+                credentials: "same-origin",
+                headers: {
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Accept": "application/json"
+                }
+            });
+
+            if (!respuesta.ok) {
+                throw new Error(`Error HTTP ${respuesta.status}`);
+            }
+
+            const resultado = await respuesta.json();
+
+            if (!resultado.ok) {
+                throw new Error("El servidor no pudo cargar las notificaciones.");
+            }
+
+            listaNotificaciones.replaceChildren();
+
+            if (!resultado.notificaciones.length) {
+                const vacio = document.createElement("div");
+                vacio.id = "sgrNotificationEmpty";
+                vacio.className = "sgr-notification-empty";
+                vacio.textContent = "No hay notificaciones recientes.";
+
+                listaNotificaciones.appendChild(vacio);
+            } else {
+                resultado.notificaciones.forEach((notificacion) => {
+                    const elemento = document.createElement("div");
+
+                    elemento.className = "sgr-notification-item";
+
+                    if (!notificacion.leida) {
+                        elemento.classList.add("sgr-notification-unread");
+                    }
+
+                    elemento.dataset.notificationId = notificacion.id;
+
+                    const fila = document.createElement("div");
+                    fila.className = "d-flex align-items-start gap-2";
+
+                    const icono = document.createElement("i");
+                    icono.className = "bi bi-activity text-primary mt-1";
+
+                    const contenido = document.createElement("div");
+                    contenido.className = "flex-grow-1";
+
+                    const titulo = document.createElement("div");
+                    titulo.className = "sgr-notification-title";
+                    titulo.textContent =
+                        `${notificacion.modulo} · ${notificacion.accion}`;
+
+                    const objeto = document.createElement("span");
+                    objeto.className = "sgr-notification-detail";
+                    objeto.textContent = notificacion.objeto;
+
+                    const actor = document.createElement("span");
+                    actor.className = "sgr-notification-detail";
+                    actor.textContent = `● ${notificacion.actor}`;
+
+                    const delegacion = document.createElement("span");
+                    delegacion.className = "sgr-notification-detail";
+                    delegacion.textContent = `◆ ${notificacion.delegacion}`;
+
+                    const fecha = document.createElement("span");
+                    fecha.className = "sgr-notification-date";
+                    fecha.textContent = formatearFecha(notificacion.fecha);
+
+                    contenido.append(
+                        titulo,
+                        objeto,
+                        actor,
+                        delegacion,
+                        fecha
+                    );
+
+                    fila.append(icono, contenido);
+                    elemento.appendChild(fila);
+                    listaNotificaciones.appendChild(elemento);
+                });
+            }
+
+            actualizarContador();
+
+        } catch (error) {
+            console.error(
+                "[SGR] No se pudieron cargar las notificaciones persistentes.",
+                error
             );
-
-            if (duplicado) {
-                return;
-            }
         }
-
-        listaNotificaciones.prepend(elemento);
-
-        // Conservar solamente las últimas 15.
-        const elementos = listaNotificaciones.querySelectorAll(
-            ".sgr-notification-item"
-        );
-
-        elementos.forEach((item, indice) => {
-            if (indice >= MAX_NOTIFICACIONES) {
-                item.remove();
-            }
-        });
-
-        actualizarContador();
     }
 
     // ---------------------------------------------------------
@@ -376,18 +363,17 @@
 
                 // 1. La notificación se procesa en cualquier módulo.
                 if (mensaje.type === "crud_update") {
-                    crearNotificacion(mensaje);
+                await cargarNotificaciones();
 
-                    document.dispatchEvent(
-                        new CustomEvent(
-                            "sgr:notification",
-                            {
-                                detail: mensaje
-                            }
-                        )
-                    );
-                }
-
+                document.dispatchEvent(
+                    new CustomEvent(
+                        "sgr:notification",
+                        {
+                            detail: mensaje
+                        }
+                    )
+                );
+}
                 // 2. La actualización de tabla solo ocurre
                 //    si el evento pertenece al módulo actual.
                 if (mensaje.module !== moduloActual) {
@@ -571,7 +557,7 @@
         }
     );
 
-    actualizarContador();
+    cargarNotificaciones();
     conectar();
 
 })();
