@@ -14,11 +14,17 @@ from django.db.models import ProtectedError, Q
 
 from core.exceptions import ReglaNegocioError
 from core.mixins import auditar
-from core.services import eliminar, guardar, snapshot
+from core.services import (
+    eliminar,
+    guardar,
+    snapshot,
+    _notificar_crud,
+)
 
 from .models import (
     Cargo, Delegacion, Funcionario, FuncionarioRol, ItemMedible, Rol, Usuario,
 )
+
 
 # Helpers compartidos (core.services)
 _guardar = guardar
@@ -180,17 +186,58 @@ class CRUDFuncionario:
 
     @staticmethod
     def eliminar_funcionario(funcionario, actor=None):
-        """Solo si no tiene registros operativos; de lo contrario se recomienda desactivar."""
-        pk, anterior = funcionario.pk, _snapshot(funcionario)
+        """
+        Elimina un funcionario y su cuenta de acceso cuando no existen
+        relaciones operativas que impidan la eliminación.
+
+        Conserva la auditoría y publica el evento WebSocket después
+        de confirmar la transacción.
+        """
+        pk = funcionario.pk
+        anterior = _snapshot(funcionario)
+        etiqueta = str(funcionario)
+
+        delegacion_id = funcionario.delegacion_id
+
         try:
             with transaction.atomic():
-                Usuario.objects.filter(funcionario=funcionario).delete()
-                funcionario.delete()
-        except (ProtectedError, IntegrityError):
-            raise ReglaNegocioError("No se puede eliminar: el funcionario tiene registros asociados. "
-                                    "Desactívelo en su lugar.")
-        auditar(actor, "ELIMINAR", "funcionario", pk, anterior, None)
 
+                # Eliminar la cuenta asociada, si existe.
+                Usuario.objects.filter(
+                    funcionario=funcionario
+                ).delete()
+
+                # Eliminar el funcionario.
+                funcionario.delete()
+
+                # Registrar auditoría dentro de la transacción.
+                auditar(
+                    actor,
+                    "ELIMINAR",
+                    "funcionario",
+                    pk,
+                    anterior,
+                    None,
+                )
+
+                # Publicar solamente después del COMMIT.
+                _notificar_crud(
+                    entidad="funcionario",
+                    accion="eliminar",
+                    actor=actor,
+                    instancia=funcionario,
+                    object_id=pk,
+                    object_label=etiqueta,
+                    delegacion_id=delegacion_id,
+                )
+
+        except (ProtectedError, IntegrityError):
+            raise ReglaNegocioError(
+                "No se puede eliminar: el funcionario tiene "
+                "registros asociados. Desactívelo en su lugar."
+            )
+
+        return True
 
 # ---------------------------------------------------------------------------
 # Seguridad (RNF-004, RNF-005)

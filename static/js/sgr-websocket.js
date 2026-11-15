@@ -42,7 +42,7 @@
     // ---------------------------------------------------------
 
     if (dropdownNotificaciones && menuNotificaciones) {
-        dropdownNotificaciones.addEventListener("click", (evento) => {
+        dropdownNotificaciones.addEventListener("click", async (evento) => {
             evento.preventDefault();
             evento.stopPropagation();
 
@@ -52,6 +52,11 @@
                 "aria-expanded",
                 String(abierto)
             );
+
+            if (abierto) {
+                await cargarNotificaciones();
+                await marcarLeidas();
+            }
         });
 
         document.addEventListener("click", (evento) => {
@@ -298,7 +303,7 @@
                     );
                 });
 
-            actualizarContador(0);
+            actualizarContador(resultado.pendientes);
 
         } catch (error) {
             console.error(
