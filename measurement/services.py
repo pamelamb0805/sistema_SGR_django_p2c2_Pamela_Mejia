@@ -33,6 +33,7 @@ from .models import (
     Ajuste,
     Indicador,
     Meta,
+    MetaVersion,
     Periodo,
     ReglaCalculoVersion,
 )
@@ -487,15 +488,124 @@ class CRUDPeriodo:
 # CRUDMeta
 # ---------------------------------------------------------------------------
 
-
 class CRUDMeta:
+
     @staticmethod
     def mostrar_metas_por_funcionario(funcionario, periodo=None):
         qs = Meta.objects.filter(
             funcionario=funcionario
-        ).select_related("item", "periodo", "cargo")
+        ).select_related(
+            "item",
+            "periodo",
+            "cargo",
+        )
 
         return qs.filter(periodo=periodo) if periodo else qs
+
+    # ---------------------------------------------------------
+    # VERSIONAMIENTO RF-007 / RF-038
+    # ---------------------------------------------------------
+
+    @staticmethod
+    def _datos_version(meta):
+        """
+        Devuelve una fotografía de los parámetros de la meta.
+        Los valores decimales se guardan como texto para evitar
+        pérdidas de precisión en el JSON.
+        """
+        return {
+            "valor_objetivo": str(meta.valor_objetivo),
+            "unidad": meta.unidad,
+            "ponderador": str(meta.ponderador),
+            "umbral_minimo": str(meta.umbral_minimo),
+            "maximo_computable": str(meta.maximo_computable),
+            "item_id": meta.item_id,
+            "funcionario_id": meta.funcionario_id,
+            "periodo_id": meta.periodo_id,
+            "cargo_id": meta.cargo_id,
+        }
+
+    @staticmethod
+    def _registrar_version(meta, actor=None, datos_anteriores=None):
+        """
+        Registra una versión inmutable de los parámetros.
+
+        - Primera creación: versión 1.
+        - Modificación: cierra la versión anterior y crea otra.
+        - Meta antigua sin historial: conserva primero sus valores
+          anteriores y luego registra los nuevos.
+        """
+        ahora = timezone.now()
+        datos_actuales = CRUDMeta._datos_version(meta)
+
+        versiones = (
+            MetaVersion.objects
+            .select_for_update()
+            .filter(objeto_id=meta.pk)
+            .order_by("-numero_version")
+        )
+
+        ultima = versiones.first()
+
+        vigente = versiones.filter(
+            vigente_hasta__isnull=True
+        ).first()
+
+        # Si ya existe una versión idéntica, no crea duplicados.
+        if vigente and vigente.datos == datos_actuales:
+            return vigente
+
+        # Compatibilidad con metas anteriores al versionamiento.
+        if ultima is None and datos_anteriores is not None:
+            fecha_anterior = (
+                meta.fecha_version or timezone.localdate()
+            )
+
+            inicio_anterior = timezone.make_aware(
+                datetime.combine(fecha_anterior, time.min)
+            )
+
+            MetaVersion.objects.create(
+                meta=meta,
+                objeto_id=meta.pk,
+                numero_version=1,
+                vigente_desde=inicio_anterior,
+                vigente_hasta=ahora,
+                datos=dict(datos_anteriores),
+                creado_por=(
+                    actor
+                    if getattr(actor, "is_authenticated", False)
+                    else None
+                ),
+            )
+
+            numero_nuevo = 2
+
+        else:
+            if vigente:
+                vigente.vigente_hasta = ahora
+                vigente.save(
+                    update_fields=["vigente_hasta"]
+                )
+
+            numero_nuevo = (
+                ultima.numero_version + 1
+                if ultima
+                else 1
+            )
+
+        return MetaVersion.objects.create(
+            meta=meta,
+            objeto_id=meta.pk,
+            numero_version=numero_nuevo,
+            vigente_desde=ahora,
+            datos=datos_actuales,
+            creado_por=(
+                actor
+                if getattr(actor, "is_authenticated", False)
+                else None
+            ),
+        )
 
     @staticmethod
     def suma_ponderaciones(funcionario, periodo, excluir_meta=None):
@@ -512,15 +622,12 @@ class CRUDMeta:
             Decimal("0.00"),
         )
 
+    # ---------------------------------------------------------
+    # RESUMEN DE CONFIGURACIÓN RF-006
+    # ---------------------------------------------------------
+
     @staticmethod
     def resumen_configuracion_cargo(cargo, periodo, funcionarios=None):
-        """
-        RF-006:
-        - Calcula la suma de ponderaciones por funcionario.
-        - Identifica los ítems vigentes sin meta asignada.
-        - Informa porcentaje faltante o excedente.
-        - Considera únicamente el período consultado.
-        """
         if funcionarios is None:
             funcionarios = Funcionario.objects.filter(
                 cargo=cargo,
@@ -530,7 +637,10 @@ class CRUDMeta:
         funcionarios = funcionarios.filter(
             cargo=cargo,
             estado=Funcionario.ESTADO_ACTIVO,
-        ).select_related("cargo", "delegacion")
+        ).select_related(
+            "cargo",
+            "delegacion",
+        )
 
         items_vigentes = list(
             ItemMedible.objects.filter(
@@ -587,8 +697,14 @@ class CRUDMeta:
                 "funcionario": funcionario,
                 "suma": suma,
                 "diferencia": diferencia,
-                "faltante": max(diferencia, Decimal("0.00")),
-                "excedente": max(-diferencia, Decimal("0.00")),
+                "faltante": max(
+                    diferencia,
+                    Decimal("0.00"),
+                ),
+                "excedente": max(
+                    -diferencia,
+                    Decimal("0.00"),
+                ),
                 "items_pendientes": items_pendientes,
                 "cantidad_pendientes": len(items_pendientes),
                 "completa": completa,
@@ -600,15 +716,14 @@ class CRUDMeta:
 
     @staticmethod
     def validar_suma_ponderaciones(cargo, periodo):
-        """
-        Mantiene compatibilidad con las vistas existentes.
-        La configuración está completa únicamente si suma 100 %
-        y todos los ítems vigentes tienen ponderación.
-        """
         return CRUDMeta.resumen_configuracion_cargo(
             cargo,
             periodo,
         )
+
+    # ---------------------------------------------------------
+    # VALIDACIONES
+    # ---------------------------------------------------------
 
     @staticmethod
     def _preparar(meta):
@@ -636,6 +751,16 @@ class CRUDMeta:
         if meta.item.cargo_id != meta.funcionario.cargo_id:
             raise ReglaNegocioError(
                 "El ítem medible no pertenece al cargo del funcionario."
+            )
+
+        if meta.umbral_minimo < Decimal("0") or meta.umbral_minimo > Decimal("100"):
+            raise ReglaNegocioError(
+                "El umbral mínimo debe estar entre 0 y 100 %."
+            )
+
+        if meta.maximo_computable <= Decimal("0"):
+            raise ReglaNegocioError(
+                "El máximo computable debe ser mayor que cero."
             )
 
         duplicada = Meta.objects.filter(
@@ -668,11 +793,19 @@ class CRUDMeta:
                 "La suma no puede superar el 100 %."
             )
 
+    # ---------------------------------------------------------
+    # CREAR META
+    # ---------------------------------------------------------
+
     @staticmethod
     def crear_meta(meta, actor=None):
         with transaction.atomic():
             CRUDMeta._preparar(meta)
-            CRUDMeta._validar(meta, es_nueva=True)
+
+            CRUDMeta._validar(
+                meta,
+                es_nueva=True,
+            )
 
             guardar(
                 meta,
@@ -680,16 +813,23 @@ class CRUDMeta:
                 "meta",
             )
 
-            CalculoIndicadores.recalcular_indicador_meta(meta)
+            CRUDMeta._registrar_version(
+                meta,
+                actor=actor,
+            )
+
+            CalculoIndicadores.recalcular_indicador_meta(
+                meta
+            )
 
         return meta
 
+    # ---------------------------------------------------------
+    # APLICAR META A TODO EL CARGO
+    # ---------------------------------------------------------
+
     @staticmethod
     def crear_meta_para_cargo(meta_base, actor=None):
-        """
-        Replica la meta a todos los funcionarios activos del cargo.
-        Los registros existentes se omiten para no duplicarlos.
-        """
         creadas = []
         omitidas = []
 
@@ -715,6 +855,7 @@ class CRUDMeta:
                     copia,
                     actor,
                 )
+
                 creadas.append(creada)
 
             except ReglaNegocioError as exc:
@@ -727,26 +868,38 @@ class CRUDMeta:
             "omitidas": omitidas,
         }
 
+    # ---------------------------------------------------------
+    # MODIFICAR META Y VERSIONAR
+    # ---------------------------------------------------------
+
     @staticmethod
     def modificar_meta(meta, actor=None):
-        original = Meta.objects.get(pk=meta.pk)
-
-        if (
-            original.funcionario_id,
-            original.item_id,
-            original.periodo_id,
-        ) != (
-            meta.funcionario_id,
-            meta.item_id,
-            meta.periodo_id,
-        ):
-            raise ReglaNegocioError(
-                "No se puede cambiar el funcionario, el ítem ni el período "
-                "de una meta existente. Para otro período debe crearse "
-                "una nueva meta."
+        with transaction.atomic():
+            original = (
+                Meta.objects
+                .select_for_update()
+                .get(pk=meta.pk)
             )
 
-        with transaction.atomic():
+            if (
+                original.funcionario_id,
+                original.item_id,
+                original.periodo_id,
+            ) != (
+                meta.funcionario_id,
+                meta.item_id,
+                meta.periodo_id,
+            ):
+                raise ReglaNegocioError(
+                    "No se puede cambiar el funcionario, el ítem ni el período "
+                    "de una meta existente. Para otro período debe crearse "
+                    "una nueva meta."
+                )
+
+            datos_anteriores = CRUDMeta._datos_version(
+                original
+            )
+
             CRUDMeta._preparar(meta)
 
             CRUDMeta._validar(
@@ -754,15 +907,33 @@ class CRUDMeta:
                 es_nueva=False,
             )
 
+            CRUDMeta._registrar_version(
+                meta,
+                actor=actor,
+                datos_anteriores=datos_anteriores,
+            ) if False else None
+
             guardar(
                 meta,
                 actor,
                 "meta",
             )
 
-            CalculoIndicadores.recalcular_indicador_meta(meta)
+            CRUDMeta._registrar_version(
+                meta,
+                actor=actor,
+                datos_anteriores=datos_anteriores,
+            )
+
+            CalculoIndicadores.recalcular_indicador_meta(
+                meta
+            )
 
         return meta
+
+    # ---------------------------------------------------------
+    # ELIMINAR META
+    # ---------------------------------------------------------
 
     @staticmethod
     def eliminar_meta(meta, actor=None):
@@ -777,7 +948,6 @@ class CRUDMeta:
             "meta",
             "No se puede eliminar la meta porque tiene registros asociados.",
         )
-
 
 # ---------------------------------------------------------------------------
 # CRUDAjuste

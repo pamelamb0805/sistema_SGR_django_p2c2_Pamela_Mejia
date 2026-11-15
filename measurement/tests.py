@@ -12,6 +12,7 @@ from organizations.models import Cargo, Delegacion, Funcionario, FuncionarioRol,
 from . import calculations as calc
 from .models import Ajuste, Indicador, Meta, Periodo
 from .services import CalculoIndicadores, CRUDAjuste, CRUDMeta, CRUDPeriodo
+from measurement.models import MetaVersion
 
 CLAVE = "Clave-Segura-2026"
 D = Decimal
@@ -249,6 +250,80 @@ class MetaServicioTests(BaseTestCase):
 
         self.assertIn("Excede el máximo permitido", str(contexto.exception))
         self.assertIn("10.00 %", str(contexto.exception))
+
+    
+    def test_rf007_crear_meta_guarda_version_inicial(self):
+        meta = CRUDMeta.crear_meta(
+            self.nueva_meta(self.f, pond="100")
+        )
+
+        versiones = MetaVersion.objects.filter(
+            objeto_id=meta.pk
+        ).order_by("numero_version")
+
+        self.assertEqual(versiones.count(), 1)
+        self.assertEqual(versiones.first().numero_version, 1)
+        self.assertEqual(
+            versiones.first().datos["valor_objetivo"],
+            "10",
+        )
+
+    def test_rf007_modificar_meta_crea_nueva_version(self):
+        meta = CRUDMeta.crear_meta(
+            self.nueva_meta(self.f, pond="100")
+        )
+
+        meta.valor_objetivo = D("20")
+        CRUDMeta.modificar_meta(meta)
+
+        versiones = list(
+            MetaVersion.objects.filter(
+                objeto_id=meta.pk
+            ).order_by("numero_version")
+        )
+
+        self.assertEqual(len(versiones), 2)
+        self.assertEqual(versiones[0].numero_version, 1)
+        self.assertEqual(versiones[1].numero_version, 2)
+
+        self.assertIsNotNone(versiones[0].vigente_hasta)
+        self.assertIsNone(versiones[1].vigente_hasta)
+
+        self.assertEqual(
+            versiones[0].datos["valor_objetivo"],
+            "10",
+        )
+
+        self.assertEqual(
+            versiones[1].datos["valor_objetivo"],
+            "20",
+        )
+
+    def test_rf007_conserva_umbral_y_maximo_en_version(self):
+        meta = self.nueva_meta(
+            self.f,
+            pond="100",
+        )
+        meta.umbral_minimo = D("75")
+        meta.maximo_computable = D("180")
+
+        meta = CRUDMeta.crear_meta(meta)
+
+        version = MetaVersion.objects.get(
+            objeto_id=meta.pk,
+            numero_version=1,
+        )
+
+        self.assertEqual(
+            version.datos["umbral_minimo"],
+            "75",
+        )
+
+        self.assertEqual(
+            version.datos["maximo_computable"],
+            "180",
+        )
+
 
 
 
