@@ -9,14 +9,13 @@ from django.db.models import Q
 from django.http import JsonResponse, HttpResponse
 from openpyxl import Workbook
 from django.shortcuts import get_object_or_404
-from django.views.generic import CreateView, ListView, UpdateView
-
+from django.views.generic import CreateView, DetailView, ListView, UpdateView
 from core.mixins import (
     ROLES_CONFIGURACION, ROLES_SUPERVISION, AccionPostView, GuardarMixin, ModoMixin, RolRequeridoMixin,
 )
 
 from .forms import CatalogoForm
-from .models import Catalogo
+from .models import Catalogo, CatalogoVersion
 from .services import CRUDCatalogo
 from core.mixins import ModalFormPageMixin
 from core.pagination import PageSizeMixin   
@@ -118,8 +117,29 @@ class CatalogoToggleView(AccionPostView):
             return f"«{objeto.nombre}» desactivado: no se ofrecerá en registros nuevos."
         CRUDCatalogo.activar_elemento_catalogo(objeto, request.user)
         return f"«{objeto.nombre}» activado."
+class CatalogoHistorialView(LecturaMixin, DetailView):
+    model = Catalogo
+    template_name = "catalogs/catalogo_historial.html"
+    context_object_name = "elemento"
 
+    def get_context_data(self, **kwargs):
+        contexto = super().get_context_data(**kwargs)
 
+        versiones = (
+            CatalogoVersion.objects
+            .filter(objeto_id=self.object.pk)
+            .select_related("creado_por")
+            .order_by("-numero_version")
+        )
+
+        contexto["versiones"] = versiones
+        contexto["total_versiones"] = versiones.count()
+        contexto["titulo"] = (
+            f"Historial del catálogo: {self.object.nombre}"
+        )
+
+        return contexto
+    
 @login_required
 def catalogo_por_area(request):
     """JSON con los elementos activos aplicables a un área: /catalogs/api/por-area/?area=Social&tipo=Actividad"""

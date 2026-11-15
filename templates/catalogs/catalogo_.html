@@ -49,7 +49,6 @@
             action="{% url 'catalogs:catalogo_list' %}"
             class="row g-3 align-items-end"
         >
-
             <div class="col-12 col-md-6 col-lg-4">
                 <label class="form-label" for="filtro-q">
                     Buscar elemento
@@ -144,7 +143,6 @@
                     <i class="bi bi-x-lg"></i>
                 </a>
             </div>
-
         </form>
     </div>
 </div>
@@ -183,6 +181,8 @@
                     <th>Tipo de atención asociado</th>
                     <th>Área</th>
                     <th>Estado</th>
+                    <th>Historial</th>
+
                     {% if puede_editar %}
                         <th class="text-end">Acciones</th>
                     {% endif %}
@@ -238,6 +238,17 @@
                             {% endif %}
                         </td>
 
+                        <td>
+                            <a
+                                class="btn btn-sm btn-outline-primary"
+                                href="{% url 'catalogs:catalogo_historial' e.pk %}"
+                                title="Consultar historial de versiones"
+                            >
+                                <i class="bi bi-clock-history"></i>
+                                Historial
+                            </a>
+                        </td>
+
                         {% if puede_editar %}
                             <td class="text-end text-nowrap">
 
@@ -274,7 +285,7 @@
                 {% empty %}
                     <tr>
                         <td
-                            colspan="{% if puede_editar %}8{% else %}7{% endif %}"
+                            colspan="{% if puede_editar %}9{% else %}8{% endif %}"
                             class="text-center py-5"
                         >
                             <i class="bi bi-inbox fs-2 text-body-secondary"></i>
