@@ -1711,6 +1711,7 @@ class CalculoIndicadores:
 
 
 
+
 @staticmethod
 def resumen_delegacion(
     funcionarios,
@@ -1718,7 +1719,7 @@ def resumen_delegacion(
     fecha=None,
 ):
     """
-    Consolida resultados e indicadores de actividad reciente por funcionario.
+    Consolida resultados de la delegación e indicadores de actividad reciente.
 
     RF-029:
     - Responsables, resultados, avance, meta esperada y semáforo.
@@ -1728,7 +1729,7 @@ def resumen_delegacion(
     - Fecha del último ingreso válido.
     - Días sin ingreso.
     - Cantidad de registros válidos.
-    - Promedio diario de registros válidos.
+    - Promedio diario por funcionario.
     """
     from django.db.models import Count, Max
     from activities.models import Actividad
@@ -1750,7 +1751,7 @@ def resumen_delegacion(
         else (fecha or timezone.localdate())
     )
 
-    # La fecha de cálculo nunca sale del período.
+    # Mantener la fecha dentro del período seleccionado.
     fecha_calculo = max(
         periodo.fecha_inicio,
         min(fecha_calculo, periodo.fecha_termino),
@@ -1768,9 +1769,11 @@ def resumen_delegacion(
         fecha_calculo,
     )
 
-    # Días transcurridos, contando el día inicial.
-    dias_transcurridos = (
-        (fecha_calculo - periodo.fecha_inicio).days + 1
+    # Respetar la convención oficial: el día inicial es día cero.
+    dias_transcurridos = calc.calcular_dias_transcurridos(
+        periodo.fecha_inicio,
+        periodo.fecha_termino,
+        fecha_calculo,
     )
 
     ids_funcionarios = [
@@ -1820,8 +1823,12 @@ def resumen_delegacion(
             else None
         )
 
-        promedio_diario = calc.redondear(
-            Decimal(cantidad) / Decimal(dias_transcurridos)
+        promedio_diario = (
+            calc.redondear(
+                Decimal(cantidad) / Decimal(dias_transcurridos)
+            )
+            if dias_transcurridos > 0
+            else Decimal("0.00")
         )
 
         fila.update({
