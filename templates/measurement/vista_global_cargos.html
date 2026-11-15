@@ -1,0 +1,282 @@
+
+{% extends "base.html" %}
+
+{% block title %}Vista global por cargos · SGR{% endblock %}
+
+{% block page_title %}
+  {{ titulo|default:"Vista global por cargos" }}
+{% endblock %}
+
+{% block content %}
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <form method="get" class="row g-3 align-items-end">
+
+      <div class="col-md-4">
+        <label for="periodo" class="form-label">
+          Período de medición
+        </label>
+        <select name="periodo" id="periodo" class="form-select">
+          {% for p in periodos %}
+            <option value="{{ p.pk }}"
+              {% if periodo and periodo.pk == p.pk %}selected{% endif %}>
+              {{ p }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      {% if delegaciones %}
+        <div class="col-md-3">
+          <label for="delegacion" class="form-label">
+            Delegación
+          </label>
+          <select name="delegacion" id="delegacion" class="form-select">
+            <option value="">Todas</option>
+            {% for d in delegaciones %}
+              <option value="{{ d.pk }}"
+                {% if delegacion_sel == d.pk|stringformat:"s" %}selected{% endif %}>
+                {{ d.nombre }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+      {% endif %}
+
+      <div class="col-md-3">
+        <label for="cargo" class="form-label">
+          Cargo
+        </label>
+        <select name="cargo" id="cargo" class="form-select">
+          <option value="">Todos los cargos</option>
+          {% for c in cargos %}
+            <option value="{{ c.pk }}"
+              {% if cargo_sel == c.pk|stringformat:"s" %}selected{% endif %}>
+              {{ c.nombre_cargo }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-primary w-100">
+          <i class="bi bi-funnel me-1"></i>
+          Filtrar
+        </button>
+      </div>
+
+    </form>
+  </div>
+</div>
+
+{% if periodo %}
+
+  <div class="alert alert-info">
+    <i class="bi bi-calendar-range me-1"></i>
+    Período consultado:
+    <strong>{{ periodo }}</strong>.
+    Fechas: {{ periodo.fecha_inicio|date:"d/m/Y" }}
+    al {{ periodo.fecha_termino|date:"d/m/Y" }}.
+  </div>
+
+  {% for grupo in cargos_resultado %}
+
+    <div class="card shadow-sm mb-4">
+
+      <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+          <h5 class="mb-1">
+            <i class="bi bi-briefcase me-1"></i>
+            {{ grupo.cargo.nombre_cargo }}
+          </h5>
+          <small class="text-body-secondary">
+            Vigencia:
+            {{ grupo.cargo.vigencia_desde|date:"d/m/Y" }}
+            {% if grupo.cargo.vigencia_hasta %}
+              al {{ grupo.cargo.vigencia_hasta|date:"d/m/Y" }}
+            {% else %}
+              · Vigente
+            {% endif %}
+          </small>
+        </div>
+
+        <a href="{% url 'organizations:cargo_detail' grupo.cargo.pk %}"
+           class="btn btn-sm btn-outline-primary">
+          <i class="bi bi-box-arrow-up-right me-1"></i>
+          Ver cargo
+        </a>
+      </div>
+
+      <div class="card-body">
+
+        <div class="row g-3 mb-4">
+
+          <div class="col-sm-6 col-lg-3">
+            <div class="border rounded p-3 h-100">
+              <div class="small text-body-secondary">
+                Funcionarios activos
+              </div>
+              <div class="fs-3 fw-semibold">
+                {{ grupo.total_funcionarios }}
+              </div>
+            </div>
+          </div>
+
+          <div class="col-sm-6 col-lg-3">
+            <div class="border rounded p-3 h-100">
+              <div class="small text-body-secondary">
+                Metas configuradas
+              </div>
+              <div class="fs-3 fw-semibold">
+                {{ grupo.total_metas }}
+              </div>
+            </div>
+          </div>
+
+          <div class="col-sm-6 col-lg-3">
+            <div class="border rounded p-3 h-100">
+              <div class="small text-body-secondary">
+                Promedio de resultados
+              </div>
+              <div class="fs-3 fw-semibold">
+                {{ grupo.promedio_resultado|floatformat:2 }} %
+              </div>
+            </div>
+          </div>
+
+          <div class="col-sm-6 col-lg-3">
+            <div class="border rounded p-3 h-100">
+              <div class="small text-body-secondary">
+                Registros válidos
+              </div>
+              <div class="fs-3 fw-semibold">
+                {{ grupo.total_registros_validos }}
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+          <h6 class="mb-0">
+            Funcionarios y cifras logradas por equipo
+          </h6>
+          <span class="badge text-bg-secondary">
+            {{ grupo.total_funcionarios }} funcionarios
+          </span>
+        </div>
+
+        <div class="table-responsive">
+          <table class="table table-hover table-sm align-middle">
+
+            <thead>
+              <tr>
+                <th>Funcionario</th>
+                <th>Delegación</th>
+                <th>Metas</th>
+                <th>Avance ponderado</th>
+                <th>Resultado total</th>
+                <th>Semáforo</th>
+                <th>Último ingreso válido</th>
+                <th>Registros válidos</th>
+                <th>Detalle</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {% for fila in grupo.funcionarios %}
+                <tr>
+                  <td>
+                    <strong>{{ fila.funcionario.nombre }}</strong>
+                    <div class="small text-body-secondary">
+                      {{ fila.funcionario.identificador_institucional }}
+                    </div>
+                  </td>
+
+                  <td>{{ fila.funcionario.delegacion }}</td>
+
+                  <td>{{ fila.cantidad_metas }}</td>
+
+                  <td>
+                    {{ fila.total_ponderado|floatformat:2 }} %
+                  </td>
+
+                  <td>
+                    <strong>
+                      {{ fila.resultado_total|floatformat:2 }} %
+                    </strong>
+                  </td>
+
+                  <td>
+                    {% if fila.semaforo == "Verde" %}
+                      <span class="badge text-bg-success">Verde</span>
+                    {% elif fila.semaforo == "Ámbar" %}
+                      <span class="badge text-bg-warning">Ámbar</span>
+                    {% elif fila.semaforo == "Rojo" %}
+                      <span class="badge text-bg-danger">Rojo</span>
+                    {% else %}
+                      <span class="badge text-bg-secondary">
+                        {{ fila.semaforo|default:"Sin datos" }}
+                      </span>
+                    {% endif %}
+                  </td>
+
+                  <td>
+                    {% if fila.ultimo_ingreso %}
+                      {{ fila.ultimo_ingreso|date:"d/m/Y" }}
+                    {% else %}
+                      <span class="text-body-secondary">
+                        Sin registros
+                      </span>
+                    {% endif %}
+                  </td>
+
+                  <td>
+                    {{ fila.cantidad_registros|default:0 }}
+                  </td>
+
+                  <td>
+                    <a class="btn btn-sm btn-outline-primary"
+                       href="{% url 'measurement:desempeno_funcionario' fila.funcionario.pk %}?periodo={{ periodo.pk }}">
+                      <i class="bi bi-person-lines-fill me-1"></i>
+                      Ver detalle
+                    </a>
+                  </td>
+                </tr>
+
+              {% empty %}
+                <tr>
+                  <td colspan="9"
+                      class="text-center text-body-secondary py-3">
+                    No hay funcionarios activos para este cargo.
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+
+          </table>
+        </div>
+
+      </div>
+    </div>
+
+  {% empty %}
+
+    <div class="alert alert-warning">
+      No existen cargos con funcionarios activos dentro del ámbito
+      y los filtros seleccionados.
+    </div>
+
+  {% endfor %}
+
+{% else %}
+
+  <div class="alert alert-warning">
+    No hay períodos de medición registrados.
+    Debes crear un período antes de consultar la vista global.
+  </div>
+
+{% endif %}
+
+{% endblock %}

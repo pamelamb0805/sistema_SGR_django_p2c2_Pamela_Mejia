@@ -73,4 +73,12 @@ urlpatterns = [
         name="semaforo_exportar_excel",
     ),
 
+
+    path(
+        "vista-global-cargos/",
+        views.vista_global_cargos,
+        name="vista_global_cargos",
+    ),
+
+
 ]

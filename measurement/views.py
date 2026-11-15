@@ -1133,6 +1133,140 @@ def semaforo(request):
 
 
 @login_required
+def vista_global_cargos(request):
+    """
+    RF-031: vista global del desempeño agrupado por cargo.
+
+    Consolida funcionarios, metas, resultados y fechas relevantes,
+    respetando el ámbito de acceso del usuario.
+    """
+    if not tiene_rol(request.user, *ROLES_SUPERVISION):
+        return denegar_acceso(request)
+
+    periodo = _periodo_seleccionado(request)
+
+    funcionarios = filtrar_por_ambito(
+        Funcionario.objects.filter(
+            estado=Funcionario.ESTADO_ACTIVO
+        ).select_related(
+            "cargo",
+            "delegacion",
+        ),
+        request.user,
+        "delegacion_id",
+    )
+
+    delegacion_sel = request.GET.get("delegacion", "").strip()
+    cargo_sel = request.GET.get("cargo", "").strip()
+
+    if delegacion_sel.isdigit() and es_transversal(request.user):
+        funcionarios = funcionarios.filter(
+            delegacion_id=delegacion_sel
+        )
+
+    if cargo_sel.isdigit():
+        funcionarios = funcionarios.filter(
+            cargo_id=cargo_sel
+        )
+
+    cargos_resultado = []
+
+    cargos = Cargo.objects.all().order_by("nombre_cargo")
+
+    if cargo_sel.isdigit():
+        cargos = cargos.filter(pk=cargo_sel)
+
+    for cargo in cargos:
+        funcionarios_cargo = funcionarios.filter(
+            cargo_id=cargo.pk
+        ).order_by("nombre")
+
+        if not funcionarios_cargo.exists():
+            continue
+
+        resumen = (
+            CalculoIndicadores.resumen_delegacion(
+                funcionarios_cargo,
+                periodo,
+            )
+            if periodo
+            else None
+        )
+
+        filas_funcionarios = (
+            resumen["filas"]
+            if resumen
+            else []
+        )
+
+        total_metas = 0
+
+        if periodo:
+            for fila in filas_funcionarios:
+                cantidad_metas = MetaModel.objects.filter(
+                    funcionario=fila["funcionario"],
+                    periodo=periodo,
+                ).count()
+
+                fila["cantidad_metas"] = cantidad_metas
+                total_metas += cantidad_metas
+
+        cargos_resultado.append({
+            "cargo": cargo,
+            "funcionarios": filas_funcionarios,
+            "total_funcionarios": funcionarios_cargo.count(),
+            "total_metas": total_metas,
+            "promedio_resultado": (
+                resumen["promedio"]
+                if resumen
+                else None
+            ),
+            "resultado_global": (
+                resumen["resultado_global"]
+                if resumen
+                else None
+            ),
+            "total_registros_validos": (
+                resumen["total_registros_validos"]
+                if resumen
+                else 0
+            ),
+            "fecha_inicio_periodo": (
+                periodo.fecha_inicio
+                if periodo
+                else None
+            ),
+            "fecha_termino_periodo": (
+                periodo.fecha_termino
+                if periodo
+                else None
+            ),
+        })
+
+    return render(
+        request,
+        "measurement/vista_global_cargos.html",
+        {
+            "titulo": "Vista global por cargos",
+            "periodo": periodo,
+            "periodos": Periodo.objects.all(),
+            "cargos_resultado": cargos_resultado,
+            "cargos": Cargo.objects.all().order_by(
+                "nombre_cargo"
+            ),
+            "delegaciones": (
+                Delegacion.objects.all()
+                if es_transversal(request.user)
+                else []
+            ),
+            "delegacion_sel": delegacion_sel,
+            "cargo_sel": cargo_sel,
+            "hoy": timezone.localdate(),
+        },
+    )
+
+
+@login_required
 def exportar_metas_excel(request):
     """Exporta metas respetando el nombre histórico del ítem en períodos cerrados."""
 
