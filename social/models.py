@@ -65,6 +65,16 @@ class UsuarioSocial(models.Model):
                     "Registre una nueva gestión en ese caso en lugar de crear otro.")
 
 
+    @property
+    def delegacion_historica(self):
+        return (
+            self.delegacion.obtener_version_historica(
+                self.fecha_primer_registro
+            )
+            or self.delegacion.obtener_datos_actuales()
+        )
+
+
 # ---------------------------------------------------------------------------
 # ATENCION_SOCIAL (gestión)
 # ---------------------------------------------------------------------------
@@ -242,3 +252,15 @@ class AtencionSocial(models.Model):
 
         if errores:
             raise ValidationError(errores)
+
+    
+    @property
+    def delegacion_historica(self):
+        fecha_referencia = self.fecha_registro or self.fecha
+
+        return (
+            self.delegacion.obtener_version_historica(
+                fecha_referencia
+            )
+            or self.delegacion.obtener_datos_actuales()
+        )

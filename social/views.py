@@ -201,7 +201,7 @@ def exportar_casos_excel(request):
             caso.pk,
             caso.nombre,
             caso.territorio,
-            caso.delegacion.nombre,
+            caso.delegacion_historica.get("nombre", caso.delegacion.nombre)
             caso.fecha_primer_registro,
             caso.estado_caso,
             caso.total_gestiones,
@@ -243,7 +243,10 @@ def exportar_casos_excel(request):
             gestion.fecha_registro.replace(tzinfo=None)
             if gestion.fecha_registro else None,
             gestion.funcionario.nombre,
+            gestion.delegacion_historica.get(
+            "nombre",
             gestion.delegacion.nombre,
+        )
             gestion.estado,
             gestion.resultado,
         ])

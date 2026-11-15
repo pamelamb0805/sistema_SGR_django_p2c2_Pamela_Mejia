@@ -148,10 +148,8 @@
         </div>
 
         <div class="d-flex flex-wrap gap-2">
-            <a
-                class="btn btn-outline-success"
-                href="{% url 'social:caso_exportar_excel' %}?{{ request.GET.urlencode }}"
-            >
+            <a class="btn btn-outline-success"
+               href="{% url 'social:caso_exportar_excel' %}?{{ request.GET.urlencode }}">
                 <i class="bi bi-file-earmark-excel me-1" aria-hidden="true"></i>
                 Exportar Excel
             </a>
@@ -177,26 +175,16 @@
             <form method="get" class="row g-3">
                 <div class="col-12 col-md-6 col-lg-3">
                     <label class="form-label" for="filtro-q">Nombre de la persona</label>
-                    <input
-                        id="filtro-q"
-                        class="form-control"
-                        type="search"
-                        name="q"
-                        value="{{ filtros.q|default:'' }}"
-                        placeholder="Buscar por nombre"
-                    >
+                    <input id="filtro-q" class="form-control" type="search"
+                           name="q" value="{{ filtros.q|default:'' }}"
+                           placeholder="Buscar por nombre">
                 </div>
 
                 <div class="col-12 col-md-6 col-lg-3">
                     <label class="form-label" for="filtro-territorio">Territorio</label>
-                    <input
-                        id="filtro-territorio"
-                        class="form-control"
-                        type="text"
-                        name="territorio"
-                        value="{{ filtros.territorio|default:'' }}"
-                        placeholder="Buscar territorio"
-                    >
+                    <input id="filtro-territorio" class="form-control" type="text"
+                           name="territorio" value="{{ filtros.territorio|default:'' }}"
+                           placeholder="Buscar territorio">
                 </div>
 
                 <div class="col-12 col-md-6 col-lg-2">
@@ -204,10 +192,10 @@
                     <select id="filtro-estado" class="form-select" name="estado_caso">
                         <option value="">Todos</option>
                         {% for valor, etiqueta in estados %}
-                            <option
-                                value="{{ valor }}"
-                                {% if filtros.estado_caso == valor %}selected{% endif %}
-                            >{{ etiqueta }}</option>
+                            <option value="{{ valor }}"
+                                {% if filtros.estado_caso == valor %}selected{% endif %}>
+                                {{ etiqueta }}
+                            </option>
                         {% endfor %}
                     </select>
                 </div>
@@ -218,10 +206,10 @@
                     <select id="filtro-delegacion" class="form-select" name="delegacion">
                         <option value="">Todas</option>
                         {% for delegacion in delegaciones %}
-                            <option
-                                value="{{ delegacion.pk }}"
-                                {% if filtros.delegacion == delegacion.pk|stringformat:"s" %}selected{% endif %}
-                            >{{ delegacion.nombre }}</option>
+                            <option value="{{ delegacion.pk }}"
+                                {% if filtros.delegacion == delegacion.pk|stringformat:"s" %}selected{% endif %}>
+                                {{ delegacion.nombre }}
+                            </option>
                         {% endfor %}
                     </select>
                 </div>
@@ -229,24 +217,14 @@
 
                 <div class="col-12 col-md-6 col-lg-2">
                     <label class="form-label" for="filtro-desde">Registro desde</label>
-                    <input
-                        id="filtro-desde"
-                        class="form-control"
-                        type="date"
-                        name="fecha_desde"
-                        value="{{ filtros.fecha_desde|default:'' }}"
-                    >
+                    <input id="filtro-desde" class="form-control" type="date"
+                           name="fecha_desde" value="{{ filtros.fecha_desde|default:'' }}">
                 </div>
 
                 <div class="col-12 col-md-6 col-lg-2">
                     <label class="form-label" for="filtro-hasta">Registro hasta</label>
-                    <input
-                        id="filtro-hasta"
-                        class="form-control"
-                        type="date"
-                        name="fecha_hasta"
-                        value="{{ filtros.fecha_hasta|default:'' }}"
-                    >
+                    <input id="filtro-hasta" class="form-control" type="date"
+                           name="fecha_hasta" value="{{ filtros.fecha_hasta|default:'' }}">
                 </div>
 
                 <div class="col-12 d-flex flex-wrap gap-2">
@@ -301,7 +279,7 @@
                         <td class="fw-semibold">#{{ caso.pk }}</td>
                         <td>{{ caso.nombre }}</td>
                         <td>{{ caso.territorio|default:"—" }}</td>
-                        <td>{{ caso.delegacion.nombre|default:"—" }}</td>
+                        <td>{{ caso.delegacion_historica.nombre|default:"—" }}</td>
                         <td>{{ caso.fecha_primer_registro|date:"d/m/Y" }}</td>
                         <td>
                             <span class="badge text-bg-secondary">
@@ -318,25 +296,19 @@
                                     <i class="bi bi-clock-history me-1" aria-hidden="true"></i>En seguimiento
                                 </span>
                             {% else %}
-                                <span class="badge text-bg-secondary">
-                                    {{ caso.estado_caso }}
-                                </span>
+                                <span class="badge text-bg-secondary">{{ caso.estado_caso }}</span>
                             {% endif %}
                         </td>
                         <td class="text-end text-nowrap">
-                            <a
-                                class="btn btn-sm btn-outline-primary"
-                                href="{% url 'social:caso_detail' caso.pk %}"
-                                aria-label="Ver caso {{ caso.pk }}"
-                            >
+                            <a class="btn btn-sm btn-outline-primary"
+                               href="{% url 'social:caso_detail' caso.pk %}"
+                               aria-label="Ver caso {{ caso.pk }}">
                                 <i class="bi bi-eye me-1" aria-hidden="true"></i>Ver
                             </a>
 
                             {% if puede_editar and not caso.cerrado %}
-                                <a
-                                    class="btn btn-sm btn-outline-secondary"
-                                    href="{% url 'social:caso_update' caso.pk %}"
-                                >
+                                <a class="btn btn-sm btn-outline-secondary"
+                                   href="{% url 'social:caso_update' caso.pk %}">
                                     <i class="bi bi-pencil me-1" aria-hidden="true"></i>Editar
                                 </a>
                             {% endif %}
@@ -362,14 +334,11 @@
         {% include "partials/_pagination.html" %}
     </div>
 
-
 {% elif modo == "form" %}
 
     <div class="mb-3">
-        <a
-            class="btn btn-sm btn-outline-secondary"
-            href="{% if caso %}{% url 'social:caso_detail' caso.pk %}{% elif object %}{% url 'social:caso_detail' object.pk %}{% else %}{% url 'social:caso_list' %}{% endif %}"
-        >
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{% if caso %}{% url 'social:caso_detail' caso.pk %}{% elif object %}{% url 'social:caso_detail' object.pk %}{% else %}{% url 'social:caso_list' %}{% endif %}">
             <i class="bi bi-arrow-left me-1" aria-hidden="true"></i>
             Volver
         </a>
@@ -429,17 +398,14 @@
                         Guardar caso
                     </button>
 
-                    <a
-                        class="btn btn-outline-secondary"
-                        href="{% if caso %}{% url 'social:caso_detail' caso.pk %}{% elif object %}{% url 'social:caso_detail' object.pk %}{% else %}{% url 'social:caso_list' %}{% endif %}"
-                    >
+                    <a class="btn btn-outline-secondary"
+                       href="{% if caso %}{% url 'social:caso_detail' caso.pk %}{% elif object %}{% url 'social:caso_detail' object.pk %}{% else %}{% url 'social:caso_list' %}{% endif %}">
                         Cancelar
                     </a>
                 </div>
             </form>
         </div>
     </div>
-
 
 {% elif modo == "detalle" %}
 
@@ -495,12 +461,16 @@
 
                         <div class="col-12 col-md-6">
                             <div class="detail-label">Delegación</div>
-                            <div class="detail-value">{{ caso.delegacion.nombre|default:"—" }}</div>
+                            <div class="detail-value">
+                                {{ caso.delegacion_historica.nombre|default:"—" }}
+                            </div>
                         </div>
 
                         <div class="col-12 col-md-6">
                             <div class="detail-label">Fecha de registro</div>
-                            <div class="detail-value">{{ caso.fecha_primer_registro|date:"d/m/Y" }}</div>
+                            <div class="detail-value">
+                                {{ caso.fecha_primer_registro|date:"d/m/Y" }}
+                            </div>
                         </div>
 
                         <div class="col-12 col-md-6">
@@ -552,10 +522,8 @@
                                 </div>
                             {% endif %}
 
-                            <label
-                                class="form-label fw-semibold"
-                                for="{{ estado_form.estado_caso.id_for_label }}"
-                            >
+                            <label class="form-label fw-semibold"
+                                   for="{{ estado_form.estado_caso.id_for_label }}">
                                 Cambiar estado del caso
                             </label>
 
@@ -635,7 +603,9 @@
                         <td>{{ g.fecha|date:"d/m/Y" }}</td>
                         <td>{{ g.fecha_registro|date:"d/m/Y H:i"|default:"—" }}</td>
                         <td>{{ g.funcionario.nombre|default:"—" }}</td>
-                        <td>{{ g.delegacion.nombre|default:caso.delegacion.nombre }}</td>
+                        <td>
+                            {{ g.delegacion_historica.nombre|default:caso.delegacion_historica.nombre|default:"—" }}
+                        </td>
                         <td>{{ g.resultado|default:"—" }}</td>
                         <td>
                             {% if g.estado == "Realizada" %}
@@ -647,11 +617,9 @@
 
                         {% if puede_editar %}
                         <td>
-                            <a
-                                class="btn btn-sm btn-outline-secondary"
-                                href="{% url 'social:gestion_update' g.pk %}"
-                                aria-label="Corregir gestión {{ g.numero_gestion }}"
-                            >
+                            <a class="btn btn-sm btn-outline-secondary"
+                               href="{% url 'social:gestion_update' g.pk %}"
+                               aria-label="Corregir gestión {{ g.numero_gestion }}">
                                 <i class="bi bi-pencil" aria-hidden="true"></i>
                                 Corregir
                             </a>
@@ -685,7 +653,6 @@
         {% endif %}
     </div>
 
-
 {% elif modo == "estadisticas" %}
 
     <div class="card shadow-sm mb-4">
@@ -700,24 +667,14 @@
             <form method="get" class="row g-3">
                 <div class="col-12 col-md-4">
                     <label class="form-label" for="estadistica-desde">Desde</label>
-                    <input
-                        id="estadistica-desde"
-                        class="form-control"
-                        type="date"
-                        name="fecha_desde"
-                        value="{{ filtros.fecha_desde|default:'' }}"
-                    >
+                    <input id="estadistica-desde" class="form-control" type="date"
+                           name="fecha_desde" value="{{ filtros.fecha_desde|default:'' }}">
                 </div>
 
                 <div class="col-12 col-md-4">
                     <label class="form-label" for="estadistica-hasta">Hasta</label>
-                    <input
-                        id="estadistica-hasta"
-                        class="form-control"
-                        type="date"
-                        name="fecha_hasta"
-                        value="{{ filtros.fecha_hasta|default:'' }}"
-                    >
+                    <input id="estadistica-hasta" class="form-control" type="date"
+                           name="fecha_hasta" value="{{ filtros.fecha_hasta|default:'' }}">
                 </div>
 
                 {% if delegaciones %}
@@ -726,10 +683,10 @@
                     <select id="estadistica-delegacion" class="form-select" name="delegacion">
                         <option value="">Todas</option>
                         {% for delegacion in delegaciones %}
-                            <option
-                                value="{{ delegacion.pk }}"
-                                {% if filtros.delegacion == delegacion.pk|stringformat:"s" %}selected{% endif %}
-                            >{{ delegacion.nombre }}</option>
+                            <option value="{{ delegacion.pk }}"
+                                {% if filtros.delegacion == delegacion.pk|stringformat:"s" %}selected{% endif %}>
+                                {{ delegacion.nombre }}
+                            </option>
                         {% endfor %}
                     </select>
                 </div>
@@ -741,17 +698,12 @@
                         Aplicar filtros
                     </button>
 
-                    <a
-                        class="btn btn-outline-secondary"
-                        href="{% url 'social:estadisticas' %}"
-                    >
+                    <a class="btn btn-outline-secondary" href="{% url 'social:estadisticas' %}">
                         Limpiar
                     </a>
 
-                    <a
-                        class="btn btn-outline-success"
-                        href="{% url 'social:estadisticas_exportar_excel' %}?{{ request.GET.urlencode }}"
-                    >
+                    <a class="btn btn-outline-success"
+                       href="{% url 'social:estadisticas_exportar_excel' %}?{{ request.GET.urlencode }}">
                         <i class="bi bi-file-earmark-excel me-1" aria-hidden="true"></i>
                         Exportar Excel
                     </a>
@@ -914,7 +866,6 @@
         </div>
     </div>
 
-
 {% else %}
 
     <div class="alert alert-warning" role="alert">
@@ -1016,7 +967,8 @@ document.addEventListener("DOMContentLoaded", function () {
             }
 
             if (datos.subatenciones.length === 0) {
-                opcionVacia.textContent = "No hay subatenciones activas para este tipo";
+                opcionVacia.textContent =
+                    "No hay subatenciones activas para este tipo";
             }
 
             subSelect.disabled = false;
@@ -1026,7 +978,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
             const opcionError = document.createElement("option");
             opcionError.value = "";
-            opcionError.textContent = "Error al cargar. Vuelva a seleccionar el tipo.";
+            opcionError.textContent =
+                "Error al cargar. Vuelva a seleccionar el tipo.";
             subSelect.appendChild(opcionError);
 
             subSelect.disabled = false;

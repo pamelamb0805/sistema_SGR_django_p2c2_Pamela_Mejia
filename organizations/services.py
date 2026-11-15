@@ -74,13 +74,13 @@ class CRUDDelegacion:
             pk=id_delegacion
         ).first()
 
+
     @staticmethod
     def modificar_delegacion(delegacion, actor=None):
         """
-        Modifica los datos actuales y conserva la versión anterior.
-
-        Se utiliza select_for_update para evitar que dos modificaciones
-        simultáneas sobrescriban el historial.
+        Actualiza una delegación conservando sus versiones anteriores.
+        Bloquea el registro durante la operación para evitar que
+        modificaciones simultáneas sobrescriban el historial.
         """
 
         with transaction.atomic():
@@ -92,6 +92,32 @@ class CRUDDelegacion:
 
             delegacion.nombre = (delegacion.nombre or "").strip()
             delegacion.codigo = (delegacion.codigo or "").strip()
+            delegacion.direccion = (delegacion.direccion or "").strip()
+            delegacion.comuna = (delegacion.comuna or "").strip()
+            delegacion.ambito = (delegacion.ambito or "").strip()
+
+            if not delegacion.nombre:
+                raise ReglaNegocioError(
+                    "El nombre de la delegación es obligatorio."
+                )
+
+            duplicados = Delegacion.objects.filter(
+                nombre__iexact=delegacion.nombre
+            ).exclude(pk=delegacion.pk)
+
+            if duplicados.exists():
+                raise ReglaNegocioError(
+                    "Ya existe una delegación con ese nombre."
+                )
+
+            duplicados_codigo = Delegacion.objects.filter(
+                codigo__iexact=delegacion.codigo
+            ).exclude(pk=delegacion.pk)
+
+            if duplicados_codigo.exists():
+                raise ReglaNegocioError(
+                    "Ya existe una delegación con ese código."
+                )
 
             campos = [
                 "codigo",
@@ -103,43 +129,44 @@ class CRUDDelegacion:
             ]
 
             datos_anteriores = original.obtener_datos_actuales()
-            datos_nuevos = CRUDDelegacion._datos_version(delegacion)
+            datos_nuevos = delegacion.obtener_datos_actuales()
 
             cambio = any(
                 datos_anteriores.get(campo) != datos_nuevos.get(campo)
                 for campo in campos
             )
 
-            # Nunca aceptar un historial enviado desde el formulario.
-            historial = list(original.historial_versiones or [])
+            historial = list(
+                original.historial_versiones or []
+            )
 
             if cambio:
-                ahora = timezone.now().isoformat()
+                ahora = timezone.now()
+                ahora_iso = ahora.isoformat()
 
                 if not historial:
-                    # Para delegaciones preexistentes, conserva los datos
-                    # que tenían antes de la primera modificación.
                     historial.append({
                         "numero_version": 1,
                         "vigente_desde": None,
-                        "vigente_hasta": ahora,
+                        "vigente_hasta": ahora_iso,
                         "datos": datos_anteriores,
                     })
+
                     numero = 2
 
                 else:
                     ultima = dict(historial[-1])
-                    ultima["vigente_hasta"] = ahora
+                    ultima["vigente_hasta"] = ahora_iso
                     historial[-1] = ultima
 
                     numero = max(
-                        int(v.get("numero_version", 0))
-                        for v in historial
+                        int(version.get("numero_version", 0))
+                        for version in historial
                     ) + 1
 
                 historial.append({
                     "numero_version": numero,
-                    "vigente_desde": ahora,
+                    "vigente_desde": ahora_iso,
                     "vigente_hasta": None,
                     "datos": datos_nuevos,
                 })
@@ -152,23 +179,23 @@ class CRUDDelegacion:
                 "delegacion",
             )
 
-    @staticmethod
-    def activar_desactivar_delegacion(delegacion, actor=None):
-        """
-        Desactiva o reactiva sin eliminar el registro.
-        El cambio de estado también queda versionado.
-        """
+        @staticmethod
+        def activar_desactivar_delegacion(delegacion, actor=None):
+            """
+            Desactiva o reactiva sin eliminar el registro.
+            El cambio de estado también queda versionado.
+            """
 
-        delegacion.estado = (
-            Delegacion.ESTADO_INACTIVA
-            if delegacion.activa
-            else Delegacion.ESTADO_ACTIVA
-        )
+            delegacion.estado = (
+                Delegacion.ESTADO_INACTIVA
+                if delegacion.activa
+                else Delegacion.ESTADO_ACTIVA
+            )
 
-        return CRUDDelegacion.modificar_delegacion(
-            delegacion,
-            actor,
-        )
+            return CRUDDelegacion.modificar_delegacion(
+                delegacion,
+                actor,
+            )
 
 # ---------------------------------------------------------------------------
 # CRUDCargo (RF-003 y versionamiento RF-038)
