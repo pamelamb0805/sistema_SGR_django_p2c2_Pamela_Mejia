@@ -104,7 +104,7 @@ def _exigir_escritura(user, caso):
 
 
 
-def _validar_catalogo(tipo_atencion, subatencion):
+def _validar_catalogo(tipo_atencion, subatencion, original=None):
     if tipo_atencion is None or subatencion is None:
         raise ReglaNegocioError(
             "Debe seleccionar el Tipo de Atención y la Subatención."
@@ -120,9 +120,27 @@ def _validar_catalogo(tipo_atencion, subatencion):
             "El elemento seleccionado no es una Subatención."
         )
 
-    if not tipo_atencion.activo or not subatencion.activo:
+    # En una edición, solo se tolera conservar elementos inactivos
+    # cuando son exactamente los mismos que tenía el registro.
+    conserva_tipo = (
+        original is not None
+        and original.tipo_atencion_id == tipo_atencion.pk
+    )
+
+    conserva_subatencion = (
+        original is not None
+        and original.subatencion_id == subatencion.pk
+    )
+
+    if not tipo_atencion.activo and not conserva_tipo:
         raise ReglaNegocioError(
-            "No se pueden registrar atenciones con catálogos inactivos."
+            "No se pueden registrar atenciones con un Tipo de "
+            "Atención inactivo."
+        )
+
+    if not subatencion.activo and not conserva_subatencion:
+        raise ReglaNegocioError(
+            "No se pueden registrar atenciones con una Subatención inactiva."
         )
 
     if not subatencion.tipo_atencion_padre_id:
@@ -137,7 +155,13 @@ def _validar_catalogo(tipo_atencion, subatencion):
 
     padre = subatencion.tipo_atencion_padre
 
-    if not padre.activo:
+    padre_inactivo_conservado = (
+        conserva_subatencion
+        and conserva_tipo
+        and padre.pk == tipo_atencion.pk
+    )
+
+    if not padre.activo and not padre_inactivo_conservado:
         raise ReglaNegocioError(
             "El Tipo de Atención asociado a la Subatención está inactivo."
         )
@@ -150,7 +174,6 @@ def _validar_catalogo(tipo_atencion, subatencion):
             "El Tipo de Atención y la Subatención no pertenecen "
             "a la misma área."
         )
-
 # ---------------------------------------------------------------------------
 # CRUDAtencionSocial (RF-015, RN-012)
 # ---------------------------------------------------------------------------
@@ -279,8 +302,15 @@ class CRUDAtencionSocial:
     def modificar_gestion(gestion, actor=None):
         with transaction.atomic():
             original = (
-                AtencionSocial.objects.select_for_update()
-                .select_related("usuario", "delegacion", "funcionario")
+                AtencionSocial.objects
+                .select_for_update()
+                .select_related(
+                    "usuario",
+                    "delegacion",
+                    "funcionario",
+                    "tipo_atencion",
+                    "subatencion",
+                )
                 .get(pk=gestion.pk)
             )
 
@@ -312,9 +342,12 @@ class CRUDAtencionSocial:
                     "Cada gestión del caso debe tener un Tipo de Atención diferente."
                 )
 
+            # Permite conservar la clasificación anterior aunque después
+            # se haya desactivado, pero no permite cambiarla por una inactiva.
             _validar_catalogo(
                 gestion.tipo_atencion,
                 gestion.subatencion,
+                original=original,
             )
 
             CRUDAtencionSocial._validar_fecha_y_estado(
@@ -335,12 +368,13 @@ class CRUDAtencionSocial:
                 ),
             )
 
-            # No se permite cambiar estas asignaciones desde el formulario.            # No se permite cambiar estas asignaciones desde el formulario.
+            # Asignaciones protegidas: no se cambian desde el formulario.
             gestion.usuario = caso
             gestion.delegacion = original.delegacion
             gestion.funcionario = original.funcionario
             gestion.fecha_registro = original.fecha_registro
-            # Mantener la fotografía histórica si el catálogo no cambió.
+
+            # Mantiene el nombre histórico si no cambió el catálogo.
             if gestion.tipo_atencion_id == original.tipo_atencion_id:
                 gestion.tipo_atencion_nombre = (
                     original.tipo_atencion_nombre
@@ -358,10 +392,13 @@ class CRUDAtencionSocial:
                 gestion.subatencion_nombre = gestion.subatencion.nombre
 
             gestion.full_clean()
-            guardar(gestion, actor, "atencion_social")
+            guardar(
+                gestion,
+                actor,
+                "atencion_social",
+            )
 
         return gestion
-    
 # ---------------------------------------------------------------------------
 # CRUDUsuarioSocial (RF-015, HU-03)
 # ---------------------------------------------------------------------------

@@ -154,9 +154,21 @@ class ActividadCreateView(OperativoMixin, _FormularioActividadMixin, CreateView)
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
-        kwargs["instance"] = Actividad(funcionario=get_funcionario(self.request.user))
-        return kwargs
 
+        kwargs["funcionario"] = get_funcionario(
+            self.request.user
+        )
+
+        kwargs["area"] = (
+            self.request.GET.get("area") or None
+        )
+
+        kwargs["instance"] = Actividad(
+            funcionario=get_funcionario(self.request.user)
+        )
+
+        return kwargs
+    
     def guardar(self, form):
         self.object = CRUDActividad.crear_actividad(form.instance, self.request.user)
         self.mensaje_exito = (f"Actividad registrada. Identificador: {self.object.pk} · "

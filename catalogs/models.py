@@ -112,6 +112,27 @@ class Catalogo(models.Model):
 
         errores = {}
 
+        original = None
+
+        if self.pk:
+            original = (
+                Catalogo.objects
+                .filter(pk=self.pk)
+                .only(
+                    "tipo_catalogo",
+                    "area",
+                    "tipo_atencion_padre_id",
+                    "estado",
+                )
+                .first()
+            )
+
+        relacion_padre_sin_cambios = (
+            original is not None
+            and original.tipo_atencion_padre_id
+            == self.tipo_atencion_padre_id
+        )
+
         if not self.nombre:
             errores["nombre"] = "El nombre es obligatorio."
 
@@ -144,9 +165,9 @@ class Catalogo(models.Model):
                     "La relación debe apuntar a un Tipo de Atención."
                 )
 
-            elif not padre.activo:
+            elif not padre.activo and not relacion_padre_sin_cambios:
                 errores["tipo_atencion_padre"] = (
-                    "No puede asociar una subatención a un "
+                    "No puede asociar una subatención nueva a un "
                     "Tipo de Atención inactivo."
                 )
 
@@ -172,9 +193,6 @@ class Catalogo(models.Model):
                     "en el mismo catálogo y área."
                 )
 
-        if errores:
-            raise ValidationError(errores)
-        
     def en_uso(self):
         """True si algún registro (actividad, atención social...) ya referencia este elemento."""
         if not self.pk:

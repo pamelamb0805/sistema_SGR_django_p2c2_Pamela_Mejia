@@ -220,61 +220,83 @@ class AtencionSocial(models.Model):
             f"Gestión {self.numero_gestion} – "
             f"{tipo} ({self.fecha:%d/%m/%Y})"
         )
-    def clean(self):
-        errores = {}
 
-        if self.tipo_atencion_id and (
-            self.tipo_atencion.tipo_catalogo != Catalogo.TIPO_ATENCION
-        ):
+def clean(self):
+    errores = {}
+
+    original = None
+
+    if self.pk:
+        original = (
+            AtencionSocial.objects
+            .filter(pk=self.pk)
+            .only(
+                "tipo_atencion_id",
+                "subatencion_id",
+            )
+            .first()
+        )
+
+    conserva_tipo = (
+        original is not None
+        and original.tipo_atencion_id == self.tipo_atencion_id
+    )
+
+    conserva_subatencion = (
+        original is not None
+        and original.subatencion_id == self.subatencion_id
+    )
+
+    if self.tipo_atencion_id:
+        if self.tipo_atencion.tipo_catalogo != Catalogo.TIPO_ATENCION:
             errores["tipo_atencion"] = (
                 "Debe seleccionar un elemento del catálogo Tipo de Atención."
             )
-
-        if self.subatencion_id:
-            if self.subatencion.tipo_catalogo != Catalogo.TIPO_SUBATENCION:
-                errores["subatencion"] = (
-                    "Debe seleccionar una Subatención."
-                )
-            elif (
-                self.tipo_atencion_id
-                and self.subatencion.tipo_atencion_padre_id
-                != self.tipo_atencion_id
-            ):
-                errores["subatencion"] = (
-                    "La Subatención debe pertenecer al Tipo de Atención seleccionado."
-                )
-
-        if self.tipo_atencion_id and not self.tipo_atencion.activo:
+        elif not self.tipo_atencion.activo and not conserva_tipo:
             errores["tipo_atencion"] = (
                 "El Tipo de Atención seleccionado está inactivo."
             )
 
-        if self.subatencion_id and not self.subatencion.activo:
+    if self.subatencion_id:
+        if self.subatencion.tipo_catalogo != Catalogo.TIPO_SUBATENCION:
+            errores["subatencion"] = (
+                "Debe seleccionar una Subatención."
+            )
+
+        elif (
+            self.tipo_atencion_id
+            and self.subatencion.tipo_atencion_padre_id
+            != self.tipo_atencion_id
+        ):
+            errores["subatencion"] = (
+                "La Subatención debe pertenecer al Tipo de Atención seleccionado."
+            )
+
+        elif not self.subatencion.activo and not conserva_subatencion:
             errores["subatencion"] = (
                 "La Subatención seleccionada está inactiva."
             )
 
-        if (
-            self.estado == self.ESTADO_REALIZADA
-            and self.fecha
-            and self.fecha > timezone.localdate()
-        ):
-            errores["fecha"] = (
-                "Una gestión realizada no puede tener fecha futura. "
-                "Si es una visita agendada, márquela como Programada."
-            )
+    if (
+        self.estado == self.ESTADO_REALIZADA
+        and self.fecha
+        and self.fecha > timezone.localdate()
+    ):
+        errores["fecha"] = (
+            "Una gestión realizada no puede tener fecha futura. "
+            "Si es una visita agendada, márquela como Programada."
+        )
 
-        if (
-            self.estado == self.ESTADO_REALIZADA
-            and not (self.resultado or "").strip()
-        ):
-            errores["resultado"] = (
-                "Indique el resultado de la gestión realizada."
-            )
+    if (
+        self.estado == self.ESTADO_REALIZADA
+        and not (self.resultado or "").strip()
+    ):
+        errores["resultado"] = (
+            "Indique el resultado de la gestión realizada."
+        )
 
-        if errores:
-            raise ValidationError(errores)
-
+    if errores:
+        raise ValidationError(errores)
     
     @property
     def delegacion_historica(self):

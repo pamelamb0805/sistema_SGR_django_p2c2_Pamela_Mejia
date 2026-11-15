@@ -61,16 +61,51 @@ class CRUDCatalogo:
         )
 
     @staticmethod
+    def _crear_version_base_si_no_existe(elemento, actor=None):
+        """
+        Conserva los datos anteriores de catálogos que ya existían
+        antes de implementar el versionamiento.
+        """
+        existe = CatalogoVersion.objects.filter(
+            objeto_id=elemento.pk
+        ).exists()
+
+        if existe:
+            return
+
+        ahora = timezone.now()
+
+        CatalogoVersion.objects.create(
+            objeto_id=elemento.pk,
+            numero_version=1,
+            vigente_desde=ahora,
+            vigente_hasta=ahora,
+            datos=CRUDCatalogo._datos_version(elemento),
+            creado_por=(
+                actor
+                if getattr(actor, "is_authenticated", False)
+                else None
+            ),
+        )
+
+    @staticmethod
     def crear_elemento_catalogo(elemento, actor=None):
         with transaction.atomic():
-            elemento = guardar(elemento, actor, "catalogo")
-            CRUDCatalogo._registrar_version(elemento, actor)
+            elemento = guardar(
+                elemento,
+                actor,
+                "catalogo",
+            )
+
+            CRUDCatalogo._registrar_version(
+                elemento,
+                actor,
+            )
 
         return elemento
 
     @staticmethod
     def mostrar_catalogo_por_area(area, tipo=None):
-        """Elementos activos aplicables al área."""
         return Catalogo.objects.disponibles(
             area=area,
             tipo=tipo,
@@ -78,10 +113,6 @@ class CRUDCatalogo:
 
     @staticmethod
     def modificar_elemento_catalogo(elemento, actor=None):
-        """
-        Conserva las versiones anteriores.
-        No permite cambiar tipo o área cuando el elemento está en uso.
-        """
         with transaction.atomic():
             original = (
                 Catalogo.objects
@@ -93,7 +124,8 @@ class CRUDCatalogo:
                 original.en_uso()
                 and (
                     original.tipo_catalogo != elemento.tipo_catalogo
-                    or original.area != elemento.area
+                    or original.area.casefold()
+                    != elemento.area.casefold()
                 )
             ):
                 raise ReglaNegocioError(
@@ -101,8 +133,23 @@ class CRUDCatalogo:
                     "su tipo ni su área. Desactívelo y cree uno nuevo."
                 )
 
-            elemento = guardar(elemento, actor, "catalogo")
-            CRUDCatalogo._registrar_version(elemento, actor)
+            # Si es un catálogo antiguo sin versiones, primero se
+            # conserva su estado anterior.
+            CRUDCatalogo._crear_version_base_si_no_existe(
+                original,
+                actor,
+            )
+
+            elemento = guardar(
+                elemento,
+                actor,
+                "catalogo",
+            )
+
+            CRUDCatalogo._registrar_version(
+                elemento,
+                actor,
+            )
 
         return elemento
 
@@ -115,10 +162,26 @@ class CRUDCatalogo:
                 .get(pk=elemento.pk)
             )
 
-            elemento.estado = Catalogo.ESTADO_INACTIVO
-            elemento = guardar(elemento, actor, "catalogo")
+            if not elemento.activo:
+                return elemento
 
-            CRUDCatalogo._registrar_version(elemento, actor)
+            CRUDCatalogo._crear_version_base_si_no_existe(
+                elemento,
+                actor,
+            )
+
+            elemento.estado = Catalogo.ESTADO_INACTIVO
+
+            elemento = guardar(
+                elemento,
+                actor,
+                "catalogo",
+            )
+
+            CRUDCatalogo._registrar_version(
+                elemento,
+                actor,
+            )
 
         return elemento
 
@@ -131,9 +194,25 @@ class CRUDCatalogo:
                 .get(pk=elemento.pk)
             )
 
-            elemento.estado = Catalogo.ESTADO_ACTIVO
-            elemento = guardar(elemento, actor, "catalogo")
+            if elemento.activo:
+                return elemento
 
-            CRUDCatalogo._registrar_version(elemento, actor)
+            CRUDCatalogo._crear_version_base_si_no_existe(
+                elemento,
+                actor,
+            )
+
+            elemento.estado = Catalogo.ESTADO_ACTIVO
+
+            elemento = guardar(
+                elemento,
+                actor,
+                "catalogo",
+            )
+
+            CRUDCatalogo._registrar_version(
+                elemento,
+                actor,
+            )
 
         return elemento
