@@ -310,6 +310,130 @@
     </div>
   </div>
 
+  <!-- RF-028: Resumen de compromisos -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <strong>
+        <i class="bi bi-calendar-check me-1"></i>
+        Compromisos del período
+      </strong>
+      <span class="badge text-bg-secondary">
+        {{ compromisos_resumen.total }} compromisos
+      </span>
+    </div>
+
+    <div class="card-body">
+      <div class="row g-3 text-center mb-4">
+
+        <div class="col-6 col-md-3">
+          <div class="border rounded p-3 h-100">
+            <div class="text-body-secondary small">Ingresados</div>
+            <div class="fs-3 fw-semibold">
+              {{ compromisos_resumen.Ingresado }}
+            </div>
+          </div>
+        </div>
+
+        <div class="col-6 col-md-3">
+          <div class="border rounded p-3 h-100">
+            <div class="text-body-secondary small">Pendientes</div>
+            <div class="fs-3 fw-semibold text-warning">
+              {{ compromisos_resumen.Pendiente }}
+            </div>
+          </div>
+        </div>
+
+        <div class="col-6 col-md-3">
+          <div class="border rounded p-3 h-100">
+            <div class="text-body-secondary small">En proceso</div>
+            <div class="fs-3 fw-semibold text-primary">
+              {{ compromisos_resumen.En_proceso }}
+            </div>
+          </div>
+        </div>
+
+        <div class="col-6 col-md-3">
+          <div class="border rounded p-3 h-100">
+            <div class="text-body-secondary small">Realizados</div>
+            <div class="fs-3 fw-semibold text-success">
+              {{ compromisos_resumen.Realizado }}
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Origen</th>
+              <th>Solicitante</th>
+              <th>Ítem medible</th>
+              <th>Fecha comprometida</th>
+              <th>Estado</th>
+              <th>Observación</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {% for compromiso in compromisos %}
+              <tr>
+                <td>#{{ compromiso.pk }}</td>
+
+                <td>{{ compromiso.origen }}</td>
+
+                <td>{{ compromiso.solicitante }}</td>
+
+                <td>
+                  {% if compromiso.item_medible %}
+                    {{ compromiso.item_medible.nombre_item }}
+                  {% else %}
+                    <span class="text-body-secondary">
+                      Sin ítem asociado
+                    </span>
+                  {% endif %}
+                </td>
+
+                <td>
+                  {{ compromiso.fecha_comprometida|date:"d/m/Y" }}
+                </td>
+
+                <td>
+                  {% if compromiso.estado == "Realizado" %}
+                    <span class="badge text-bg-success">Realizado</span>
+                  {% elif compromiso.estado == "En proceso" %}
+                    <span class="badge text-bg-primary">En proceso</span>
+                  {% elif compromiso.estado == "Pendiente" %}
+                    <span class="badge text-bg-warning">Pendiente</span>
+                  {% else %}
+                    <span class="badge text-bg-secondary">
+                      {{ compromiso.estado }}
+                    </span>
+                  {% endif %}
+                </td>
+
+                <td>
+                  {{ compromiso.observacion|default:"—"|truncatechars:100 }}
+                </td>
+              </tr>
+
+            {% empty %}
+              <tr>
+                <td colspan="7"
+                    class="text-center text-body-secondary py-4">
+                  No existen compromisos asociados a este funcionario
+                  en el período seleccionado.
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
   <!-- Metas e indicadores por ítem -->
   <div class="card shadow-sm mb-4">
     <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">

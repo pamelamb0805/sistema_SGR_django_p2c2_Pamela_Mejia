@@ -869,20 +869,24 @@ class AjusteDeleteView(AccionPostView):
 # Paneles de desempeño y semáforo
 # ---------------------------------------------------------------------------
 
+
 def _contexto_panel(request, funcionario, modo, titulo):
     """
     Construye la ficha personal o supervisora del funcionario.
 
-    RF-008:
-    - Identificación del funcionario, cargo y delegación.
-    - Metas, avance y cumplimiento por ítem.
-    - Resultado ponderado del período.
-    - Estado de evidencias por ítem y consolidado.
-    - Consulta de períodos anteriores.
+    RF-008 y RF-028:
+    - Identificación, cargo y delegación.
+    - Filtro por período.
+    - Metas, avance, cumplimiento y ponderación.
+    - Semáforo individual.
+    - Estado de evidencias general y por ítem.
+    - Compromisos generales y por ítem.
+    - Detalle de origen de los indicadores.
     """
     from collections import defaultdict
     from django.db.models import Count
     from activities.models import Evidencia
+    from agenda.models import Compromiso
 
     periodo = _periodo_seleccionado(request)
 
@@ -903,6 +907,16 @@ def _contexto_panel(request, funcionario, modo, titulo):
         "Corrección": 0,
     }
 
+    compromisos_resumen = {
+        "total": 0,
+        "Ingresado": 0,
+        "Pendiente": 0,
+        "En proceso": 0,
+        "Realizado": 0,
+    }
+
+    compromisos = Compromiso.objects.none()
+
     if periodo:
         evidencias = (
             Evidencia.objects
@@ -921,8 +935,31 @@ def _contexto_panel(request, funcionario, modo, titulo):
             evidencias_resumen[estado] = cantidad
             evidencias_resumen["total"] += cantidad
 
-        # El estado de las evidencias también se presenta
-        # desglosado por cada ítem de la ficha.
+        compromisos = (
+            Compromiso.objects
+            .filter(
+                funcionario=funcionario,
+                periodo=periodo,
+            )
+            .select_related(
+                "funcionario",
+                "delegacion",
+                "item_medible",
+                "periodo",
+            )
+            .prefetch_related("historial")
+            .order_by(
+                "fecha_comprometida",
+                "id_compromiso",
+            )
+        )
+
+        for compromiso in compromisos:
+            compromisos_resumen["total"] += 1
+
+            if compromiso.estado in compromisos_resumen:
+                compromisos_resumen[compromiso.estado] += 1
+
         if resumen:
             for fila in resumen["filas"]:
                 conteos = defaultdict(int)
@@ -951,6 +988,32 @@ def _contexto_panel(request, funcionario, modo, titulo):
                     "Corrección": conteos["Corrección"],
                 }
 
+                fila["compromisos"] = list(
+                    compromisos.filter(
+                        item_medible_id=fila["meta"].item_id,
+                    )
+                )
+
+                fila["compromisos_resumen"] = {
+                    "total": len(fila["compromisos"]),
+                    "Ingresado": sum(
+                        1 for c in fila["compromisos"]
+                        if c.estado == Compromiso.ESTADO_INGRESADO
+                    ),
+                    "Pendiente": sum(
+                        1 for c in fila["compromisos"]
+                        if c.estado == Compromiso.ESTADO_PENDIENTE
+                    ),
+                    "En proceso": sum(
+                        1 for c in fila["compromisos"]
+                        if c.estado == Compromiso.ESTADO_EN_PROCESO
+                    ),
+                    "Realizado": sum(
+                        1 for c in fila["compromisos"]
+                        if c.estado == Compromiso.ESTADO_REALIZADO
+                    ),
+                }
+
     return {
         "modo": modo,
         "titulo": titulo,
@@ -959,8 +1022,11 @@ def _contexto_panel(request, funcionario, modo, titulo):
         "periodos": Periodo.objects.all().order_by("-fecha_inicio"),
         "resumen": resumen,
         "evidencias_resumen": evidencias_resumen,
+        "compromisos": compromisos,
+        "compromisos_resumen": compromisos_resumen,
         "hoy": timezone.localdate(),
     }
+
 
 @login_required
 @funcionario_requerido
