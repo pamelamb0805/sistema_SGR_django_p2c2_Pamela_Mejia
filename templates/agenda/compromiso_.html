@@ -753,7 +753,7 @@
                             <td>{{ c.solicitante }}</td>
                             <td>{{ c.origen }}</td>
                             <td>{{ c.funcionario.nombre }}</td>
-                            <td>{{ c.delegacion.nombre }}</td>
+                            <td>{{ c.delegacion_historica.nombre|default:"—" }}</td>
                             <td>{{ c.estado }}</td>
 
                             <td>

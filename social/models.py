@@ -67,9 +67,31 @@ class UsuarioSocial(models.Model):
 
     @property
     def delegacion_historica(self):
+        """
+        Recupera la versión de la delegación vigente al crear el caso.
+        Utiliza la fecha exacta del primer evento de auditoría.
+        """
+        from audit.models import Auditoria
+
+        evento = (
+            Auditoria.objects
+            .filter(
+                entidad_afectada="usuario_social",
+                id_entidad_afectada=self.pk,
+            )
+            .order_by("fecha", "id_auditoria")
+            .first()
+        )
+
+        fecha_referencia = (
+            evento.fecha
+            if evento
+            else self.fecha_primer_registro
+        )
+
         return (
             self.delegacion.obtener_version_historica(
-                self.fecha_primer_registro
+                fecha_referencia
             )
             or self.delegacion.obtener_datos_actuales()
         )
