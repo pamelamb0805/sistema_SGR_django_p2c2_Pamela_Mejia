@@ -139,23 +139,22 @@ class Actividad(models.Model):
 
         return evento.fecha if evento else self.fecha
 
+    @property
+    def delegacion_historica(self):
+        """
+        Recupera la versión histórica de la delegación asociada
+        al funcionario cuando se registró la actividad.
+        """
+        if not self.funcionario_id or not self.funcionario.delegacion_id:
+            return None
 
-@property
-def delegacion_historica(self):
-    """
-    Recupera la delegación vigente cuando se registró la actividad,
-    sin depender del nombre actual de la delegación.
-    """
-    if not self.funcionario_id or not self.funcionario.delegacion_id:
-        return None
-
-    return (
-        self.funcionario.delegacion.obtener_version_historica(
-            self.fecha_registro_historica
+        return (
+            self.funcionario.delegacion.obtener_version_historica(
+                self.fecha_registro_historica
+            )
+            or self.funcionario.delegacion.obtener_datos_actuales()
         )
-        or self.funcionario.delegacion.obtener_datos_actuales()
-    )
-    
+
     @property
     def editable(self):
         return self.estado in self.ESTADOS_EDITABLES
@@ -166,13 +165,27 @@ def delegacion_historica(self):
 
     def clean(self):
         if self.telefono and not self.contacto.strip():
-            raise ValidationError({"contacto": "Indique el nombre del contacto cuando registra un teléfono."})
+            raise ValidationError({
+                "contacto": (
+                    "Indique el nombre del contacto cuando registra "
+                    "un teléfono."
+                )
+            })
+
         if self.fecha and self.fecha > timezone.localdate():
-            raise ValidationError({"fecha": "La fecha de la actividad no puede ser futura."})
-        if self.funcionario_id and self.item_id and self.item.cargo_id != self.funcionario.cargo_id:
-            raise ValidationError({"item": "El ítem no corresponde al cargo del funcionario."})
+            raise ValidationError({
+                "fecha": "La fecha de la actividad no puede ser futura."
+            })
 
-
+        if (
+            self.funcionario_id
+            and self.item_id
+            and self.item.cargo_id != self.funcionario.cargo_id
+        ):
+            raise ValidationError({
+                "item": "El ítem no corresponde al cargo del funcionario."
+            })
+        
 # ---------------------------------------------------------------------------
 # EVIDENCIA
 # ---------------------------------------------------------------------------

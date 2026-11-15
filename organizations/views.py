@@ -147,6 +147,7 @@ class DelegacionCreateView(
 
 class DelegacionUpdateView(
     EscrituraMixin,
+    AmbitoDelegacionMixin,
     ModalFormPageMixin,
     ModoMixin,
     GuardarMixin,
@@ -155,27 +156,53 @@ class DelegacionUpdateView(
     model = Delegacion
     form_class = DelegacionForm
     template_name = "organization/delegacion_.html"
-    modo, titulo = "form", "Editar delegación"
+    context_object_name = "delegacion"
+    ambito_campo = "id_delegacion"
+
+    modo = "form"
+    titulo = "Editar delegación"
+
     success_url_name = "organizations:delegacion_list"
     mensaje_exito = "Delegación actualizada."
+
     list_view_class = DelegacionListView
 
     def guardar(self, form):
         self.object = CRUDDelegacion.modificar_delegacion(
-            form.instance, self.request.user
+            form.instance,
+            self.request.user,
         )
 
 class DelegacionToggleView(AccionPostView):
     redirect_name = "organizations:delegacion_list"
 
     def get_objeto(self, pk):
-        return get_object_or_404(Delegacion, pk=pk)
+        delegaciones_autorizadas = filtrar_por_ambito(
+            Delegacion.objects.all(),
+            self.request.user,
+            "id_delegacion",
+        )
+
+        return get_object_or_404(
+            delegaciones_autorizadas,
+            pk=pk,
+        )
 
     def accion(self, request, objeto):
-        CRUDDelegacion.activar_desactivar_delegacion(objeto, request.user)
-        return f"Delegación «{objeto.nombre}» {'activada' if objeto.activa else 'desactivada'}."
+        CRUDDelegacion.activar_desactivar_delegacion(
+            objeto,
+            request.user,
+        )
 
+        estado = (
+            "activada"
+            if objeto.activa
+            else "desactivada"
+        )
 
+        return (
+            f"Delegación «{objeto.nombre}» {estado} correctamente."
+        )
 # ---------------------------------------------------------------------------
 # Cargos e ítems medibles
 # ---------------------------------------------------------------------------
