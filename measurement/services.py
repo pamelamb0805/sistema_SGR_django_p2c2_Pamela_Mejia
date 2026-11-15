@@ -1112,7 +1112,6 @@ class CalculoIndicadores:
     # RESÚMENES
     # -----------------------------------------------------------------------
 
-
     @staticmethod
     def resumen_funcionario(
         funcionario,
@@ -1121,7 +1120,7 @@ class CalculoIndicadores:
     ):
         """
         Genera el resumen del funcionario utilizando las versiones
-        históricas de metas e ítems cuando el período está cerrado.
+        históricas de metas, ítems y reglas cuando el período está cerrado.
         """
         cerrado = not periodo.abierto
 
@@ -1156,6 +1155,8 @@ class CalculoIndicadores:
         )
 
         for meta in metas:
+
+            # Recuperar la versión de la meta vigente en la fecha.
             if cerrado:
                 datos_historicos = (
                     CalculoIndicadores._datos_meta_historicos(
@@ -1174,37 +1175,84 @@ class CalculoIndicadores:
                 str(datos_historicos["umbral_minimo"])
             )
 
-            # Recuperar la fotografía histórica del ítem.
-            # No consultar el nombre actual del catálogo para
-            # representar períodos cerrados.
+            # Recuperar la versión histórica del ítem.
             if cerrado:
+                from django.db.models import Q
+                from organizations.models import ItemMedibleVersion
+
+                instante_cierre = timezone.make_aware(
+                    datetime.combine(fecha, time.max)
+                )
+
+                version_item = (
+                    ItemMedibleVersion.objects
+                    .filter(
+                        objeto_id=meta.item_id,
+                        vigente_desde__lte=instante_cierre,
+                    )
+                    .filter(
+                        Q(vigente_hasta__isnull=True)
+                        | Q(vigente_hasta__gt=instante_cierre)
+                    )
+                    .order_by(
+                        "-vigente_desde",
+                        "-numero_version",
+                    )
+                    .first()
+                )
+
+                # La versión del ítem tiene prioridad.
+                # Si no existe, se utiliza la fotografía de la meta.
+                datos_item = (
+                    version_item.datos
+                    if version_item
+                    else datos_historicos
+                )
+
                 item_historico = SimpleNamespace(
-                    pk=datos_historicos.get(
-                        "item_id",
-                        meta.item_id,
+                    pk=meta.item_id,
+                    codigo=datos_item.get(
+                        "codigo",
+                        datos_item.get(
+                            "item_codigo",
+                            meta.item.codigo,
+                        ),
                     ),
-                    codigo=datos_historicos.get(
-                        "item_codigo",
-                        meta.item.codigo,
+                    nombre_item=datos_item.get(
+                        "nombre_item",
+                        datos_item.get(
+                            "item_nombre",
+                            meta.item.nombre_item,
+                        ),
                     ),
-                    nombre_item=datos_historicos.get(
-                        "item_nombre",
-                        meta.item.nombre_item,
+                    descripcion=datos_item.get(
+                        "descripcion",
+                        datos_item.get(
+                            "item_descripcion",
+                            meta.item.descripcion,
+                        ),
                     ),
-                    descripcion=datos_historicos.get(
-                        "item_descripcion",
-                        meta.item.descripcion,
+                    tipo=datos_item.get(
+                        "tipo",
+                        datos_item.get(
+                            "item_tipo",
+                            meta.item.tipo,
+                        ),
                     ),
-                    tipo=datos_historicos.get(
-                        "item_tipo",
-                        meta.item.tipo,
+                    vigencia=datos_item.get(
+                        "vigencia",
+                        meta.item.vigencia,
                     ),
                 )
             else:
                 item_historico = meta.item
 
+            # Los indicadores de períodos cerrados se consultan
+            # sin recalcularlos ni reemplazarlos.
             guardado = (
-                Indicador.objects.filter(meta=meta).first()
+                Indicador.objects.filter(
+                    meta=meta
+                ).first()
                 if cerrado
                 else None
             )
