@@ -9,6 +9,9 @@ Cumple RF-004 y HU-27:
 """
 from django.core.exceptions import ValidationError
 import uuid
+from django.conf import settings
+from django.utils import timezone
+
 
 def generar_codigo_catalogo():
     return "CAT-" + uuid.uuid4().hex[:16].upper()
@@ -180,3 +183,41 @@ class Catalogo(models.Model):
             if relacion.one_to_many and getattr(self, relacion.get_accessor_name()).exists():
                 return True
         return False
+
+class CatalogoVersion(models.Model):
+    """
+    Conserva las versiones históricas de los elementos del catálogo.
+    RF-038: los cambios posteriores no deben alterar la información histórica.
+    """
+
+    objeto_id = models.PositiveIntegerField(db_index=True)
+    numero_version = models.PositiveIntegerField()
+
+    vigente_desde = models.DateTimeField(default=timezone.now)
+    vigente_hasta = models.DateTimeField(null=True, blank=True)
+
+    datos = models.JSONField(default=dict)
+
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="versiones_catalogo_creadas",
+    )
+
+    class Meta:
+        db_table = "catalogo_version"
+        ordering = ["objeto_id", "-numero_version"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["objeto_id", "numero_version"],
+                name="uq_catalogo_version_numero",
+            )
+        ]
+
+    def __str__(self):
+        return (
+            f"Catálogo {self.objeto_id} "
+            f"- versión {self.numero_version}"
+        )
