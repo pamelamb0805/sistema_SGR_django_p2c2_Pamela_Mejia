@@ -99,57 +99,97 @@ class CRUDPeriodo:
             "version_formula_dias": 1,
         }
 
+
     @staticmethod
-    def _registrar_version_reglas(periodo, actor=None, datos=None):
+    def _registrar_version(meta, actor=None, datos_anteriores=None):
         """
-        Cierra la versión vigente y registra una nueva versión.
-        Si no se entregan datos, conserva la última configuración
-        registrada para el período.
+        Registra una versión inmutable de una meta.
+
+        Primera creación:
+            - Registra la versión 1.
+
+        Modificación:
+            - Cierra la versión vigente.
+            - Registra la siguiente versión.
+            - Conserva autor y fecha.
+
+        Meta antigua sin historial:
+            - Recupera sus datos anteriores.
+            - Los registra como versión histórica sin atribuir
+              incorrectamente la autoría al usuario que la modifica.
         """
         ahora = timezone.now()
+        datos_actuales = CRUDMeta._datos_version(meta)
 
-        ultima = (
-            ReglaCalculoVersion.objects
+        versiones = (
+            MetaVersion.objects
             .select_for_update()
-            .filter(periodo=periodo)
+            .filter(objeto_id=meta.pk)
             .order_by("-numero_version")
-            .first()
         )
 
-        if datos is None:
-            if ultima:
-                datos = dict(ultima.datos or {})
-            else:
-                datos = CRUDPeriodo._datos_reglas_actuales()
+        ultima = versiones.first()
 
-        anterior_vigente = (
-            ReglaCalculoVersion.objects
-            .select_for_update()
-            .filter(
-                periodo=periodo,
-                vigente_hasta__isnull=True,
-            )
-            .order_by("-numero_version")
-            .first()
+        vigentes = list(
+            versiones.filter(vigente_hasta__isnull=True)
         )
 
-        if anterior_vigente:
-            anterior_vigente.vigente_hasta = ahora
-            anterior_vigente.save(
-                update_fields=["vigente_hasta"]
+        # Evita crear una versión cuando no hubo cambios.
+        if (
+            len(vigentes) == 1
+            and vigentes[0].datos == datos_actuales
+        ):
+            return vigentes[0]
+
+        # Compatibilidad con metas creadas antes del historial.
+        if ultima is None and datos_anteriores is not None:
+            fecha_anterior = (
+                meta.fecha_version or timezone.localdate()
             )
 
-        return ReglaCalculoVersion.objects.create(
-            periodo=periodo,
-            numero_version=periodo.version_parametros,
+            inicio_anterior = timezone.make_aware(
+                datetime.combine(fecha_anterior, time.min)
+            )
+
+            MetaVersion.objects.create(
+                meta=meta,
+                objeto_id=meta.pk,
+                numero_version=1,
+                vigente_desde=inicio_anterior,
+                vigente_hasta=ahora,
+                datos=dict(datos_anteriores),
+                creado_por=None,
+            )
+
+            numero_nuevo = 2
+
+        else:
+            # Cierra cualquier versión que todavía aparezca vigente.
+            for version in vigentes:
+                version.vigente_hasta = ahora
+                version.save(
+                    update_fields=["vigente_hasta"]
+                )
+
+            numero_nuevo = (
+                ultima.numero_version + 1
+                if ultima
+                else 1
+            )
+
+        return MetaVersion.objects.create(
+            meta=meta,
+            objeto_id=meta.pk,
+            numero_version=numero_nuevo,
             vigente_desde=ahora,
-            datos=dict(datos),
+            datos=datos_actuales,
             creado_por=(
                 actor
                 if getattr(actor, "is_authenticated", False)
                 else None
             ),
         )
+
 
     @staticmethod
     def actualizar_reglas_periodo(periodo, datos, actor=None):
@@ -872,6 +912,7 @@ class CRUDMeta:
     # MODIFICAR META Y VERSIONAR
     # ---------------------------------------------------------
 
+
     @staticmethod
     def modificar_meta(meta, actor=None):
         with transaction.atomic():
@@ -881,24 +922,29 @@ class CRUDMeta:
                 .get(pk=meta.pk)
             )
 
-            if (
+            # No se permite trasladar una meta a otro funcionario,
+            # ítem o período. Para ello debe crearse otra meta.
+            identificacion_original = (
                 original.funcionario_id,
                 original.item_id,
                 original.periodo_id,
-            ) != (
+            )
+
+            identificacion_nueva = (
                 meta.funcionario_id,
                 meta.item_id,
                 meta.periodo_id,
-            ):
+            )
+
+            if identificacion_original != identificacion_nueva:
                 raise ReglaNegocioError(
-                    "No se puede cambiar el funcionario, el ítem ni el período "
-                    "de una meta existente. Para otro período debe crearse "
-                    "una nueva meta."
+                    "No se puede cambiar el funcionario, el ítem ni "
+                    "el período de una meta existente. "
+                    "Para otro período debe crearse una nueva meta."
                 )
 
-            datos_anteriores = CRUDMeta._datos_version(
-                original
-            )
+            # Fotografía anterior antes de modificar los valores.
+            datos_anteriores = CRUDMeta._datos_version(original)
 
             CRUDMeta._preparar(meta)
 
@@ -907,24 +953,21 @@ class CRUDMeta:
                 es_nueva=False,
             )
 
-            CRUDMeta._registrar_version(
-                meta,
-                actor=actor,
-                datos_anteriores=datos_anteriores,
-            ) if False else None
-
+            # Persiste los nuevos parámetros.
             guardar(
                 meta,
                 actor,
                 "meta",
             )
 
+            # Cierra la versión anterior y registra la nueva.
             CRUDMeta._registrar_version(
                 meta,
                 actor=actor,
                 datos_anteriores=datos_anteriores,
             )
 
+            # Actualiza el indicador con la configuración vigente.
             CalculoIndicadores.recalcular_indicador_meta(
                 meta
             )
