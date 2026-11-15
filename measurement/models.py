@@ -62,12 +62,30 @@ class Periodo(models.Model):
         db_table = "periodo"
         ordering = ["-fecha_inicio"]
 
+    
     def __str__(self):
-        return f"{self.fecha_inicio:%d/%m/%Y} – {self.fecha_termino:%d/%m/%Y}"
+        nombre_item = self.item.nombre_item if self.item_id else "Sin ítem"
 
-    @property
-    def abierto(self):
-        return self.estado == self.ESTADO_ABIERTO
+        try:
+            if self.periodo_id and self.periodo.abierto:
+                datos = CRUDMeta._datos_version(self)
+            elif self.periodo_id:
+                datos = CalculoIndicadores._datos_meta_historicos(
+                    self,
+                    self.periodo.fecha_termino,
+                )
+            else:
+                datos = {}
+
+            nombre_item = datos.get("item_nombre") or nombre_item
+        except Exception:
+            pass
+
+        return f"{nombre_item} – {self.funcionario} ({self.periodo})"
+
+        @property
+        def abierto(self):
+            return self.estado == self.ESTADO_ABIERTO
 
     def clean(self):
         if self.fecha_inicio and self.fecha_termino:
