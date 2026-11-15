@@ -1,4 +1,3 @@
-
 {% extends "base.html" %}
 
 {% block title %}Actividades · SGR{% endblock %}
@@ -73,8 +72,10 @@
         <dt class="col-sm-3">Funcionario</dt>
         <dd class="col-sm-9">{{ actividad.funcionario }}</dd>
 
-        <dt class="col-sm-3">Delegación</dt>
-        <dd class="col-sm-9">{{ actividad.funcionario.delegacion }}</dd>
+        <dt class="col-sm-3">Delegación histórica</dt>
+        <dd class="col-sm-9">
+          {{ actividad.delegacion_historica.nombre|default:"—" }}
+        </dd>
 
         <dt class="col-sm-3">Cargo / ítem</dt>
         <dd class="col-sm-9">
@@ -302,18 +303,17 @@
           </tr>
         </thead>
         <tbody>
-          {% for a in actividades %}
+          {% for actividad in actividades %}
             <tr>
-              <td>{{ a.codigo }}</td>
-              <td>{{ a.fecha|date:"d/m/Y" }}</td>
-              <td>{{ a.funcionario }}</td>
+              <td>{{ actividad.codigo }}</td>
+              <td>{{ actividad.fecha|date:"d/m/Y" }}</td>
+              <td>{{ actividad.funcionario }}</td>
+              <td>{{ actividad.item_nombre_historico|default:actividad.item.nombre_item }}</td>
+              <td>{{ actividad.accion|truncatechars:80 }}</td>
+              <td><span class="badge text-bg-secondary">{{ actividad.estado }}</span></td>
               <td>
-                {{ a.item_nombre_historico|default:a.item.nombre_item }}
-              </td>
-              <td>{{ a.accion|truncatechars:65 }}</td>
-              <td>{{ a.estado }}</td>
-              <td>
-                <a class="btn btn-sm btn-outline-primary" href="{% url 'activities:actividad_detail' a.pk %}">
+                <a class="btn btn-sm btn-outline-primary"
+                   href="{% url 'activities:actividad_detail' actividad.pk %}">
                   Ver
                 </a>
               </td>
@@ -321,8 +321,7 @@
           {% empty %}
             <tr>
               <td colspan="7" class="text-center text-body-secondary py-4">
-                <i class="bi bi-inbox fs-3 d-block mb-2"></i>
-                No hay actividades para mostrar con los filtros seleccionados.
+                No se encontraron actividades.
               </td>
             </tr>
           {% endfor %}
@@ -330,7 +329,27 @@
       </table>
     </div>
 
-    {% include "partials/_pagination.html" %}
+    {% if is_paginated %}
+      <div class="card-footer d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <small class="text-body-secondary">
+          Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}
+        </small>
+        <nav aria-label="Paginación">
+          <ul class="pagination pagination-sm mb-0">
+            {% if page_obj.has_previous %}
+              <li class="page-item">
+                <a class="page-link" href="?{% querystring page=page_obj.previous_page_number %}">Anterior</a>
+              </li>
+            {% endif %}
+            {% if page_obj.has_next %}
+              <li class="page-item">
+                <a class="page-link" href="?{% querystring page=page_obj.next_page_number %}">Siguiente</a>
+              </li>
+            {% endif %}
+          </ul>
+        </nav>
+      </div>
+    {% endif %}
   </div>
 {% endif %}
 

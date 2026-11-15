@@ -119,6 +119,43 @@ class Actividad(models.Model):
             )
 
         return self.item.nombre_item
+
+    @property
+    def fecha_registro_historica(self):
+        """
+        Obtiene la fecha y hora original de creación desde auditoría.
+        """
+        from audit.models import Auditoria
+
+        evento = (
+            Auditoria.objects
+            .filter(
+                entidad_afectada="actividad",
+                id_entidad_afectada=self.pk,
+            )
+            .order_by("fecha", "id_auditoria")
+            .first()
+        )
+
+        return evento.fecha if evento else self.fecha
+
+
+@property
+def delegacion_historica(self):
+    """
+    Recupera la delegación vigente cuando se registró la actividad,
+    sin depender del nombre actual de la delegación.
+    """
+    if not self.funcionario_id or not self.funcionario.delegacion_id:
+        return None
+
+    return (
+        self.funcionario.delegacion.obtener_version_historica(
+            self.fecha_registro_historica
+        )
+        or self.funcionario.delegacion.obtener_datos_actuales()
+    )
+    
     @property
     def editable(self):
         return self.estado in self.ESTADOS_EDITABLES

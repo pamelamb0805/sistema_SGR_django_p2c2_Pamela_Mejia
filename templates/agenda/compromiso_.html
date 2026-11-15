@@ -111,7 +111,9 @@
                 <dd class="col-md-9">{{ compromiso.funcionario.nombre }}</dd>
 
                 <dt class="col-md-3">Delegación</dt>
-                <dd class="col-md-9">{{ compromiso.delegacion.nombre }}</dd>
+                <dd class="col-md-9">
+                    {{ compromiso.delegacion_historica.nombre|default:"—" }}
+                </dd>
 
                 <dt class="col-md-3">Fecha comprometida</dt>
                 <dd class="col-md-9">

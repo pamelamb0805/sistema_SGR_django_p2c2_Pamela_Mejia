@@ -99,6 +99,50 @@ class Delegacion(models.Model):
 
     def obtener_version_historica(self, fecha):
         """
+        Devuelve los datos de la delegación vigentes en la fecha indicada.
+        Acepta datetime o date.
+        """
+        if not fecha or not self.historial_versiones:
+            return None
+
+        if isinstance(fecha, datetime):
+            momento = fecha
+            if timezone.is_naive(momento):
+                momento = timezone.make_aware(momento)
+        else:
+            momento = timezone.make_aware(
+                datetime.combine(fecha, time.max)
+            )
+
+        for version in reversed(self.historial_versiones):
+            desde = (
+                parse_datetime(version.get("vigente_desde"))
+                if version.get("vigente_desde")
+                else None
+            )
+            hasta = (
+                parse_datetime(version.get("vigente_hasta"))
+                if version.get("vigente_hasta")
+                else None
+            )
+
+            if desde and timezone.is_naive(desde):
+                desde = timezone.make_aware(desde)
+
+            if hasta and timezone.is_naive(hasta):
+                hasta = timezone.make_aware(hasta)
+
+            if (desde is None or desde <= momento) and (
+                hasta is None or momento < hasta
+            ):
+                return version.get("datos")
+
+        primera = self.historial_versiones[0]
+        if primera.get("vigente_desde") is None:
+            return primera.get("datos")
+
+        return None
+        """
         Recupera los datos de la delegación vigentes en una fecha.
 
         Para referencias DateField se utiliza el final del día,
