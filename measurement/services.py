@@ -97,8 +97,13 @@ class CRUDPeriodo:
             "version_formula_dias": 1,
         }
 
+
     @staticmethod
-    def _registrar_version_reglas(periodo, actor=None):
+    def _registrar_version_reglas(periodo, actor=None, datos=None):
+        """
+        Cierra la versión anterior y registra una nueva versión
+        de las reglas de cálculo del período.
+        """
         ahora = timezone.now()
 
         anterior = (
@@ -120,13 +125,155 @@ class CRUDPeriodo:
             periodo=periodo,
             numero_version=periodo.version_parametros,
             vigente_desde=ahora,
-            datos=CRUDPeriodo._datos_reglas_actuales(),
+            datos=datos or CRUDPeriodo._datos_reglas_actuales(),
             creado_por=(
                 actor
                 if getattr(actor, "is_authenticated", False)
                 else None
             ),
         )
+
+    @staticmethod
+    def actualizar_reglas_periodo(periodo, datos, actor=None):
+        """
+        Registra una nueva versión de reglas de cálculo.
+        No permite modificar períodos cerrados.
+        """
+        _exigir_rol(
+            actor,
+            ROLES_CONFIGURACION,
+            "Solo un Administrador puede modificar las reglas de cálculo.",
+        )
+
+        campos_obligatorios = {
+            "tope_cumplimiento",
+            "umbral_colectivo",
+            "umbral_ambar",
+            "suma_ponderadores",
+            "version_formula_cumplimiento",
+            "version_formula_ponderacion",
+            "version_formula_meta_esperada",
+            "version_formula_semaforo",
+            "version_formula_dias",
+        }
+
+        if not isinstance(datos, dict):
+            raise ReglaNegocioError(
+                "La configuración de reglas no es válida."
+            )
+
+        if not campos_obligatorios.issubset(datos.keys()):
+            raise ReglaNegocioError(
+                "Faltan parámetros obligatorios de cálculo."
+            )
+
+        try:
+            configuracion = {
+                "tope_cumplimiento": Decimal(
+                    str(datos["tope_cumplimiento"])
+                ),
+                "umbral_colectivo": Decimal(
+                    str(datos["umbral_colectivo"])
+                ),
+                "umbral_ambar": Decimal(
+                    str(datos["umbral_ambar"])
+                ),
+                "suma_ponderadores": Decimal(
+                    str(datos["suma_ponderadores"])
+                ),
+                "version_formula_cumplimiento": int(
+                    datos["version_formula_cumplimiento"]
+                ),
+                "version_formula_ponderacion": int(
+                    datos["version_formula_ponderacion"]
+                ),
+                "version_formula_meta_esperada": int(
+                    datos["version_formula_meta_esperada"]
+                ),
+                "version_formula_semaforo": int(
+                    datos["version_formula_semaforo"]
+                ),
+                "version_formula_dias": int(
+                    datos["version_formula_dias"]
+                ),
+            }
+        except (ValueError, TypeError, ArithmeticError):
+            raise ReglaNegocioError(
+                "Los parámetros de cálculo deben contener valores numéricos válidos."
+            )
+
+        if configuracion["tope_cumplimiento"] <= 0:
+            raise ReglaNegocioError(
+                "El tope de cumplimiento debe ser mayor que cero."
+            )
+
+        for campo in (
+            "umbral_colectivo",
+            "umbral_ambar",
+            "suma_ponderadores",
+        ):
+            if not Decimal("0") <= configuracion[campo] <= Decimal("100"):
+                raise ReglaNegocioError(
+                    f"El parámetro {campo} debe estar entre 0 y 100."
+                )
+
+        for campo in (
+            "version_formula_cumplimiento",
+            "version_formula_ponderacion",
+            "version_formula_meta_esperada",
+            "version_formula_semaforo",
+            "version_formula_dias",
+        ):
+            if configuracion[campo] < 1:
+                raise ReglaNegocioError(
+                    f"La versión de fórmula {campo} debe ser mayor que cero."
+                )
+
+        configuracion = {
+            clave: (
+                str(valor)
+                if isinstance(valor, Decimal)
+                else valor
+            )
+            for clave, valor in configuracion.items()
+        }
+
+        with transaction.atomic():
+            periodo_bloqueado = (
+                Periodo.objects
+                .select_for_update()
+                .get(pk=periodo.pk)
+            )
+
+            if not periodo_bloqueado.abierto:
+                raise ReglaNegocioError(
+                    "No se pueden modificar las reglas de un período cerrado."
+                )
+
+            version_actual = (
+                ReglaCalculoVersion.objects
+                .select_for_update()
+                .filter(periodo=periodo_bloqueado)
+                .order_by("-numero_version")
+                .first()
+            )
+
+            if (
+                version_actual
+                and version_actual.datos == configuracion
+            ):
+                return version_actual
+
+            periodo_bloqueado.version_parametros += 1
+            periodo_bloqueado.save(
+                update_fields=["version_parametros"]
+            )
+
+            return CRUDPeriodo._registrar_version_reglas(
+                periodo_bloqueado,
+                actor,
+                datos=configuracion,
+            )
 
     @staticmethod
     def calcular_dias_computables(fecha_inicio, fecha_termino):
