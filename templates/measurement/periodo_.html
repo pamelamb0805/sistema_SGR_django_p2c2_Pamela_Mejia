@@ -1,3 +1,4 @@
+
 {% extends "base.html" %}
 
 {% block title %}{{ titulo|default:"Períodos de medición" }}{% endblock %}
@@ -89,8 +90,8 @@
 
                 <div class="alert alert-info">
                     <i class="bi bi-info-circle"></i>
-                    Los días computables se calcularán automáticamente a
-                    partir de las fechas ingresadas. No se permite crear
+                    Los días computables se calcularán automáticamente
+                    a partir de las fechas ingresadas. No se permite crear
                     períodos que se superpongan con otros existentes.
                 </div>
 
@@ -108,6 +109,7 @@
 
 {% elif modo == "detalle" %}
 
+    <!-- INFORMACIÓN GENERAL DEL PERÍODO -->
     <div class="card shadow-sm mb-4">
         <div class="card-header d-flex justify-content-between align-items-center">
             <h5 class="mb-0">Información del período</h5>
@@ -149,9 +151,12 @@
         </div>
     </div>
 
+    <!-- CONFIGURACIÓN DE PONDERACIONES -->
     <div class="card shadow-sm mb-4">
         <div class="card-header">
-            <h5 class="mb-0">Configuración de metas por funcionario</h5>
+            <h5 class="mb-0">
+                Configuración de metas y ponderaciones por funcionario
+            </h5>
         </div>
 
         <div class="card-body">
@@ -164,24 +169,73 @@
                                 <th>Delegación</th>
                                 <th>Cargo</th>
                                 <th>Metas registradas</th>
-                                <th>Suma de ponderaciones</th>
-                                <th>Configuración</th>
+                                <th>Ponderación asignada</th>
+                                <th>Faltante</th>
+                                <th>Excedente</th>
+                                <th>Estado</th>
                             </tr>
                         </thead>
 
                         <tbody>
                             {% for fila in configuracion %}
                                 <tr>
-                                    <td>{{ fila.funcionario.nombre }}</td>
-                                    <td>{{ fila.funcionario.delegacion|default:"—" }}</td>
-                                    <td>{{ fila.funcionario.cargo|default:"—" }}</td>
-                                    <td>{{ fila.metas }}</td>
-                                    <td>{{ fila.suma|floatformat:2 }} %</td>
                                     <td>
-                                        {% if fila.completa %}
+                                        {{ fila.funcionario.nombre }}
+                                    </td>
+
+                                    <td>
+                                        {{ fila.funcionario.delegacion|default:"—" }}
+                                    </td>
+
+                                    <td>
+                                        {{ fila.funcionario.cargo|default:"—" }}
+                                    </td>
+
+                                    <td>
+                                        {{ fila.metas }}
+                                    </td>
+
+                                    <td>
+                                        <strong>
+                                            {{ fila.suma|floatformat:2 }} %
+                                        </strong>
+                                    </td>
+
+                                    <td>
+                                        {% if fila.faltante > 0 %}
+                                            <span class="text-warning fw-semibold">
+                                                {{ fila.faltante|floatformat:2 }} %
+                                            </span>
+                                        {% else %}
+                                            <span class="text-muted">
+                                                0,00 %
+                                            </span>
+                                        {% endif %}
+                                    </td>
+
+                                    <td>
+                                        {% if fila.excedente > 0 %}
+                                            <span class="text-danger fw-semibold">
+                                                {{ fila.excedente|floatformat:2 }} %
+                                            </span>
+                                        {% else %}
+                                            <span class="text-muted">
+                                                0,00 %
+                                            </span>
+                                        {% endif %}
+                                    </td>
+
+                                    <td>
+                                        {% if fila.estado == "Completa" %}
                                             <span class="badge bg-success">
                                                 Completa
                                             </span>
+
+                                        {% elif fila.estado == "Excedida" %}
+                                            <span class="badge bg-danger">
+                                                Excedida
+                                            </span>
+
                                         {% else %}
                                             <span class="badge bg-warning text-dark">
                                                 Pendiente
@@ -193,6 +247,15 @@
                         </tbody>
                     </table>
                 </div>
+
+                <div class="alert alert-info mb-0 mt-3">
+                    <i class="bi bi-info-circle me-1"></i>
+                    La ponderación total esperada por funcionario es del
+                    100 %. Una configuración pendiente indica que todavía
+                    falta asignar ponderación. Una configuración excedida
+                    indica que se supera el máximo permitido.
+                </div>
+
             {% else %}
                 <div class="alert alert-info mb-0">
                     No hay funcionarios activos dentro del ámbito autorizado
@@ -202,12 +265,14 @@
         </div>
     </div>
 
+    <!-- ACCIONES DEL PERÍODO -->
     <div class="card shadow-sm">
         <div class="card-header">
             <h5 class="mb-0">Acciones del período</h5>
         </div>
 
         <div class="card-body d-flex flex-wrap gap-2">
+
             {% if periodo.abierto and puede_editar %}
                 <form method="post"
                       action="{% url 'measurement:periodo_cerrar' periodo.pk %}">
@@ -216,6 +281,7 @@
                     <button type="submit"
                             class="btn btn-outline-danger"
                             onclick="return confirm('¿Confirmas el cierre de este período?');">
+                        <i class="bi bi-lock me-1"></i>
                         Cerrar período
                     </button>
                 </form>
@@ -226,6 +292,7 @@
 
                     <button type="submit"
                             class="btn btn-outline-primary">
+                        <i class="bi bi-arrow-repeat me-1"></i>
                         Recalcular indicadores
                     </button>
                 </form>
@@ -252,15 +319,18 @@
                     <button type="submit"
                             class="btn btn-warning mt-2"
                             onclick="return confirm('¿Confirmas la reapertura de este período?');">
+                        <i class="bi bi-unlock me-1"></i>
                         Reabrir período
                     </button>
                 </form>
             {% endif %}
+
         </div>
     </div>
 
 {% else %}
 
+    <!-- FILTROS -->
     <div class="card shadow-sm mb-3">
         <div class="card-header">
             <h5 class="mb-0">Buscar y filtrar períodos</h5>
@@ -270,7 +340,9 @@
             <form method="get" class="row g-3 align-items-end">
 
                 <div class="col-md-4">
-                    <label for="q" class="form-label">Buscar fecha</label>
+                    <label for="q" class="form-label">
+                        Buscar fecha
+                    </label>
 
                     <input type="text"
                            name="q"
@@ -281,7 +353,9 @@
                 </div>
 
                 <div class="col-md-3">
-                    <label for="estado" class="form-label">Estado</label>
+                    <label for="estado" class="form-label">
+                        Estado
+                    </label>
 
                     <select name="estado"
                             id="estado"
@@ -335,6 +409,7 @@
                 <div class="col-12">
                     <a href="{% url 'measurement:periodo_list' %}"
                        class="btn btn-outline-secondary btn-sm">
+                        <i class="bi bi-x-circle me-1"></i>
                         Limpiar filtros
                     </a>
                 </div>
@@ -342,6 +417,7 @@
         </div>
     </div>
 
+    <!-- LISTADO DE PERÍODOS -->
     <div class="card shadow-sm">
         <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h5 class="mb-0">Períodos registrados</h5>
@@ -369,9 +445,17 @@
                         <tbody>
                             {% for periodo in periodos %}
                                 <tr>
-                                    <td>{{ periodo.fecha_inicio|date:"d/m/Y" }}</td>
-                                    <td>{{ periodo.fecha_termino|date:"d/m/Y" }}</td>
-                                    <td>{{ periodo.dias_computables }}</td>
+                                    <td>
+                                        {{ periodo.fecha_inicio|date:"d/m/Y" }}
+                                    </td>
+
+                                    <td>
+                                        {{ periodo.fecha_termino|date:"d/m/Y" }}
+                                    </td>
+
+                                    <td>
+                                        {{ periodo.dias_computables }}
+                                    </td>
 
                                     <td>
                                         {% if periodo.abierto %}
@@ -385,17 +469,21 @@
                                         {% endif %}
                                     </td>
 
-                                    <td>{{ periodo.version_parametros }}</td>
+                                    <td>
+                                        {{ periodo.version_parametros }}
+                                    </td>
 
                                     <td class="text-end">
                                         <a href="{% url 'measurement:periodo_detail' periodo.pk %}"
                                            class="btn btn-sm btn-outline-info">
+                                            <i class="bi bi-eye"></i>
                                             Ver detalle
                                         </a>
 
                                         {% if puede_editar and periodo.abierto %}
                                             <a href="{% url 'measurement:periodo_update' periodo.pk %}"
                                                class="btn btn-sm btn-outline-primary">
+                                                <i class="bi bi-pencil"></i>
                                                 Editar
                                             </a>
 
@@ -407,6 +495,7 @@
                                                 <button type="submit"
                                                         class="btn btn-sm btn-outline-danger"
                                                         onclick="return confirm('¿Confirmas el cierre de este período?');">
+                                                    <i class="bi bi-lock"></i>
                                                     Cerrar
                                                 </button>
                                             </form>
@@ -427,6 +516,7 @@
                                                 <button type="submit"
                                                         class="btn btn-sm btn-outline-warning"
                                                         onclick="return confirm('¿Confirmas la reapertura?');">
+                                                    <i class="bi bi-unlock"></i>
                                                     Reabrir
                                                 </button>
                                             </form>
@@ -437,6 +527,7 @@
                         </tbody>
                     </table>
                 </div>
+
             {% else %}
                 <div class="alert alert-info mb-0">
                     No hay períodos que coincidan con los filtros seleccionados.

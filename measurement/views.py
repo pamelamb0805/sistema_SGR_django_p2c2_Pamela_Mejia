@@ -122,7 +122,7 @@ class PeriodoListView(PageSizeMixin, LecturaMixin, ModoMixin, ListView):
 
 
 class PeriodoDetailView(LecturaMixin, ModoMixin, DetailView):
-    """Resumen del período y estado de la configuración (RN-001) de cada funcionario."""
+    """Resumen del período y estado de ponderaciones por funcionario."""
     model = Periodo
     template_name = "measurement/periodo_.html"
     context_object_name = "periodo"
@@ -131,22 +131,64 @@ class PeriodoDetailView(LecturaMixin, ModoMixin, DetailView):
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
+
         funcionarios = filtrar_por_ambito(
-            Funcionario.objects.filter(estado=Funcionario.ESTADO_ACTIVO).select_related("cargo", "delegacion"),
-            self.request.user, "delegacion_id")
+            Funcionario.objects.filter(
+                estado=Funcionario.ESTADO_ACTIVO
+            ).select_related("cargo", "delegacion"),
+            self.request.user,
+            "delegacion_id",
+        )
+
         configuracion = []
-        for f in funcionarios:
-            suma = CRUDMeta.suma_ponderaciones(f, self.object)
-            configuracion.append({"funcionario": f, "suma": suma, "completa": suma == 100,
-                                  "metas": f.metas.filter(periodo=self.object).count()})
+
+        for funcionario in funcionarios:
+            suma = CRUDMeta.suma_ponderaciones(
+                funcionario,
+                self.object,
+            )
+
+            faltante = max(
+                0,
+                100 - suma,
+            )
+
+            excedente = max(
+                0,
+                suma - 100,
+            )
+
+            if suma == 100:
+                estado = "Completa"
+            elif suma < 100:
+                estado = "Pendiente"
+            else:
+                estado = "Excedida"
+
+            configuracion.append({
+                "funcionario": funcionario,
+                "suma": suma,
+                "faltante": faltante,
+                "excedente": excedente,
+                "completa": estado == "Completa",
+                "estado": estado,
+                "metas": funcionario.metas.filter(
+                    periodo=self.object
+                ).count(),
+            })
+
         contexto.update(
-            titulo=f"Período {self.object}", configuracion=configuracion,
+            titulo=f"Período {self.object}",
+            configuracion=configuracion,
             total_metas=self.object.metas.count(),
-            puede_reabrir=tiene_rol(self.request.user, *ROLES_CONFIGURACION),
+            puede_reabrir=tiene_rol(
+                self.request.user,
+                *ROLES_CONFIGURACION,
+            ),
             reabrir_form=ReabrirPeriodoForm(),
         )
-        return contexto
 
+        return contexto
 
 class PeriodoFormMixin(MedicionMixin, ModoMixin, GuardarMixin):
     model = Periodo
