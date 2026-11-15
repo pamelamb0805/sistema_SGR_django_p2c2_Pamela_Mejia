@@ -155,6 +155,62 @@
 
     </div>
 
+    <!-- Actividad reciente de la delegación -->
+    <div class="card shadow-sm mb-4">
+      <div class="card-header">
+        <strong>
+          <i class="bi bi-clock-history me-1"></i>
+          Actividad reciente de la delegación
+        </strong>
+      </div>
+
+      <div class="card-body">
+        <div class="row g-3">
+
+          <div class="col-sm-6 col-lg-4">
+            <div class="border rounded p-3 h-100">
+              <div class="text-body-secondary small">
+                Registros válidos del período
+              </div>
+              <div class="fs-3 fw-semibold">
+                {{ resumen.total_registros_validos|default:0 }}
+              </div>
+            </div>
+          </div>
+
+          <div class="col-sm-6 col-lg-4">
+            <div class="border rounded p-3 h-100">
+              <div class="text-body-secondary small">
+                Días transcurridos del período
+              </div>
+              <div class="fs-3 fw-semibold">
+                {{ resumen.dias_periodo_transcurridos|default:0 }}
+              </div>
+            </div>
+          </div>
+
+          <div class="col-sm-6 col-lg-4">
+            <div class="border rounded p-3 h-100">
+              <div class="text-body-secondary small">
+                Promedio diario de registros
+              </div>
+              <div class="fs-3 fw-semibold">
+                {% if resumen.dias_periodo_transcurridos %}
+                  {{ resumen.total_registros_validos|default:0|floatformat:2 }}
+                {% else %}
+                  0
+                {% endif %}
+              </div>
+              <small class="text-body-secondary">
+                Total de registros válidos del período.
+              </small>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
     <!-- Distribución del semáforo -->
     <div class="card shadow-sm mb-4">
       <div class="card-header">
@@ -213,7 +269,7 @@
       <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
         <strong>
           <i class="bi bi-people me-1"></i>
-          Desempeño por funcionario
+          Desempeño y actividad reciente por funcionario
         </strong>
 
         <span class="badge text-bg-secondary">
@@ -233,6 +289,10 @@
               <th>Meta esperada</th>
               <th>Resultado</th>
               <th>Semáforo</th>
+              <th>Último ingreso</th>
+              <th>Días sin ingreso</th>
+              <th>Registros válidos</th>
+              <th>Promedio diario</th>
               <th>Configuración</th>
               <th>Detalle</th>
               <th></th>
@@ -291,6 +351,52 @@
                   {% endif %}
                 </td>
 
+                <!-- RF-030: último ingreso -->
+                <td>
+                  {% if fila.ultimo_ingreso %}
+                    {{ fila.ultimo_ingreso|date:"d/m/Y" }}
+                  {% else %}
+                    <span class="text-body-secondary">
+                      Sin registros
+                    </span>
+                  {% endif %}
+                </td>
+
+                <!-- RF-030: días sin ingreso -->
+                <td>
+                  {% if fila.dias_sin_ingreso != None %}
+                    {% if fila.dias_sin_ingreso > 7 %}
+                      <span class="badge text-bg-danger">
+                        {{ fila.dias_sin_ingreso }} días
+                      </span>
+                    {% elif fila.dias_sin_ingreso > 3 %}
+                      <span class="badge text-bg-warning">
+                        {{ fila.dias_sin_ingreso }} días
+                      </span>
+                    {% else %}
+                      <span class="badge text-bg-success">
+                        {{ fila.dias_sin_ingreso }} días
+                      </span>
+                    {% endif %}
+                  {% else %}
+                    <span class="badge text-bg-secondary">
+                      Sin registros
+                    </span>
+                  {% endif %}
+                </td>
+
+                <!-- RF-030: cantidad de registros -->
+                <td>
+                  <strong>
+                    {{ fila.cantidad_registros|default:0 }}
+                  </strong>
+                </td>
+
+                <!-- RF-030: promedio diario -->
+                <td>
+                  {{ fila.promedio_diario|default:0|floatformat:2 }}
+                </td>
+
                 <td>
                   {% if fila.completa %}
                     <span class="badge text-bg-success">
@@ -325,7 +431,7 @@
 
               <!-- Detalle desplegable por funcionario -->
               <tr>
-                <td colspan="10" class="bg-body-tertiary p-3">
+                <td colspan="14" class="bg-body-tertiary p-3">
 
                   <div class="collapse"
                        id="detalle-funcionario-{{ fila.funcionario.pk }}">
@@ -439,7 +545,7 @@
 
             {% empty %}
               <tr>
-                <td colspan="10"
+                <td colspan="14"
                     class="text-center text-body-secondary py-4">
                   No hay funcionarios activos con información para este período.
                 </td>
@@ -471,6 +577,9 @@
                   <th>Funcionario</th>
                   <th>Resultado</th>
                   <th>Meta esperada</th>
+                  <th>Último ingreso</th>
+                  <th>Días sin ingreso</th>
+                  <th>Registros válidos</th>
                   <th>Semáforo</th>
                   <th></th>
                 </tr>
@@ -487,6 +596,26 @@
 
                     <td>
                       {{ fila.meta_esperada|floatformat:2 }} %
+                    </td>
+
+                    <td>
+                      {% if fila.ultimo_ingreso %}
+                        {{ fila.ultimo_ingreso|date:"d/m/Y" }}
+                      {% else %}
+                        Sin registros
+                      {% endif %}
+                    </td>
+
+                    <td>
+                      {% if fila.dias_sin_ingreso != None %}
+                        {{ fila.dias_sin_ingreso }}
+                      {% else %}
+                        Sin registros
+                      {% endif %}
+                    </td>
+
+                    <td>
+                      {{ fila.cantidad_registros|default:0 }}
                     </td>
 
                     <td>
@@ -516,8 +645,9 @@
       <i class="bi bi-info-circle me-1"></i>
       El resultado global corresponde al promedio de los resultados
       ponderados de los funcionarios incluidos en el ámbito y filtros
-      seleccionados. El detalle desplegable muestra el avance, la meta
-      y el cumplimiento de cada ítem que compone el resultado individual.
+      seleccionados. Los indicadores de actividad reciente consideran
+      las actividades validadas del período. El detalle desplegable
+      muestra el avance, la meta y el cumplimiento de cada ítem.
     </div>
 
   {% else %}

@@ -1709,6 +1709,7 @@ class CalculoIndicadores:
         }
 
 
+
     @staticmethod
     def resumen_delegacion(
         funcionarios,
@@ -1716,17 +1717,21 @@ class CalculoIndicadores:
         fecha=None,
     ):
         """
-        Consolida el desempeño de los funcionarios de una delegación.
+        Consolida resultados e indicadores de actividad reciente por funcionario.
 
         RF-029:
-        - Responsables y sus resultados.
-        - Avance desglosado por ítem.
-        - Meta esperada al día.
-        - Promedio ponderado.
-        - Resultado global.
-        - Distribución del semáforo.
-        - Identificación de funcionarios bajo el umbral.
+        - Responsables, resultados, avance, meta esperada y semáforo.
+        - Promedio y resultado global.
+
+        RF-030:
+        - Fecha del último registro válido.
+        - Días transcurridos desde el último registro.
+        - Cantidad de registros válidos del período.
+        - Promedio diario de registros válidos.
         """
+        from django.db.models import Count, Max
+        from activities.models import Actividad
+
         filas = [
             CalculoIndicadores.resumen_funcionario(
                 funcionario,
@@ -1744,6 +1749,11 @@ class CalculoIndicadores:
             else (fecha or timezone.localdate())
         )
 
+        fecha_calculo = min(
+            fecha_calculo,
+            periodo.fecha_termino,
+        )
+
         esperada = (
             CalculoIndicadores.calcular_meta_esperada_al_dia(
                 periodo,
@@ -1755,6 +1765,75 @@ class CalculoIndicadores:
             periodo,
             fecha_calculo,
         )
+
+        # Días transcurridos del período, contando el día inicial.
+        dias_transcurridos = max(
+            (fecha_calculo - periodo.fecha_inicio).days + 1,
+            1,
+        )
+
+        # Solo se consideran actividades que fueron validadas.
+        # La consulta se limita al período y a los funcionarios visibles.
+        ids_funcionarios = [
+            fila["funcionario"].pk
+            for fila in filas
+        ]
+
+        actividad_por_funcionario = {}
+
+        if ids_funcionarios:
+            registros = (
+                Actividad.objects
+                .filter(
+                    funcionario_id__in=ids_funcionarios,
+                    periodo=periodo,
+                    estado=Actividad.ESTADO_VALIDADA,
+                    fecha__lte=fecha_calculo,
+                )
+                .values("funcionario_id")
+                .annotate(
+                    cantidad=Count("id_actividad"),
+                    ultima_fecha=Max("fecha"),
+                )
+            )
+
+            actividad_por_funcionario = {
+                registro["funcionario_id"]: registro
+                for registro in registros
+            }
+
+        # Incorporar los indicadores recientes a cada responsable.
+        for fila in filas:
+            funcionario_id = fila["funcionario"].pk
+
+            registro = actividad_por_funcionario.get(
+                funcionario_id,
+                {},
+            )
+
+            cantidad = registro.get("cantidad", 0)
+            ultima_fecha = registro.get("ultima_fecha")
+
+            dias_sin_ingreso = (
+                (fecha_calculo - ultima_fecha).days
+                if ultima_fecha
+                else None
+            )
+
+            promedio_diario = (
+                calc.redondear(
+                    Decimal(cantidad) / Decimal(dias_transcurridos)
+                )
+                if dias_transcurridos
+                else Decimal("0.00")
+            )
+
+            fila.update({
+                "ultimo_ingreso": ultima_fecha,
+                "dias_sin_ingreso": dias_sin_ingreso,
+                "cantidad_registros": cantidad,
+                "promedio_diario": promedio_diario,
+            })
 
         cantidad_funcionarios = len(filas)
 
@@ -1809,6 +1888,11 @@ class CalculoIndicadores:
             else ""
         )
 
+        total_registros_validos = sum(
+            fila["cantidad_registros"]
+            for fila in filas
+        )
+
         return {
             "filas": filas,
             "promedio": promedio,
@@ -1819,4 +1903,6 @@ class CalculoIndicadores:
             "conteo": conteo,
             "total_funcionarios": cantidad_funcionarios,
             "bajo_umbral": bajo_umbral,
+            "total_registros_validos": total_registros_validos,
+            "dias_periodo_transcurridos": dias_transcurridos,
         }
