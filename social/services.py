@@ -15,7 +15,11 @@ from django.utils import timezone
 
 from catalogs.models import Catalogo
 from core.exceptions import ReglaNegocioError
-from core.services import guardar, snapshot
+from core.services import (
+    guardar,
+    snapshot,
+    _notificar_crud,
+)
 
 from .models import AtencionSocial, UsuarioSocial
 from core.mixins import (
@@ -369,24 +373,76 @@ class CRUDUsuarioSocial:
         return guardar(caso, actor, "usuario_social")
 
     @staticmethod
-    def cambiar_estado_caso(caso, nuevo_estado, actor=None):
+    def cambiar_estado_caso(
+        caso,
+        nuevo_estado,
+        actor=None,
+    ):
+        """
+        Cambia el estado del caso social, conserva la auditoría
+        y publica el cambio para los usuarios autorizados.
+        """
         with transaction.atomic():
-            caso = UsuarioSocial.objects.select_for_update().get(pk=caso.pk)
-            if not (puede_escribir(actor, caso.delegacion_id) or es_transversal(actor)):
-                raise ReglaNegocioError("No tiene permiso para modificar casos de esta delegación.")
+            caso = UsuarioSocial.objects.select_for_update().get(
+                pk=caso.pk
+            )
+
+            if not (
+                puede_escribir(actor, caso.delegacion_id)
+                or es_transversal(actor)
+            ):
+                raise ReglaNegocioError(
+                    "No tiene permiso para modificar casos "
+                    "de esta delegación."
+                )
+
             if nuevo_estado not in dict(UsuarioSocial.ESTADOS):
-                raise ReglaNegocioError("Estado de caso no válido.")
+                raise ReglaNegocioError(
+                    "Estado de caso no válido."
+                )
+
             if nuevo_estado == caso.estado_caso:
-                raise ReglaNegocioError(f"El caso ya está «{caso.estado_caso}».")
-            if caso.cerrado and not puede_reabrir(actor, caso.delegacion_id):
-                raise ReglaNegocioError("Solo el delegado o la coordinación pueden reabrir un caso cerrado.")
+                raise ReglaNegocioError(
+                    f"El caso ya está «{caso.estado_caso}»."
+                )
+
+            if (
+                caso.cerrado
+                and not puede_reabrir(
+                    actor,
+                    caso.delegacion_id,
+                )
+            ):
+                raise ReglaNegocioError(
+                    "Solo el delegado o la coordinación "
+                    "pueden reabrir un caso cerrado."
+                )
+
             anterior = snapshot(caso)
+
             caso.estado_caso = nuevo_estado
             caso.save(update_fields=["estado_caso"])
-            auditar(actor, "CAMBIO_ESTADO_CASO", "usuario_social", caso.pk, anterior,
-                    json.dumps({"estado_caso": nuevo_estado}, ensure_ascii=False))
-        return caso
 
+            auditar(
+                actor,
+                "CAMBIO_ESTADO_CASO",
+                "usuario_social",
+                caso.pk,
+                anterior,
+                json.dumps(
+                    {"estado_caso": nuevo_estado},
+                    ensure_ascii=False,
+                ),
+            )
+
+            _notificar_crud(
+                "usuario_social",
+                "actualizar",
+                actor,
+                caso,
+            )
+
+        return caso
 
 # ---------------------------------------------------------------------------
 # Estadísticas (HU-03: cada atención válida se cuenta una sola vez)

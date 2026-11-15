@@ -19,7 +19,11 @@ from core.exceptions import ReglaNegocioError
 from core.mixins import (
     ROLES_SUPERVISION, auditar, es_transversal, get_funcionario, tiene_rol, filtrar_por_ambito,
 )
-from core.services import guardar, snapshot
+from core.services import (
+    guardar,
+    snapshot,
+    _notificar_crud,
+)
 from measurement.models import Periodo
 from measurement.services import CalculoIndicadores
 from organizations.models import Funcionario
@@ -158,72 +162,224 @@ class CRUDCompromiso:
         return compromiso
 
     @staticmethod
-    def actualizar_estado(compromiso, nuevo_estado, observacion="", actor=None):
-        """Transición controlada (RF-018). Conserva estado anterior, nuevo, autor, fecha y observación."""
+    def actualizar_estado(
+        compromiso,
+        nuevo_estado,
+        observacion="",
+        actor=None,
+    ):
+        """
+        Actualiza el estado del compromiso, conserva la transición,
+        recalcula resultados cuando corresponde y publica el evento.
+        """
         observacion = (observacion or "").strip()
         autor = get_funcionario(actor)
+
         with transaction.atomic():
-            c = Compromiso.objects.select_for_update().get(pk=compromiso.pk)
+            c = Compromiso.objects.select_for_update().get(
+                pk=compromiso.pk
+            )
+
             if not puede_gestionar(actor, c):
-                raise ReglaNegocioError("No tiene permiso para cambiar el estado de este compromiso.")
+                raise ReglaNegocioError(
+                    "No tiene permiso para cambiar el estado "
+                    "de este compromiso."
+                )
+
             anterior = c.estado
+
             if nuevo_estado == anterior:
-                raise ReglaNegocioError(f"El compromiso ya está en estado «{anterior}».")
-            if nuevo_estado not in Compromiso.TRANSICIONES.get(anterior, ()):
-                raise ReglaNegocioError(f"Transición no permitida: de «{anterior}» a «{nuevo_estado}».")
-            if nuevo_estado == Compromiso.ESTADO_PENDIENTE and not observacion:
-                raise ReglaNegocioError("Indique en la observación por qué queda pendiente.")
+                raise ReglaNegocioError(
+                    f"El compromiso ya está en estado «{anterior}»."
+                )
+
+            if nuevo_estado not in Compromiso.TRANSICIONES.get(
+                anterior, ()
+            ):
+                raise ReglaNegocioError(
+                    f"Transición no permitida: de «{anterior}» "
+                    f"a «{nuevo_estado}»."
+                )
+
+            if (
+                nuevo_estado == Compromiso.ESTADO_PENDIENTE
+                and not observacion
+            ):
+                raise ReglaNegocioError(
+                    "Indique en la observación por qué queda pendiente."
+                )
+
             if anterior == Compromiso.ESTADO_REALIZADO:
                 if not supervisa(actor, c.delegacion_id):
-                    raise ReglaNegocioError("Solo la supervisión puede reabrir un compromiso realizado.")
+                    raise ReglaNegocioError(
+                        "Solo la supervisión puede reabrir "
+                        "un compromiso realizado."
+                    )
+
                 if not observacion:
-                    raise ReglaNegocioError("Indique el motivo de la reapertura.")
-            if nuevo_estado == Compromiso.ESTADO_REALIZADO and c.periodo_id is None:
-                c.periodo = Periodo.objects.para_fecha(c.fecha_comprometida)
-            toca_resultados = Compromiso.ESTADO_REALIZADO in (anterior, nuevo_estado)
+                    raise ReglaNegocioError(
+                        "Indique el motivo de la reapertura."
+                    )
+
+            if (
+                nuevo_estado == Compromiso.ESTADO_REALIZADO
+                and c.periodo_id is None
+            ):
+                c.periodo = Periodo.objects.para_fecha(
+                    c.fecha_comprometida
+                )
+
+            toca_resultados = (
+                Compromiso.ESTADO_REALIZADO in (
+                    anterior,
+                    nuevo_estado,
+                )
+            )
+
             if toca_resultados and _periodo_cerrado_con_item(c):
-                raise ReglaNegocioError("El período está cerrado: el compromiso no puede alterar sus resultados.")
+                raise ReglaNegocioError(
+                    "El período está cerrado: el compromiso "
+                    "no puede alterar sus resultados."
+                )
 
             c.estado = nuevo_estado
+
             if observacion:
                 c.observacion = observacion
-            c.save(update_fields=["estado", "observacion", "periodo"])
-            CRUDHistorialTransiciones.registrar_cambio_estado(c, anterior, nuevo_estado, observacion, autor)
-            auditar(actor, "CAMBIO_ESTADO_COMPROMISO", "compromiso", c.pk, anterior,
-                    json.dumps({"estado": nuevo_estado, "observacion": observacion}, ensure_ascii=False))
+
+            c.save(
+                update_fields=[
+                    "estado",
+                    "observacion",
+                    "periodo",
+                ]
+            )
+
+            CRUDHistorialTransiciones.registrar_cambio_estado(
+                c,
+                anterior,
+                nuevo_estado,
+                observacion,
+                autor,
+            )
+
+            auditar(
+                actor,
+                "CAMBIO_ESTADO_COMPROMISO",
+                "compromiso",
+                c.pk,
+                anterior,
+                json.dumps(
+                    {
+                        "estado": nuevo_estado,
+                        "observacion": observacion,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+
             if toca_resultados:
                 _recalcular(c)
+
+            _notificar_crud(
+                "compromiso",
+                "actualizar",
+                actor,
+                c,
+            )
+
         return c
 
     @staticmethod
-    def reasignar_responsable(compromiso, nuevo_responsable, motivo, actor=None):
-        """Continuidad operativa (HU-15): conserva responsable anterior, nuevo, autor, fecha y motivo."""
+    def reasignar_responsable(
+        compromiso,
+        nuevo_responsable,
+        motivo,
+        actor=None,
+    ):
+        """
+        Reasigna un compromiso conservando la trazabilidad
+        del responsable anterior y del nuevo responsable.
+        """
         motivo = (motivo or "").strip()
+
         if not motivo:
-            raise ReglaNegocioError("Debe indicar el motivo de la reasignación.")
+            raise ReglaNegocioError(
+                "Debe indicar el motivo de la reasignación."
+            )
+
         with transaction.atomic():
-            c = Compromiso.objects.select_for_update().get(pk=compromiso.pk)
+            c = Compromiso.objects.select_for_update().get(
+                pk=compromiso.pk
+            )
+
             if not supervisa(actor, c.delegacion_id):
-                raise ReglaNegocioError("Solo la supervisión puede reasignar compromisos.")
+                raise ReglaNegocioError(
+                    "Solo la supervisión puede reasignar compromisos."
+                )
+
             if c.realizado:
-                raise ReglaNegocioError("No se puede reasignar un compromiso realizado.")
+                raise ReglaNegocioError(
+                    "No se puede reasignar un compromiso realizado."
+                )
+
             if nuevo_responsable.pk == c.funcionario_id:
-                raise ReglaNegocioError("El compromiso ya está asignado a ese funcionario.")
-            if not funcionarios_asignables(actor).filter(pk=nuevo_responsable.pk).exists():
-                raise ReglaNegocioError("No puede reasignar a ese funcionario.")
+                raise ReglaNegocioError(
+                    "El compromiso ya está asignado a ese funcionario."
+                )
+
+            if not funcionarios_asignables(actor).filter(
+                pk=nuevo_responsable.pk
+            ).exists():
+                raise ReglaNegocioError(
+                    "No puede reasignar a ese funcionario."
+                )
+
             anterior = c.funcionario
             anterior_snapshot = snapshot(c)
+
             c.funcionario = nuevo_responsable
             c.delegacion_id = nuevo_responsable.delegacion_id
-            _validar_item(c)
-            c.save(update_fields=["funcionario", "delegacion"])
-            CRUDHistorialTransiciones.registrar_cambio_estado(
-                c, c.estado, c.estado,
-                f"Reasignado de {anterior.nombre} a {nuevo_responsable.nombre}. Motivo: {motivo}",
-                get_funcionario(actor))
-            auditar(actor, "REASIGNAR_COMPROMISO", "compromiso", c.pk, anterior_snapshot, snapshot(c))
-        return c
 
+            _validar_item(c)
+
+            c.save(
+                update_fields=[
+                    "funcionario",
+                    "delegacion",
+                ]
+            )
+
+            CRUDHistorialTransiciones.registrar_cambio_estado(
+                c,
+                c.estado,
+                c.estado,
+                (
+                    f"Reasignado de {anterior.nombre} "
+                    f"a {nuevo_responsable.nombre}. "
+                    f"Motivo: {motivo}"
+                ),
+                get_funcionario(actor),
+            )
+
+            auditar(
+                actor,
+                "REASIGNAR_COMPROMISO",
+                "compromiso",
+                c.pk,
+                anterior_snapshot,
+                snapshot(c),
+            )
+
+            _notificar_crud(
+                "compromiso",
+                "actualizar",
+                actor,
+                c,
+                delegacion_id=c.delegacion_id,
+            )
+
+        return c
     @staticmethod
     def controlar_plazos(delegacion=None, queryset=None, hoy=None):
         """Próximos a vencer, vencidos y realizados fuera de plazo (RF-019)."""

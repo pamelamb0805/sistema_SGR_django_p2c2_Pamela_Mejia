@@ -160,21 +160,63 @@ class CRUDActividad:
 
     @staticmethod
     def anular_actividad(actividad, motivo, actor=None):
-        """Anula el registro: deja de aportar al avance (RF-022, RN-009). Conserva su historial."""
+        """
+        Anula una actividad, conserva su historial, recalcula indicadores
+        y comunica el cambio a los usuarios autorizados.
+        """
         motivo = (motivo or "").strip()
+
         if not motivo:
-            raise ReglaNegocioError("Debe indicar el motivo de la anulación.")
+            raise ReglaNegocioError(
+                "Debe indicar el motivo de la anulación."
+            )
+
         with transaction.atomic():
-            actividad = Actividad.objects.select_for_update().get(pk=actividad.pk)
+            actividad = Actividad.objects.select_for_update().get(
+                pk=actividad.pk
+            )
+
             if actividad.estado == Actividad.ESTADO_ANULADA:
-                raise ReglaNegocioError("La actividad ya está anulada.")
-            _exigir_periodo_abierto(actividad.periodo_id, "anular actividades")
+                raise ReglaNegocioError(
+                    "La actividad ya está anulada."
+                )
+
+            _exigir_periodo_abierto(
+                actividad.periodo_id,
+                "anular actividades",
+            )
+
             anterior = snapshot(actividad)
+
             actividad.estado = Actividad.ESTADO_ANULADA
             actividad.save(update_fields=["estado"])
-            auditar(actor, "ANULAR_ACTIVIDAD", "actividad", actividad.pk, anterior,
-                    json.dumps({"motivo": motivo, "estado": actividad.estado}, ensure_ascii=False))
+
+            auditar(
+                actor,
+                "ANULAR_ACTIVIDAD",
+                "actividad",
+                actividad.pk,
+                anterior,
+                json.dumps(
+                    {
+                        "motivo": motivo,
+                        "estado": actividad.estado,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+
+            # Recalcular los resultados afectados.
             _recalcular_indicadores(actividad)
+
+            # Publicar después del COMMIT.
+            _notificar_crud(
+                "actividad",
+                "actualizar",
+                actor,
+                actividad,
+            )
+
         return actividad
 
 
