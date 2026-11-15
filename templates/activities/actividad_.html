@@ -1,3 +1,4 @@
+
 {% extends "base.html" %}
 
 {% block title %}Actividades · SGR{% endblock %}
@@ -132,6 +133,7 @@
           <tr>
             <th>Código</th>
             <th>Fecha de carga</th>
+            <th>Funcionario que cargó</th>
             <th>Estado</th>
             <th>Archivo</th>
           </tr>
@@ -141,15 +143,20 @@
             <tr>
               <td>{{ e.codigo_evidencia }}</td>
               <td>{{ e.fecha_carga|date:"d/m/Y H:i" }}</td>
+              <td>{{ e.funcionario.nombre|default:"—" }}</td>
               <td>{{ e.estado_revision }}</td>
               <td>
-                <a href="{% url 'activities:evidencia_archivo' e.pk %}" target="_blank">Ver archivo</a>
-                <a href="{% url 'activities:evidencia_archivo' e.pk %}?descargar=1">Descargar</a>
+                <a href="{% url 'activities:evidencia_archivo' e.pk %}" target="_blank" rel="noopener">
+                  Ver archivo
+                </a>
+                <a href="{% url 'activities:evidencia_archivo' e.pk %}?descargar=1">
+                  Descargar
+                </a>
               </td>
             </tr>
           {% empty %}
             <tr>
-              <td colspan="4" class="text-center text-body-secondary py-3">
+              <td colspan="5" class="text-center text-body-secondary py-3">
                 Todavía no hay evidencias adjuntas.
               </td>
             </tr>
