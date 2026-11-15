@@ -1,3 +1,4 @@
+
 {% extends "base.html" %}
 {% load ui_extras %}
 
@@ -91,9 +92,18 @@
     <div class="card shadow-sm mb-3">
         <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
             <strong>Compromiso N.º {{ compromiso.pk }}</strong>
-            <span class="badge text-bg-secondary">
-                {{ compromiso.estado }}
-            </span>
+
+            {% if compromiso.plazo == "Vencido" %}
+                <span class="badge text-bg-danger">Vencido</span>
+            {% elif compromiso.plazo == "Por vencer" %}
+                <span class="badge text-bg-warning">Por vencer</span>
+            {% elif compromiso.plazo == "Realizado fuera de plazo" %}
+                <span class="badge text-bg-danger">Realizado fuera de plazo</span>
+            {% elif compromiso.plazo == "Realizado en plazo" %}
+                <span class="badge text-bg-success">Realizado en plazo</span>
+            {% else %}
+                <span class="badge text-bg-secondary">{{ compromiso.plazo }}</span>
+            {% endif %}
         </div>
 
         <div class="card-body">
@@ -136,7 +146,19 @@
                 </dd>
 
                 <dt class="col-md-3">Situación del plazo</dt>
-                <dd class="col-md-9">{{ compromiso.plazo }}</dd>
+                <dd class="col-md-9">
+                    {% if compromiso.plazo == "Vencido" %}
+                        <span class="badge text-bg-danger">Vencido</span>
+                    {% elif compromiso.plazo == "Por vencer" %}
+                        <span class="badge text-bg-warning">Por vencer</span>
+                    {% elif compromiso.plazo == "Realizado fuera de plazo" %}
+                        <span class="badge text-bg-danger">Realizado fuera de plazo</span>
+                    {% elif compromiso.plazo == "Realizado en plazo" %}
+                        <span class="badge text-bg-success">Realizado en plazo</span>
+                    {% else %}
+                        <span class="badge text-bg-secondary">{{ compromiso.plazo }}</span>
+                    {% endif %}
+                </dd>
 
                 <dt class="col-md-3">Observación</dt>
                 <dd class="col-md-9">
@@ -477,21 +499,29 @@
         <div class="card-header">Control de plazos</div>
 
         <div class="card-body">
+
             <h2 class="h6 text-danger">
                 Compromisos vencidos
             </h2>
 
-            <ul class="list-group mb-3">
+            <ul class="list-group mb-4">
                 {% for c in plazos.vencidos %}
-                    <li class="list-group-item d-flex justify-content-between align-items-center gap-2">
+                    <li class="list-group-item list-group-item-danger d-flex justify-content-between align-items-center gap-2">
                         <span>
-                            {{ c.solicitante }} · {{ c.funcionario.nombre }}
-                            <small class="d-block text-body-secondary">
-                                Fecha: {{ c.fecha_comprometida|date:"d/m/Y" }}
+                            <strong>{{ c.solicitante }}</strong>
+                            · {{ c.funcionario.nombre }}
+
+                            <small class="d-block">
+                                Fecha comprometida:
+                                {{ c.fecha_comprometida|date:"d/m/Y" }}
+                            </small>
+
+                            <small class="d-block">
+                                Estado: {{ c.estado }}
                             </small>
                         </span>
 
-                        <a class="btn btn-sm btn-outline-primary"
+                        <a class="btn btn-sm btn-outline-danger"
                            href="{% url 'agenda:compromiso_detail' c.pk %}">
                             Ver
                         </a>
@@ -507,17 +537,20 @@
                 Compromisos por vencer
             </h2>
 
-            <ul class="list-group">
+            <ul class="list-group mb-4">
                 {% for c in plazos.por_vencer %}
-                    <li class="list-group-item d-flex justify-content-between align-items-center gap-2">
+                    <li class="list-group-item list-group-item-warning d-flex justify-content-between align-items-center gap-2">
                         <span>
-                            {{ c.solicitante }} · {{ c.funcionario.nombre }}
-                            <small class="d-block text-body-secondary">
-                                Fecha: {{ c.fecha_comprometida|date:"d/m/Y" }}
+                            <strong>{{ c.solicitante }}</strong>
+                            · {{ c.funcionario.nombre }}
+
+                            <small class="d-block">
+                                Fecha comprometida:
+                                {{ c.fecha_comprometida|date:"d/m/Y" }}
                             </small>
                         </span>
 
-                        <a class="btn btn-sm btn-outline-primary"
+                        <a class="btn btn-sm btn-outline-warning"
                            href="{% url 'agenda:compromiso_detail' c.pk %}">
                             Ver
                         </a>
@@ -528,6 +561,41 @@
                     </li>
                 {% endfor %}
             </ul>
+
+            <h2 class="h6 text-danger">
+                Compromisos realizados fuera de plazo
+            </h2>
+
+            <ul class="list-group">
+                {% for c in plazos.realizados_fuera_de_plazo %}
+                    <li class="list-group-item list-group-item-danger d-flex justify-content-between align-items-center gap-2">
+                        <span>
+                            <strong>{{ c.solicitante }}</strong>
+                            · {{ c.funcionario.nombre }}
+
+                            <small class="d-block">
+                                Fecha comprometida:
+                                {{ c.fecha_comprometida|date:"d/m/Y" }}
+                            </small>
+
+                            <small class="d-block">
+                                Fecha de cierre:
+                                {{ c.fecha_cierre|date:"d/m/Y"|default:"No disponible" }}
+                            </small>
+                        </span>
+
+                        <a class="btn btn-sm btn-outline-danger"
+                           href="{% url 'agenda:compromiso_detail' c.pk %}">
+                            Ver
+                        </a>
+                    </li>
+                {% empty %}
+                    <li class="list-group-item text-body-secondary">
+                        No hay compromisos realizados fuera de plazo.
+                    </li>
+                {% endfor %}
+            </ul>
+
         </div>
     </div>
 
@@ -677,7 +745,7 @@
 
     <div class="row g-3 mb-3">
 
-        <div class="col-md-4">
+        <div class="col-md-3">
             <div class="card shadow-sm border-start border-danger border-4 h-100">
                 <div class="card-body">
                     <div class="text-body-secondary">
@@ -690,7 +758,7 @@
             </div>
         </div>
 
-        <div class="col-md-4">
+        <div class="col-md-3">
             <div class="card shadow-sm border-start border-warning border-4 h-100">
                 <div class="card-body">
                     <div class="text-body-secondary">
@@ -699,11 +767,27 @@
                     <div class="fs-3 fw-bold">
                         {{ plazos.por_vencer.count }}
                     </div>
+                    <small class="text-body-secondary">
+                        Próximos {{ plazos.dias_alerta }} días
+                    </small>
                 </div>
             </div>
         </div>
 
-        <div class="col-md-4">
+        <div class="col-md-3">
+            <div class="card shadow-sm border-start border-danger border-4 h-100">
+                <div class="card-body">
+                    <div class="text-body-secondary">
+                        Realizados fuera de plazo
+                    </div>
+                    <div class="fs-3 fw-bold">
+                        {{ plazos.realizados_fuera_de_plazo|length }}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3">
             <div class="card shadow-sm h-100">
                 <div class="card-body">
                     <div class="text-body-secondary">
@@ -745,7 +829,15 @@
 
                 <tbody>
                     {% for c in compromisos %}
-                        <tr>
+                        <tr class="
+                            {% if c.plazo == 'Vencido' %}
+                                table-danger
+                            {% elif c.plazo == 'Por vencer' %}
+                                table-warning
+                            {% elif c.plazo == 'Realizado fuera de plazo' %}
+                                table-danger
+                            {% endif %}
+                        ">
                             <td>
                                 {{ c.fecha_comprometida|date:"d/m/Y" }}
                             </td>
@@ -759,12 +851,24 @@
                             <td>
                                 {% if c.plazo == "Vencido" %}
                                     <span class="badge text-bg-danger">
-                                        {{ c.plazo }}
+                                        Vencido
                                     </span>
+
                                 {% elif c.plazo == "Por vencer" %}
                                     <span class="badge text-bg-warning">
-                                        {{ c.plazo }}
+                                        Por vencer
                                     </span>
+
+                                {% elif c.plazo == "Realizado fuera de plazo" %}
+                                    <span class="badge text-bg-danger">
+                                        Realizado fuera de plazo
+                                    </span>
+
+                                {% elif c.plazo == "Realizado en plazo" %}
+                                    <span class="badge text-bg-success">
+                                        Realizado en plazo
+                                    </span>
+
                                 {% else %}
                                     <span class="badge text-bg-secondary">
                                         {{ c.plazo }}
