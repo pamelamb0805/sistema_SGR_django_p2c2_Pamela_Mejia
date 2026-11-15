@@ -38,6 +38,7 @@ from .models import (
 )
 from django.conf import settings
 from types import SimpleNamespace
+from datetime import datetime, time
 
 ACTIVIDAD_VALIDADA = "Validada"
 COMPROMISO_REALIZADO = "Realizado"
@@ -770,14 +771,33 @@ def _modelo(app_label, nombre):
 # ---------------------------------------------------------------------------
 
 class CalculoIndicadores:
+
     @staticmethod
     def _reglas_periodo(periodo, fecha=None):
+        """
+        Recupera las reglas que estaban vigentes al finalizar
+        el día consultado, respetando fecha y hora de registro.
+        """
         fecha = fecha or timezone.localdate()
 
-        versiones = ReglaCalculoVersion.objects.filter(
-            periodo=periodo,
-            vigente_desde__date__lte=fecha,
-        ).order_by("-numero_version")
+        if isinstance(fecha, datetime):
+            fecha = fecha.date()
+
+        instante = timezone.make_aware(
+            datetime.combine(fecha, time.max)
+        )
+
+        versiones = (
+            ReglaCalculoVersion.objects
+            .filter(
+                periodo=periodo,
+                vigente_desde__lte=instante,
+            )
+            .order_by(
+                "-vigente_desde",
+                "-numero_version",
+            )
+        )
 
         version = versiones.filter(
             vigente_hasta__isnull=True,
@@ -785,16 +805,15 @@ class CalculoIndicadores:
 
         if version is None:
             version = versiones.filter(
-                vigente_hasta__date__gt=fecha,
+                vigente_hasta__gt=instante,
             ).first()
 
         if version:
             return version.datos
 
-        # Compatibilidad con períodos creados antes de implementar
-        # el versionamiento de reglas.
+        # Compatibilidad con períodos anteriores al versionamiento.
         return CRUDPeriodo._datos_reglas_actuales()
-    
+
     @staticmethod
     def crear_avance_actual(meta):
         """
@@ -940,32 +959,50 @@ class CalculoIndicadores:
         }
 
     
+
     @staticmethod
     def _datos_meta_historicos(meta, fecha):
         """
-        Recupera los parámetros de la meta vigentes en una fecha.
-        Si no existe historial para esa fecha, utiliza los valores
-        actuales como respaldo para registros antiguos.
+        Recupera la versión de la meta vigente al finalizar
+        el día consultado.
+
+        Las versiones posteriores no pueden reemplazar los
+        parámetros históricos de una meta.
         """
         from .models import MetaVersion
 
-        versiones = MetaVersion.objects.filter(
-            objeto_id=meta.pk,
-            vigente_desde__date__lte=fecha,
-        ).order_by("-numero_version")
+        if isinstance(fecha, datetime):
+            fecha = fecha.date()
+
+        instante = timezone.make_aware(
+            datetime.combine(fecha, time.max)
+        )
+
+        versiones = (
+            MetaVersion.objects
+            .filter(
+                objeto_id=meta.pk,
+                vigente_desde__lte=instante,
+            )
+            .order_by(
+                "-vigente_desde",
+                "-numero_version",
+            )
+        )
 
         version = versiones.filter(
-            vigente_hasta__isnull=True
+            vigente_hasta__isnull=True,
         ).first()
 
         if version is None:
             version = versiones.filter(
-                vigente_hasta__date__gt=fecha
+                vigente_hasta__gt=instante,
             ).first()
 
         if version:
             return version.datos
 
+        # Compatibilidad con metas antiguas sin historial.
         return CRUDMeta._datos_version(meta)
 
 
