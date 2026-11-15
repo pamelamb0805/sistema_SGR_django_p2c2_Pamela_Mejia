@@ -110,6 +110,19 @@ class PeriodoListView(PageSizeMixin, LecturaMixin, ModoMixin, ListView):
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
+        for meta in contexto.get("metas", []):
+            if meta.periodo.abierto:
+                datos = CRUDMeta._datos_version(meta)
+            else:
+                datos = CalculoIndicadores._datos_meta_historicos(
+                    meta,
+                    meta.periodo.fecha_termino,
+                )
+
+            meta.nombre_item_historico = datos.get(
+                "item_nombre",
+                meta.item.nombre_item,
+            )
         filtros = self.request.GET
 
         contexto.update(

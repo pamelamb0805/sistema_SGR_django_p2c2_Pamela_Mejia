@@ -253,7 +253,7 @@
 
               <td>{{ meta.cargo }}</td>
 
-              <td>{{ meta.item.nombre_item }}</td>
+              <td>{{ meta.nombre_item_historico|default:meta.item.nombre_item }}</td>
 
               <td>
                 {{ meta.valor_objetivo }} {{ meta.unidad }}
