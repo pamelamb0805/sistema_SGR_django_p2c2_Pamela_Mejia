@@ -64,41 +64,32 @@ def _obtener_filtros(request):
     return "; ".join(filtros) if filtros else "Sin filtros adicionales"
 
 
-
 def incorporar_metadatos_informe(libro, request, titulo):
     """
     Incorpora título, fecha de generación y filtros aplicados
-    en todas las hojas, conservando los datos y encabezados.
+    en todas las hojas del informe, sin eliminar sus datos.
     """
     fecha_generacion = timezone.localtime().strftime(
         "%d/%m/%Y %H:%M:%S"
     )
+
     filtros_aplicados = _obtener_filtros(request)
 
     for hoja in libro.worksheets:
-        primera_fila = str(
-            hoja.cell(row=1, column=1).value or ""
-        ).strip().lower()
-
-        segunda_fila = str(
-            hoja.cell(row=2, column=1).value or ""
-        ).strip().lower()
-
-        # Elimina únicamente metadatos anteriores reconocibles.
-        if (
-            primera_fila.startswith("informe")
-            or "generado" in segunda_fila
-        ):
-            hoja.delete_rows(1, 3)
-
         hoja.insert_rows(1, 3)
 
-        hoja.cell(row=1, column=1, value=titulo)
+        hoja.cell(
+            row=1,
+            column=1,
+            value=titulo,
+        )
+
         hoja.cell(
             row=2,
             column=1,
             value=f"Fecha de generación: {fecha_generacion}",
         )
+
         hoja.cell(
             row=3,
             column=1,
@@ -109,34 +100,42 @@ def incorporar_metadatos_informe(libro, request, titulo):
             bold=True,
             size=14,
         )
+
         hoja.cell(row=2, column=1).font = Font(
             italic=True,
             size=10,
         )
+
         hoja.cell(row=3, column=1).font = Font(
             italic=True,
             size=10,
         )
 
+        # La fila 4 contiene los encabezados originales.
         hoja.freeze_panes = "A5"
 
+        # Ajusta el filtro automático para que use los encabezados
+        # originales, ahora ubicados en la fila 4.
         if hoja.max_column >= 1 and hoja.max_row >= 4:
             ultima_columna = get_column_letter(hoja.max_column)
             hoja.auto_filter.ref = (
                 f"A4:{ultima_columna}{hoja.max_row}"
             )
 
+        # Evita que el texto de los metadatos quede oculto.
         hoja.column_dimensions["A"].width = max(
             hoja.column_dimensions["A"].width or 0,
             32,
         )
 
+        # Conserva las fuentes existentes de los encabezados.
         for celda in hoja[4]:
             fuente = copy(celda.font)
             fuente.bold = True
             celda.font = fuente
 
     return libro
+
 
 def informe_excel(titulo):
     """
