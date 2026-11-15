@@ -885,9 +885,9 @@ class Seguridad:
         """
         Crea o modifica un usuario de acceso.
 
-        Permite conservar relaciones históricas con funcionarios
-        o delegaciones inactivas, pero impide crear o reasignar
-        cuentas nuevas a entidades inactivas.
+        Conserva las relaciones existentes con funcionarios y
+        delegaciones inactivas, pero impide nuevas asignaciones
+        fuera del ámbito autorizado.
         """
 
         usuario = form.instance
@@ -942,15 +942,12 @@ class Seguridad:
             or funcionario_original_id != funcionario.pk
         )
 
-        # Solo se permite una asignación nueva a un funcionario activo.
         if cambio_funcionario and not funcionario.activo:
             raise ReglaNegocioError(
                 "No se puede asignar una cuenta nueva "
                 "a un funcionario inactivo."
             )
 
-        # Una delegación inactiva puede conservarse en una relación
-        # existente, pero no utilizarse para una nueva asignación.
         if (
             cambio_funcionario
             and not funcionario.delegacion.activa
@@ -972,9 +969,15 @@ class Seguridad:
             ),
         )
 
+        delegaciones_nuevas = [
+            delegacion
+            for delegacion in delegaciones
+            if delegacion.pk not in delegaciones_existentes_ids
+        ]
+
         _validar_delegaciones_asignables(
             actor,
-            delegaciones,
+            delegaciones_nuevas,
         )
 
         inactivas_nuevas = [
@@ -1023,8 +1026,6 @@ class Seguridad:
             if password:
                 usuario.set_password(password)
 
-            # Un funcionario inactivo nunca puede conservar
-            # el acceso habilitado.
             if not funcionario.activo:
                 usuario.activo_acceso = False
 
@@ -1055,27 +1056,56 @@ class Seguridad:
             )
 
         return usuario
-
     @staticmethod
     def cambiar_estado_acceso(usuario, actor=None):
         with transaction.atomic():
-            usuario = Usuario.objects.select_for_update().select_related(
-                "funcionario"
-            ).get(pk=usuario.pk)
+            usuario = (
+                Usuario.objects
+                .select_for_update()
+                .select_related(
+                    "funcionario",
+                    "funcionario__delegacion",
+                )
+                .get(pk=usuario.pk)
+            )
 
             if not usuario.funcionario_id:
                 raise ReglaNegocioError(
-                    "Asocia la cuenta a un funcionario antes de habilitarla."
+                    "Asocia la cuenta a un funcionario antes "
+                    "de habilitarla."
                 )
 
-            if not usuario.funcionario.activo:
-                raise ReglaNegocioError(
-                    "No se puede habilitar el acceso de un funcionario inactivo."
-                )
+            _validar_ambito_asignacion(
+                actor=actor,
+                queryset=Delegacion.objects.all(),
+                campo="id_delegacion",
+                objeto_id=usuario.funcionario.delegacion_id,
+                entidad="usuario",
+                mensaje=(
+                    "No tienes autorización para modificar "
+                    "el acceso de este funcionario."
+                ),
+            )
+
+            nuevo_estado = not usuario.activo_acceso
+
+            if nuevo_estado:
+                if not usuario.funcionario.activo:
+                    raise ReglaNegocioError(
+                        "No se puede habilitar el acceso de "
+                        "un funcionario inactivo."
+                    )
+
+                if not usuario.funcionario.delegacion.activa:
+                    raise ReglaNegocioError(
+                        "No se puede habilitar el acceso de "
+                        "una delegación inactiva."
+                    )
 
             anterior = _snapshot(usuario)
 
-            usuario.activo_acceso = not usuario.activo_acceso
+            usuario.activo_acceso = nuevo_estado
+
             usuario.save(
                 update_fields=["activo_acceso"]
             )
@@ -1098,6 +1128,7 @@ class Seguridad:
             )
 
         return usuario
+    
     @staticmethod
     def validar_delegaciones(
         funcionario,

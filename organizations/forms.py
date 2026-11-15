@@ -411,6 +411,7 @@ class AccesoForm(BootstrapFormMixin, forms.Form):
         return datos
 
 class UsuarioAdminForm(BootstrapFormMixin, forms.ModelForm):
+
     password1 = forms.CharField(
         label="Contraseña",
         required=False,
@@ -463,10 +464,10 @@ class UsuarioAdminForm(BootstrapFormMixin, forms.ModelForm):
             self.fields["username"].disabled = True
 
             self.fields["password1"].help_text = (
-                "Déjala vacía si no quieres cambiar la contraseña."
+                "Déjala vacía si no deseas cambiar la contraseña."
             )
             self.fields["password2"].help_text = (
-                "Déjala vacía si no quieres cambiar la contraseña."
+                "Déjala vacía si no deseas cambiar la contraseña."
             )
 
             delegaciones_actuales_ids = set(
@@ -576,10 +577,10 @@ class UsuarioAdminForm(BootstrapFormMixin, forms.ModelForm):
         password1 = datos.get("password1")
         password2 = datos.get("password2")
         funcionario = datos.get("funcionario")
+        roles = list(datos.get("roles") or [])
         delegaciones = list(
             datos.get("delegaciones_autorizadas") or []
         )
-        roles = list(datos.get("roles") or [])
 
         es_nuevo = not bool(
             self.instance and self.instance.pk
@@ -612,7 +613,7 @@ class UsuarioAdminForm(BootstrapFormMixin, forms.ModelForm):
                 except ValidationError as exc:
                     self.add_error("password1", exc)
 
-        if not funcionario:
+        if funcionario is None:
             self.add_error(
                 "funcionario",
                 "Debe asociar la cuenta a un funcionario.",
@@ -692,15 +693,14 @@ class UsuarioAdminForm(BootstrapFormMixin, forms.ModelForm):
             for rol in roles
         }
 
-        permite_multiples = bool(
-            {"global", "multiples"} & alcances
-        )
-
-        if delegaciones and not permite_multiples:
+        if (
+            delegaciones
+            and not ({"global", "multiples"} & alcances)
+        ):
             self.add_error(
                 "delegaciones_autorizadas",
-                "Los roles seleccionados tienen alcance "
-                "propio y no permiten delegaciones adicionales.",
+                "Los roles seleccionados no permiten "
+                "delegaciones adicionales.",
             )
 
         if not funcionario.activo:
@@ -727,7 +727,6 @@ class UsuarioAdminForm(BootstrapFormMixin, forms.ModelForm):
             self.save_m2m()
 
         return usuario
-
 class PerfilUsuarioForm(BootstrapFormMixin, forms.ModelForm):
 
     class Meta:
