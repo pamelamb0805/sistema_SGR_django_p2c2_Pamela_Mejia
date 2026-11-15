@@ -1176,10 +1176,17 @@ class CalculoIndicadores:
         # Compatibilidad con períodos anteriores al versionamiento.
         return CRUDPeriodo._datos_reglas_actuales()
 
+
     @staticmethod
     def crear_avance_actual(meta):
         """
-        Avance = actividades validadas + compromisos realizados.
+        Calcula el avance de una meta:
+        - Actividades: solo las validadas.
+        - Compromisos: solo los realizados y cuando el ítem
+        tenga activada la opción contabiliza_compromisos.
+
+        El cálculo se basa en contar registros existentes.
+        Por ello, recalcular varias veces no duplica el avance.
         """
         total = 0
 
@@ -1196,18 +1203,22 @@ class CalculoIndicadores:
                 estado=ACTIVIDAD_VALIDADA,
             ).count()
 
-        Compromiso = _modelo(
-            "agenda",
-            "Compromiso",
-        )
+        # RF-020: los compromisos solo aportan si el ítem lo configura.
+        item = meta.item
 
-        if Compromiso is not None:
-            total += Compromiso.objects.filter(
-                funcionario_id=meta.funcionario_id,
-                item_medible_id=meta.item_id,
-                periodo_id=meta.periodo_id,
-                estado=COMPROMISO_REALIZADO,
-            ).count()
+        if item and item.contabiliza_compromisos:
+            Compromiso = _modelo(
+                "agenda",
+                "Compromiso",
+            )
+
+            if Compromiso is not None:
+                total += Compromiso.objects.filter(
+                    funcionario_id=meta.funcionario_id,
+                    item_medible_id=meta.item_id,
+                    periodo_id=meta.periodo_id,
+                    estado=COMPROMISO_REALIZADO,
+                ).count()
 
         return Decimal(total)
 

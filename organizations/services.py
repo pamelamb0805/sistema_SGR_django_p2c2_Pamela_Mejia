@@ -283,6 +283,7 @@ class CRUDDelegacion:
 
 class CRUDCargo:
 
+
     @staticmethod
     def _datos_version_item(item):
         return {
@@ -291,6 +292,7 @@ class CRUDCargo:
             "descripcion": item.descripcion,
             "tipo": item.tipo,
             "vigencia": item.vigencia,
+            "contabiliza_compromisos": item.contabiliza_compromisos,
             "cargo_id": item.cargo_id,
             "cargo_nombre": (
                 item.cargo.nombre_cargo
@@ -298,6 +300,7 @@ class CRUDCargo:
                 else None
             ),
         }
+
 
     @staticmethod
     def _registrar_version_item(item, actor=None):

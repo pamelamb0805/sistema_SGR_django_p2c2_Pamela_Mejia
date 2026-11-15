@@ -77,11 +77,38 @@ class CargoForm(BootstrapFormMixin, forms.ModelForm):
         }
 
 
+
 class ItemMedibleForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
         model = ItemMedible
-        fields = ["codigo", "nombre_item", "descripcion", "tipo", "vigencia"]
+        fields = [
+            "codigo",
+            "nombre_item",
+            "descripcion",
+            "tipo",
+            "vigencia",
+            "contabiliza_compromisos",
+        ]
 
+        labels = {
+            "contabiliza_compromisos": (
+                "Contabilizar compromisos realizados en el indicador"
+            ),
+        }
+
+        help_texts = {
+            "contabiliza_compromisos": (
+                "Activa esta opción si los compromisos asociados "
+                "a este ítem deben sumar al avance individual "
+                "cuando alcancen el estado Realizado."
+            ),
+        }
+
+        widgets = {
+            "contabiliza_compromisos": forms.CheckboxInput(
+                attrs={"class": "form-check-input"}
+            ),
+        }
 
 
 

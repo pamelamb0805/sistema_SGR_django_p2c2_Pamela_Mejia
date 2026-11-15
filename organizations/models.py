@@ -186,26 +186,57 @@ class Cargo(models.Model):
 # ---------------------------------------------------------------------------
 # ITEM_MEDIBLE
 # ---------------------------------------------------------------------------
+
 class ItemMedible(models.Model):
     TIPO_CUANTITATIVO = "Cuantitativo"
-    TIPO_PORCENTUAL = "Porcentual"   # RN-002: debe declarar fórmula específica
-    TIPOS = [(TIPO_CUANTITATIVO, "Cuantitativo"), (TIPO_PORCENTUAL, "Porcentual")]
+    TIPO_PORCENTUAL = "Porcentual"
+
+    TIPOS = [
+        (TIPO_CUANTITATIVO, "Cuantitativo"),
+        (TIPO_PORCENTUAL, "Porcentual"),
+    ]
 
     id_item = models.AutoField(primary_key=True)
-    codigo = models.CharField(max_length=30, unique=True, default=generar_codigo_item)
+    codigo = models.CharField(
+        max_length=30,
+        unique=True,
+        default=generar_codigo_item,
+    )
     nombre_item = models.CharField(max_length=150)
     descripcion = models.TextField(blank=True)
-    tipo = models.CharField(max_length=15, choices=TIPOS, default=TIPO_CUANTITATIVO)
+    tipo = models.CharField(
+        max_length=15,
+        choices=TIPOS,
+        default=TIPO_CUANTITATIVO,
+    )
     vigencia = models.BooleanField(default=True)
+
+    # RF-020: permite decidir si los compromisos realizados
+    # asociados a este ítem alimentan el indicador individual.
+    contabiliza_compromisos = models.BooleanField(
+        default=False,
+        verbose_name="Contabiliza compromisos realizados",
+        help_text=(
+            "Si se activa, los compromisos asociados a este ítem "
+            "se incorporarán al avance cuando estén en estado Realizado."
+        ),
+    )
+
     cargo = models.ForeignKey(
-        Cargo, on_delete=models.CASCADE, db_column="id_cargo", related_name="items",
+        Cargo,
+        on_delete=models.CASCADE,
+        db_column="id_cargo",
+        related_name="items",
     )
 
     class Meta:
         db_table = "item_medible"
         ordering = ["cargo", "nombre_item"]
         constraints = [
-            models.UniqueConstraint(fields=["cargo", "nombre_item"], name="uq_item_cargo_nombre"),
+            models.UniqueConstraint(
+                fields=["cargo", "nombre_item"],
+                name="uq_item_cargo_nombre",
+            ),
         ]
         verbose_name = "ítem medible"
         verbose_name_plural = "ítems medibles"
