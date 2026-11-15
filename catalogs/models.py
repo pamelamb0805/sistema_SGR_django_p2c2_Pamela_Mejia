@@ -21,14 +21,36 @@ class CatalogoQuerySet(models.QuerySet):
 
     def disponibles(self, area=None, tipo=None):
         """
-        Opciones que un formulario debe mostrar: solo activas y aplicables al área
-        (las del área indicada más las de área 'General').
+        Devuelve elementos activos y aplicables al área.
+        Las subatenciones requieren además un Tipo de Atención padre activo.
         """
         qs = self.activos()
+
         if area:
-            qs = qs.filter(models.Q(area__iexact=area) | models.Q(area__iexact=Catalogo.AREA_GENERAL))
+            qs = qs.filter(
+                models.Q(area__iexact=area)
+                | models.Q(area__iexact=Catalogo.AREA_GENERAL)
+            )
+
         if tipo:
             qs = qs.filter(tipo_catalogo=tipo)
+
+        if tipo == Catalogo.TIPO_SUBATENCION:
+            qs = qs.filter(
+                tipo_atencion_padre__tipo_catalogo=Catalogo.TIPO_ATENCION,
+                tipo_atencion_padre__estado=Catalogo.ESTADO_ACTIVO,
+            )
+
+            if area:
+                qs = qs.filter(
+                    models.Q(
+                        tipo_atencion_padre__area__iexact=area
+                    )
+                    | models.Q(
+                        tipo_atencion_padre__area__iexact=Catalogo.AREA_GENERAL
+                    )
+                )
+
         return qs
 
 
@@ -84,19 +106,72 @@ class Catalogo(models.Model):
     def clean(self):
         self.nombre = (self.nombre or "").strip()
         self.area = (self.area or "").strip()
-        if self.tipo_catalogo == self.TIPO_SUBATENCION and not self.tipo_atencion_padre_id:
-            raise ValidationError({"tipo_atencion_padre": "Seleccione el Tipo de Atención al que pertenece esta subatención."})
-        if self.tipo_catalogo != self.TIPO_SUBATENCION and self.tipo_atencion_padre_id:
-            raise ValidationError({"tipo_atencion_padre": "Solo las subatenciones pueden tener un Tipo de Atención padre."})
-        if self.tipo_atencion_padre_id and self.tipo_atencion_padre.tipo_catalogo != self.TIPO_ATENCION:
-            raise ValidationError({"tipo_atencion_padre": "La relación debe apuntar a un Tipo de Atención."})
+
+        errores = {}
+
+        if not self.nombre:
+            errores["nombre"] = "El nombre es obligatorio."
+
+        if not self.area:
+            errores["area"] = "El área es obligatoria."
+
+        if (
+            self.tipo_catalogo == self.TIPO_SUBATENCION
+            and not self.tipo_atencion_padre_id
+        ):
+            errores["tipo_atencion_padre"] = (
+                "Seleccione el Tipo de Atención al que pertenece "
+                "esta subatención."
+            )
+
+        if (
+            self.tipo_catalogo != self.TIPO_SUBATENCION
+            and self.tipo_atencion_padre_id
+        ):
+            errores["tipo_atencion_padre"] = (
+                "Solo las subatenciones pueden tener un "
+                "Tipo de Atención padre."
+            )
+
+        if self.tipo_atencion_padre_id:
+            padre = self.tipo_atencion_padre
+
+            if padre.tipo_catalogo != self.TIPO_ATENCION:
+                errores["tipo_atencion_padre"] = (
+                    "La relación debe apuntar a un Tipo de Atención."
+                )
+
+            elif not padre.activo:
+                errores["tipo_atencion_padre"] = (
+                    "No puede asociar una subatención a un "
+                    "Tipo de Atención inactivo."
+                )
+
+            elif (
+                padre.area != self.AREA_GENERAL
+                and padre.area.casefold() != self.area.casefold()
+            ):
+                errores["tipo_atencion_padre"] = (
+                    "El Tipo de Atención debe pertenecer a la misma "
+                    "área de la subatención o al área General."
+                )
+
         if self.nombre and self.area and self.tipo_catalogo:
             duplicado = Catalogo.objects.filter(
-                tipo_catalogo=self.tipo_catalogo, area__iexact=self.area, nombre__iexact=self.nombre,
+                tipo_catalogo=self.tipo_catalogo,
+                area__iexact=self.area,
+                nombre__iexact=self.nombre,
             ).exclude(pk=self.pk).exists()
-            if duplicado:
-                raise ValidationError("Ya existe un elemento con ese nombre en el mismo catálogo y área.")
 
+            if duplicado:
+                errores["nombre"] = (
+                    "Ya existe un elemento con ese nombre "
+                    "en el mismo catálogo y área."
+                )
+
+        if errores:
+            raise ValidationError(errores)
+        
     def en_uso(self):
         """True si algún registro (actividad, atención social...) ya referencia este elemento."""
         if not self.pk:

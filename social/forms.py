@@ -16,6 +16,12 @@ def _tipos_atencion(area=None):
 
 
 def _subatenciones(tipo_id=None, area=None, actual=None):
+    """
+    Ofrece únicamente subatenciones activas del tipo seleccionado.
+    En edición conserva temporalmente la opción histórica para que
+    el usuario pueda identificarla, pero el formulario no permitirá
+    guardar una opción inactiva.
+    """
     qs = Catalogo.objects.disponibles(
         area=area,
         tipo=Catalogo.TIPO_SUBATENCION,
@@ -26,10 +32,11 @@ def _subatenciones(tipo_id=None, area=None, actual=None):
     else:
         qs = qs.none()
 
-    # En edición se puede conservar un valor antiguo para mostrarlo,
-    # pero la validación del formulario impedirá guardar uno inactivo.
     if actual:
-        qs = (Catalogo.objects.filter(pk=actual) | qs).distinct()
+        qs = (
+            Catalogo.objects.filter(pk=actual)
+            | qs
+        ).distinct()
 
     return qs.order_by("nombre")
 

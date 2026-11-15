@@ -125,11 +125,31 @@ def _validar_catalogo(tipo_atencion, subatencion):
             "No se pueden registrar atenciones con catálogos inactivos."
         )
 
+    if not subatencion.tipo_atencion_padre_id:
+        raise ReglaNegocioError(
+            "La Subatención no tiene un Tipo de Atención asociado."
+        )
+
     if subatencion.tipo_atencion_padre_id != tipo_atencion.pk:
         raise ReglaNegocioError(
             "La Subatención no corresponde al Tipo de Atención seleccionado."
         )
 
+    padre = subatencion.tipo_atencion_padre
+
+    if not padre.activo:
+        raise ReglaNegocioError(
+            "El Tipo de Atención asociado a la Subatención está inactivo."
+        )
+
+    if (
+        padre.area != Catalogo.AREA_GENERAL
+        and padre.area.casefold() != subatencion.area.casefold()
+    ):
+        raise ReglaNegocioError(
+            "El Tipo de Atención y la Subatención no pertenecen "
+            "a la misma área."
+        )
 
 # ---------------------------------------------------------------------------
 # CRUDAtencionSocial (RF-015, RN-012)
