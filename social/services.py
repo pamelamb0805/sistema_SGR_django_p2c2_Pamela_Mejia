@@ -272,7 +272,6 @@ class CRUDAtencionSocial:
 
             # RF-038: conservar los nombres vigentes al registrar.
             gestion.tipo_atencion_nombre = gestion.tipo_atencion.nombre
-            gestion.subatencion_nombre = gestion.subatencion.nombre
 
             gestion.full_clean()
             guardar(gestion, actor, "atencion_social")
@@ -345,24 +344,6 @@ class CRUDAtencionSocial:
             gestion.funcionario = original.funcionario
             gestion.fecha_registro = original.fecha_registro
             # Mantener la fotografía histórica si el catálogo no cambió.
-            if gestion.tipo_atencion_id == original.tipo_atencion_id:
-                gestion.tipo_atencion_nombre = (
-                    original.tipo_atencion_nombre
-                    or original.tipo_atencion.nombre
-                )
-            else:
-                gestion.tipo_atencion_nombre = gestion.tipo_atencion.nombre
-
-            if gestion.subatencion_id == original.subatencion_id:
-                gestion.subatencion_nombre = (
-                    original.subatencion_nombre
-                    or original.subatencion.nombre
-                )
-            else:
-                gestion.subatencion_nombre = gestion.subatencion.nombre
-
-            # Si se conserva el catálogo, se conserva también su nombre
-            # histórico. Si cambia la selección, se guarda el nuevo nombre.
             if gestion.tipo_atencion_id == original.tipo_atencion_id:
                 gestion.tipo_atencion_nombre = (
                     original.tipo_atencion_nombre

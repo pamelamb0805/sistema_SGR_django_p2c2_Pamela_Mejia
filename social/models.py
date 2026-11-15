@@ -119,21 +119,6 @@ class AtencionSocial(models.Model):
         limit_choices_to={"tipo_catalogo": Catalogo.TIPO_SUBATENCION},
     )
 
-        # Nombres históricos de los catálogos al registrar la gestión (RF-038).
-    tipo_atencion_nombre = models.CharField(
-        max_length=150,
-        blank=True,
-        default="",
-        editable=False,
-    )
-
-    subatencion_nombre = models.CharField(
-        max_length=150,
-        blank=True,
-        default="",
-        editable=False,
-    )
-
     descripcion = models.TextField()
 
     # Fecha de la gestión.
