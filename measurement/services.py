@@ -777,19 +777,26 @@ class CalculoIndicadores:
             esperada,
         )
 
+
     @staticmethod
-    def _valores_meta(meta, fecha):
+    def _valores_meta(meta, fecha, datos_historicos=None):
+        datos = datos_historicos or CRUDMeta._datos_version(meta)
+
+        valor_objetivo = Decimal(str(datos["valor_objetivo"]))
+        ponderador = Decimal(str(datos["ponderador"]))
+        maximo_computable = Decimal(str(datos["maximo_computable"]))
+
         avance = CalculoIndicadores.crear_avance_actual(meta)
 
         cumplimiento = calc.calcular_porcentaje_cumplimiento(
             avance,
-            meta.valor_objetivo,
+            valor_objetivo,
         )
 
         ponderado = calc.calcular_cumplimiento_ponderado(
             cumplimiento,
-            meta.ponderador,
-            meta.maximo_computable,
+            ponderador,
+            maximo_computable,
         )
 
         esperada = (
@@ -858,6 +865,7 @@ class CalculoIndicadores:
         valores = CalculoIndicadores._valores_meta(
             meta,
             fecha,
+            datos_historicos=datos_historicos,
         )
 
         indicador, _ = Indicador.objects.update_or_create(
