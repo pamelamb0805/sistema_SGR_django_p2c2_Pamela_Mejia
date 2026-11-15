@@ -731,8 +731,13 @@ def exportar_estadisticas_excel(request):
             gestion.usuario.nombre,
             gestion.usuario.territorio,
             gestion.numero_gestion,
-            gestion.tipo_atencion.nombre,
-            gestion.subatencion.nombre,
+
+            gestion.tipo_atencion_nombre
+            or gestion.tipo_atencion.nombre,
+
+            gestion.subatencion_nombre
+            or gestion.subatencion.nombre,
+
             gestion.descripcion,
             gestion.fecha,
             fecha_registro,

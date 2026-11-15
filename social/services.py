@@ -486,43 +486,98 @@ class CRUDUsuarioSocial:
 # Estadísticas (HU-03: cada atención válida se cuenta una sola vez)
 # ---------------------------------------------------------------------------
 def estadisticas_atenciones(queryset):
-    """Resumen de gestiones realizadas sin duplicar registros."""
+    """
+    Estadísticas utilizando las fotografías históricas
+    de los catálogos registradas en cada gestión.
+    """
     realizadas = queryset.filter(
         estado=AtencionSocial.ESTADO_REALIZADA
+    ).select_related(
+        "tipo_atencion",
+        "subatencion",
+        "delegacion",
     )
 
+    gestiones = list(realizadas)
+
+    por_tipo = {}
+    por_subatencion = {}
+    por_delegacion = {}
+    por_mes = {}
+
+    for gestion in gestiones:
+        tipo = (
+            gestion.tipo_atencion_nombre
+            or gestion.tipo_atencion.nombre
+        )
+
+        subatencion = (
+            gestion.subatencion_nombre
+            or gestion.subatencion.nombre
+        )
+
+        delegacion = gestion.delegacion.nombre
+
+        mes = gestion.fecha.strftime("%m/%Y")
+
+        por_tipo[tipo] = por_tipo.get(tipo, 0) + 1
+        por_subatencion[subatencion] = (
+            por_subatencion.get(subatencion, 0) + 1
+        )
+        por_delegacion[delegacion] = (
+            por_delegacion.get(delegacion, 0) + 1
+        )
+        por_mes[mes] = por_mes.get(mes, 0) + 1
+
     return {
-        "total_gestiones": realizadas.count(),
-        "total_personas": (
-            realizadas.values("usuario_id").distinct().count()
-        ),
-        "por_tipo": list(
-            realizadas.values(
-                "tipo_atencion__nombre"
+        "total_gestiones": len(gestiones),
+
+        "total_personas": len({
+            gestion.usuario_id
+            for gestion in gestiones
+        }),
+
+        "por_tipo": [
+            {
+                "tipo_atencion__nombre": nombre,
+                "total": total,
+            }
+            for nombre, total in sorted(
+                por_tipo.items(),
+                key=lambda x: x[1],
+                reverse=True,
             )
-            .annotate(total=Count("pk"))
-            .order_by("-total")
-        ),
-        "por_subatencion": list(
-            realizadas.values(
-                "subatencion__nombre"
+        ],
+
+        "por_subatencion": [
+            {
+                "subatencion__nombre": nombre,
+                "total": total,
+            }
+            for nombre, total in sorted(
+                por_subatencion.items(),
+                key=lambda x: x[1],
+                reverse=True,
             )
-            .annotate(total=Count("pk"))
-            .order_by("-total")
-        ),
-        "por_delegacion": list(
-            realizadas.values(
-                "delegacion__nombre"
+        ],
+
+        "por_delegacion": [
+            {
+                "delegacion__nombre": nombre,
+                "total": total,
+            }
+            for nombre, total in sorted(
+                por_delegacion.items(),
+                key=lambda x: x[1],
+                reverse=True,
             )
-            .annotate(total=Count("pk"))
-            .order_by("-total")
-        ),
-        "por_mes": list(
-            realizadas.annotate(
-                mes=TruncMonth("fecha")
-            )
-            .values("mes")
-            .annotate(total=Count("pk"))
-            .order_by("mes")
-        ),
+        ],
+
+        "por_mes": [
+            {
+                "mes": mes,
+                "total": total,
+            }
+            for mes, total in sorted(por_mes.items())
+        ],
     }

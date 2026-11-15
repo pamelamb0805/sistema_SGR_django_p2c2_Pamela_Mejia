@@ -189,18 +189,32 @@ class CRUDPeriodo:
                     "No se puede modificar un período cerrado."
                 )
 
-            _validar_periodo(periodo)
-
-            guardar(
-                periodo,
-                actor,
-                "periodo",
+            fechas_cambiaron = (
+                original.fecha_inicio != periodo.fecha_inicio
+                or original.fecha_termino != periodo.fecha_termino
             )
 
-            CalculoIndicadores.recalcular_periodo(periodo)
+            _validar_periodo(periodo)
+
+            periodo.version_parametros = (
+                original.version_parametros
+                + (1 if fechas_cambiaron else 0)
+            )
+
+            guardar(periodo, actor, "periodo")
+
+            if fechas_cambiaron:
+                CRUDPeriodo._registrar_version_reglas(
+                    periodo,
+                    actor,
+                )
+
+            CalculoIndicadores.recalcular_periodo(
+                periodo,
+                forzar=True,
+            )
 
         return periodo
-
     @staticmethod
     def cerrar_periodo(periodo, actor=None):
         """Congela los indicadores y bloquea modificaciones."""
@@ -498,13 +512,14 @@ class CRUDMeta:
     @staticmethod
     def _registrar_version(meta, actor=None):
         """
-        Cierra la versión vigente y registra una nueva fotografía
-        de los parámetros actuales.
+        Registra una fotografía inmutable de la meta.
+        La versión anterior se conserva y se cierra.
         """
         from .models import MetaVersion
 
         ultima = (
             MetaVersion.objects
+            .select_for_update()
             .filter(objeto_id=meta.pk)
             .order_by("-numero_version")
             .first()
@@ -519,15 +534,20 @@ class CRUDMeta:
         else:
             numero = 1
 
+        datos = CRUDMeta._datos_version(meta)
+
         MetaVersion.objects.create(
             meta=meta,
             objeto_id=meta.pk,
             numero_version=numero,
             vigente_desde=ahora,
-            datos=CRUDMeta._datos_version(meta),
-            creado_por=actor if getattr(actor, "is_authenticated", False) else None,
+            datos=datos,
+            creado_por=(
+                actor
+                if getattr(actor, "is_authenticated", False)
+                else None
+            ),
         )
-
 
     @staticmethod
     def crear_meta(meta, actor=None):
