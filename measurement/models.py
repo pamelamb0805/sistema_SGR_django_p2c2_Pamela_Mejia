@@ -84,6 +84,43 @@ class Periodo(models.Model):
             self.dias_computables = calc.calcular_dias_computables(self.fecha_inicio, self.fecha_termino)
         super().save(*args, **kwargs)
 
+# ---------------------------------------------------------------------------
+# VERSIONES DE REGLAS DE CÁLCULO (RF-038)
+# ---------------------------------------------------------------------------
+class ReglaCalculoVersion(models.Model):
+    periodo = models.ForeignKey(
+        Periodo,
+        on_delete=models.PROTECT,
+        related_name="versiones_reglas",
+    )
+    numero_version = models.PositiveIntegerField()
+    vigente_desde = models.DateTimeField(default=timezone.now)
+    vigente_hasta = models.DateTimeField(null=True, blank=True)
+    datos = models.JSONField(default=dict)
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="versiones_reglas_calculo_creadas",
+    )
+
+    class Meta:
+        db_table = "regla_calculo_version"
+        ordering = ["periodo", "-numero_version"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["periodo", "numero_version"],
+                name="uq_regla_calculo_periodo_version",
+            ),
+        ]
+
+    def __str__(self):
+        return (
+            f"Reglas del período {self.periodo_id} "
+            f"- versión {self.numero_version}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # META

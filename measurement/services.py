@@ -29,8 +29,14 @@ from core.services import (
 from organizations.models import Funcionario
 
 from . import calculations as calc
-from .models import Ajuste, Indicador, Meta, Periodo
-
+from .models import (
+    Ajuste,
+    Indicador,
+    Meta,
+    Periodo,
+    ReglaCalculoVersion,
+)
+from django.conf import settings
 
 ACTIVIDAD_VALIDADA = "Validada"
 COMPROMISO_REALIZADO = "Realizado"
@@ -75,6 +81,41 @@ def _exigir_abierto(periodo, accion="modificar"):
 class CRUDPeriodo:
 
     @staticmethod
+    def _datos_reglas_actuales():
+        return {
+            "tope_cumplimiento": str(settings.SGR_TOPE_CUMPLIMIENTO),
+            "umbral_colectivo": str(settings.SGR_UMBRAL_COLECTIVO),
+            "umbral_ambar": str(settings.SGR_SEMAFORO_AMBAR),
+            "suma_ponderadores": str(settings.SGR_SUMA_PONDERADORES),
+            "version_formula_cumplimiento": 1,
+            "version_formula_ponderacion": 1,
+            "version_formula_meta_esperada": 1,
+            "version_formula_semaforo": 1,
+            "version_formula_dias": 1,
+        }
+
+    @staticmethod
+    def _registrar_version_reglas(periodo, actor=None):
+        ahora = timezone.now()
+
+        anterior = ReglaCalculoVersion.objects.filter(
+            periodo=periodo,
+            vigente_hasta__isnull=True,
+        ).order_by("-numero_version").first()
+
+        if anterior:
+            anterior.vigente_hasta = ahora
+            anterior.save(update_fields=["vigente_hasta"])
+
+        return ReglaCalculoVersion.objects.create(
+            periodo=periodo,
+            numero_version=periodo.version_parametros,
+            vigente_desde=ahora,
+            datos=CRUDPeriodo._datos_reglas_actuales(),
+            creado_por=actor if getattr(actor, "pk", None) else None,
+        )
+
+    @staticmethod
     def calcular_dias_computables(fecha_inicio, fecha_termino):
         try:
             return calc.calcular_dias_computables(
@@ -92,10 +133,19 @@ class CRUDPeriodo:
             "No tiene permiso para crear períodos.",
         )
 
-        periodo.estado = Periodo.ESTADO_ABIERTO
-        _validar_periodo(periodo)
+        with transaction.atomic():
+            periodo.estado = Periodo.ESTADO_ABIERTO
+            periodo.version_parametros = 1
+            _validar_periodo(periodo)
 
-        return guardar(periodo, actor, "periodo")
+            periodo = guardar(periodo, actor, "periodo")
+
+            CRUDPeriodo._registrar_version_reglas(
+                periodo,
+                actor,
+            )
+
+        return periodo
 
     @staticmethod
     def mostrar_todos_periodos():
@@ -156,6 +206,11 @@ class CRUDPeriodo:
 
             periodo.estado = Periodo.ESTADO_CERRADO
             periodo.save(update_fields=["estado"])
+
+            CRUDPeriodo._registrar_version_reglas(
+                periodo,
+                actor,
+            )
 
             auditar(
                 actor,
@@ -236,7 +291,6 @@ class CRUDPeriodo:
             )
 
         return periodo
-
 
 # ---------------------------------------------------------------------------
 # CRUDMeta
@@ -688,7 +742,31 @@ def _modelo(app_label, nombre):
 # ---------------------------------------------------------------------------
 
 class CalculoIndicadores:
+    @staticmethod
+    def _reglas_periodo(periodo, fecha=None):
+        fecha = fecha or timezone.localdate()
 
+        versiones = ReglaCalculoVersion.objects.filter(
+            periodo=periodo,
+            vigente_desde__date__lte=fecha,
+        ).order_by("-numero_version")
+
+        version = versiones.filter(
+            vigente_hasta__isnull=True,
+        ).first()
+
+        if version is None:
+            version = versiones.filter(
+                vigente_hasta__date__gt=fecha,
+            ).first()
+
+        if version:
+            return version.datos
+
+        # Compatibilidad con períodos creados antes de implementar
+        # el versionamiento de reglas.
+        return CRUDPeriodo._datos_reglas_actuales()
+    
     @staticmethod
     def crear_avance_actual(meta):
         """
@@ -769,18 +847,25 @@ class CalculoIndicadores:
                 )
             )
 
+        fecha_calculo = fecha or timezone.localdate()
+
         esperada = (
             CalculoIndicadores.calcular_meta_esperada_al_dia(
                 meta.periodo,
-                fecha,
+                fecha_calculo,
             )
+        )
+
+        reglas = CalculoIndicadores._reglas_periodo(
+            meta.periodo,
+            fecha_calculo,
         )
 
         return calc.calcular_semaforo(
             cumplimiento,
             esperada,
+            umbral_ambar=reglas["umbral_ambar"],
         )
-
 
     @staticmethod
     def _valores_meta(meta, fecha, datos_historicos=None):
@@ -810,6 +895,11 @@ class CalculoIndicadores:
             )
         )
 
+        reglas = CalculoIndicadores._reglas_periodo(
+            meta.periodo,
+            fecha,
+        )
+
         return {
             "avance": calc.redondear(avance),
             "cumplimiento": cumplimiento,
@@ -817,6 +907,7 @@ class CalculoIndicadores:
             "semaforo": calc.calcular_semaforo(
                 cumplimiento,
                 esperada,
+                umbral_ambar=reglas["umbral_ambar"],
             ),
         }
 
@@ -958,6 +1049,11 @@ class CalculoIndicadores:
             )
         )
 
+        reglas = CalculoIndicadores._reglas_periodo(
+            periodo,
+            fecha,
+        )
+
         filas = []
         total = Decimal("0.00")
         suma_pond = Decimal("0.00")
@@ -1051,10 +1147,14 @@ class CalculoIndicadores:
             "semaforo": calc.calcular_semaforo(
                 total,
                 esperada,
+                umbral_ambar=reglas["umbral_ambar"],
             ),
             "suma_ponderadores": suma_pond,
             "completa": suma_pond == Decimal("100"),
-            "bajo_umbral": calc.esta_bajo_umbral(total),
+            "bajo_umbral": calc.esta_bajo_umbral(
+                total,
+                reglas["umbral_colectivo"],
+            ),
         }
 
     @staticmethod
@@ -1079,6 +1179,17 @@ class CalculoIndicadores:
                 periodo,
                 periodo.fecha_termino if cerrado else fecha,
             )
+        )
+
+        fecha_reglas = (
+            periodo.fecha_termino
+            if cerrado
+            else (fecha or timezone.localdate())
+        )
+
+        reglas = CalculoIndicadores._reglas_periodo(
+            periodo,
+            fecha_reglas,
         )
 
         promedio = (
@@ -1113,7 +1224,11 @@ class CalculoIndicadores:
             "promedio": promedio,
             "meta_esperada": esperada,
             "semaforo": (
-                calc.calcular_semaforo(promedio, esperada)
+                calc.calcular_semaforo(
+                    promedio,
+                    esperada,
+                    umbral_ambar=reglas["umbral_ambar"],
+                )
                 if filas
                 else ""
             ),
