@@ -26,6 +26,12 @@ urlpatterns = [
         views.HistorialEntidadView.as_view(),
         name="entidad_historial",
     ),
+
+    path(
+    "notificaciones/",
+    views.obtener_notificaciones,
+    name="notificaciones_listar",
+    ),
     path(
         "notificaciones/marcar-leidas/",
         views.marcar_notificaciones_leidas,

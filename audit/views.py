@@ -22,6 +22,7 @@ from openpyxl import Workbook
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET
 
 class AuditoriaMixin(RolRequeridoMixin):
     roles_permitidos = ROLES_AUDITORIA
@@ -204,4 +205,96 @@ def marcar_notificaciones_leidas(request):
         "ok": True,
         "actualizadas": actualizadas,
         "pendientes": pendientes,
+    })
+
+@login_required
+@require_GET
+def obtener_notificaciones(request):
+    """
+    Devuelve las últimas 15 notificaciones persistentes
+    del usuario autenticado.
+    """
+    from .models import Notificacion
+
+    queryset = Notificacion.objects.filter(
+        usuario=request.user,
+    ).select_related(
+        "auditoria",
+        "auditoria__funcionario",
+        "delegacion",
+    ).order_by(
+        "-fecha_creacion",
+        "-id_notificacion",
+    )
+
+    pendientes = queryset.filter(
+        leida=False
+    ).count()
+
+    resultado = []
+
+    for notificacion in queryset[:15]:
+        auditoria = notificacion.auditoria
+        entidad = auditoria.entidad_afectada or ""
+
+        nombres_modulos = {
+            "actividad": "Actividades",
+            "compromiso": "Agenda colectiva",
+            "funcionario": "Funcionarios",
+            "delegacion": "Delegaciones",
+            "caso": "Atención social",
+            "atencion_social": "Atención social",
+            "gestion": "Atención social",
+            "meta": "Metas",
+            "periodo": "Períodos",
+            "evidencia": "Evidencias",
+            "validacion": "Validación de evidencias",
+            "ajuste": "Incentivos y penalizaciones",
+            "indicador": "Indicadores",
+            "rol": "Roles",
+            "cargo": "Cargos",
+            "catalogo": "Catálogos",
+            "item_medible": "Ítems medibles",
+        }
+
+        acciones = {
+            "CREAR": "Creó",
+            "MODIFICAR": "Modificó",
+            "ELIMINAR": "Eliminó",
+        }
+
+        funcionario = auditoria.funcionario
+
+        resultado.append({
+            "id": notificacion.id_notificacion,
+            "leida": notificacion.leida,
+            "modulo": nombres_modulos.get(
+                entidad.lower(),
+                entidad.replace("_", " ").capitalize(),
+            ),
+            "accion": acciones.get(
+                auditoria.evento,
+                auditoria.evento,
+            ),
+            "objeto": (
+                f"{entidad.replace('_', ' ').capitalize()} "
+                f"#{auditoria.id_entidad_afectada}"
+            ),
+            "actor": (
+                funcionario.nombre
+                if funcionario
+                else "Sistema / técnico"
+            ),
+            "delegacion": (
+                notificacion.delegacion.nombre
+                if notificacion.delegacion_id
+                else "General"
+            ),
+            "fecha": notificacion.fecha_creacion.isoformat(),
+        })
+
+    return JsonResponse({
+        "ok": True,
+        "pendientes": pendientes,
+        "notificaciones": resultado,
     })
