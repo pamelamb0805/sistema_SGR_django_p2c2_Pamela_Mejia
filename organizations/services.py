@@ -24,7 +24,7 @@ from core.services import (
 from .models import (
     Cargo, Delegacion, Funcionario, FuncionarioRol, ItemMedible, Rol, Usuario,
 )
-
+from django.utils import timezone
 
 # Helpers compartidos (core.services)
 _guardar = guardar
@@ -36,8 +36,32 @@ _snapshot = snapshot
 # CRUDDelegacion (RF-001)
 # ---------------------------------------------------------------------------
 class CRUDDelegacion:
+
+    @staticmethod
+    def _datos_version(delegacion):
+        return delegacion.obtener_datos_actuales()
+
     @staticmethod
     def crear_delegacion(delegacion, actor=None):
+        """
+        Registra la primera versión de la delegación.
+        """
+
+        if not delegacion.nombre or not delegacion.nombre.strip():
+            raise ReglaNegocioError(
+                "El nombre de la delegación es obligatorio."
+            )
+
+        delegacion.nombre = delegacion.nombre.strip()
+        delegacion.codigo = delegacion.codigo.strip()
+
+        delegacion.historial_versiones = [{
+            "numero_version": 1,
+            "vigente_desde": timezone.now().isoformat(),
+            "vigente_hasta": None,
+            "datos": CRUDDelegacion._datos_version(delegacion),
+        }]
+
         return _guardar(delegacion, actor, "delegacion")
 
     @staticmethod
@@ -46,18 +70,105 @@ class CRUDDelegacion:
 
     @staticmethod
     def buscar_delegacion_id(id_delegacion):
-        return Delegacion.objects.filter(pk=id_delegacion).first()
+        return Delegacion.objects.filter(
+            pk=id_delegacion
+        ).first()
 
     @staticmethod
     def modificar_delegacion(delegacion, actor=None):
-        return _guardar(delegacion, actor, "delegacion")
+        """
+        Modifica los datos actuales y conserva la versión anterior.
+
+        Se utiliza select_for_update para evitar que dos modificaciones
+        simultáneas sobrescriban el historial.
+        """
+
+        with transaction.atomic():
+            original = (
+                Delegacion.objects
+                .select_for_update()
+                .get(pk=delegacion.pk)
+            )
+
+            delegacion.nombre = (delegacion.nombre or "").strip()
+            delegacion.codigo = (delegacion.codigo or "").strip()
+
+            campos = [
+                "codigo",
+                "nombre",
+                "direccion",
+                "comuna",
+                "ambito",
+                "estado",
+            ]
+
+            datos_anteriores = original.obtener_datos_actuales()
+            datos_nuevos = CRUDDelegacion._datos_version(delegacion)
+
+            cambio = any(
+                datos_anteriores.get(campo) != datos_nuevos.get(campo)
+                for campo in campos
+            )
+
+            # Nunca aceptar un historial enviado desde el formulario.
+            historial = list(original.historial_versiones or [])
+
+            if cambio:
+                ahora = timezone.now().isoformat()
+
+                if not historial:
+                    # Para delegaciones preexistentes, conserva los datos
+                    # que tenían antes de la primera modificación.
+                    historial.append({
+                        "numero_version": 1,
+                        "vigente_desde": None,
+                        "vigente_hasta": ahora,
+                        "datos": datos_anteriores,
+                    })
+                    numero = 2
+
+                else:
+                    ultima = dict(historial[-1])
+                    ultima["vigente_hasta"] = ahora
+                    historial[-1] = ultima
+
+                    numero = max(
+                        int(v.get("numero_version", 0))
+                        for v in historial
+                    ) + 1
+
+                historial.append({
+                    "numero_version": numero,
+                    "vigente_desde": ahora,
+                    "vigente_hasta": None,
+                    "datos": datos_nuevos,
+                })
+
+            delegacion.historial_versiones = historial
+
+            return _guardar(
+                delegacion,
+                actor,
+                "delegacion",
+            )
 
     @staticmethod
     def activar_desactivar_delegacion(delegacion, actor=None):
-        """Las delegaciones no se eliminan: se desactivan para conservar su historia."""
-        delegacion.estado = Delegacion.ESTADO_INACTIVA if delegacion.activa else Delegacion.ESTADO_ACTIVA
-        return _guardar(delegacion, actor, "delegacion")
+        """
+        Desactiva o reactiva sin eliminar el registro.
+        El cambio de estado también queda versionado.
+        """
 
+        delegacion.estado = (
+            Delegacion.ESTADO_INACTIVA
+            if delegacion.activa
+            else Delegacion.ESTADO_ACTIVA
+        )
+
+        return CRUDDelegacion.modificar_delegacion(
+            delegacion,
+            actor,
+        )
 
 # ---------------------------------------------------------------------------
 # CRUDCargo (RF-003 y versionamiento RF-038)
@@ -314,11 +425,27 @@ class CRUDFuncionario:
     @staticmethod
     def crear_funcionario(funcionario, roles, actor=None):
         roles = list(roles)
+
         if not roles:
-            raise ReglaNegocioError("Debe asignar al menos un rol.")
+            raise ReglaNegocioError(
+                "Debe asignar al menos un rol."
+            )
+
+        if not funcionario.delegacion.activa:
+            raise ReglaNegocioError(
+                "No se puede asignar un funcionario a una "
+                "delegación inactiva."
+            )
+
         with transaction.atomic():
             _guardar(funcionario, actor, "funcionario")
-            CRUDRol.sincronizar_roles(funcionario, roles, actor)
+
+            CRUDRol.sincronizar_roles(
+                funcionario,
+                roles,
+                actor,
+            )
+
         return funcionario
 
     @staticmethod
@@ -334,16 +461,45 @@ class CRUDFuncionario:
         return Funcionario.objects.filter(
             Q(nombre__icontains=nombre) | Q(identificador_institucional__icontains=nombre))
 
+
     @staticmethod
     def modificar_funcionario(funcionario, roles, actor=None):
         roles = list(roles)
-        if not roles:
-            raise ReglaNegocioError("Debe asignar al menos un rol.")
-        with transaction.atomic():
-            _guardar(funcionario, actor, "funcionario")
-            CRUDRol.sincronizar_roles(funcionario, roles, actor)
-        return funcionario
 
+        if not roles:
+            raise ReglaNegocioError(
+                "Debe asignar al menos un rol."
+            )
+
+        with transaction.atomic():
+            original = (
+                Funcionario.objects
+                .select_for_update()
+                .get(pk=funcionario.pk)
+            )
+
+            cambio_de_delegacion = (
+                original.delegacion_id != funcionario.delegacion_id
+            )
+
+            if (
+                cambio_de_delegacion
+                and not funcionario.delegacion.activa
+            ):
+                raise ReglaNegocioError(
+                    "No se puede cambiar un funcionario a una "
+                    "delegación inactiva."
+                )
+
+            _guardar(funcionario, actor, "funcionario")
+
+            CRUDRol.sincronizar_roles(
+                funcionario,
+                roles,
+                actor,
+            )
+
+        return funcionario
     @staticmethod
     def cambiar_estado(funcionario, actor=None):
         """Activar/desactivar. Un funcionario inactivo no puede iniciar sesión."""
@@ -522,26 +678,59 @@ class Seguridad:
 
         es_nuevo = not bool(usuario.pk)
 
-        anterior = (
-            None if es_nuevo else _snapshot(usuario)
-        )
+        # Recuperar las asignaciones anteriores antes de guardar.
+        if es_nuevo:
+            funcionario_original_id = None
+            delegaciones_existentes_ids = set()
+            anterior = None
+        else:
+            usuario_original = (
+                Usuario.objects
+                .prefetch_related("delegaciones_autorizadas")
+                .get(pk=usuario.pk)
+            )
+
+            funcionario_original_id = usuario_original.funcionario_id
+
+            delegaciones_existentes_ids = set(
+                usuario_original.delegaciones_autorizadas.values_list(
+                    "pk",
+                    flat=True,
+                )
+            )
+
+            anterior = _snapshot(usuario_original)
 
         funcionario = form.cleaned_data.get("funcionario")
 
-        delegaciones = form.cleaned_data.get(
-            "delegaciones_autorizadas",
-            [],
+        delegaciones = list(
+            form.cleaned_data.get(
+                "delegaciones_autorizadas",
+                [],
+            )
+        )
+
+        # La delegación principal se valida si es una cuenta nueva
+        # o si se está cambiando el funcionario asociado.
+        validar_principal = (
+            es_nuevo
+            or funcionario_original_id != getattr(
+                funcionario,
+                "pk",
+                None,
+            )
         )
 
         Seguridad.validar_delegaciones(
             funcionario,
             delegaciones,
+            delegaciones_existentes_ids=delegaciones_existentes_ids,
+            validar_principal=validar_principal,
         )
 
-        if not funcionario:
-            usuario.activo_acceso = False
-
-        elif not funcionario.activo:
+        # Una cuenta sin funcionario o con funcionario inactivo
+        # no puede mantener acceso habilitado.
+        if not funcionario or not funcionario.activo:
             usuario.activo_acceso = False
 
         with transaction.atomic():
@@ -571,7 +760,8 @@ class Seguridad:
             )
 
         return usuario
-    
+
+  
     @staticmethod
     def cambiar_estado_acceso(usuario, actor=None):
         with transaction.atomic():
@@ -615,31 +805,47 @@ class Seguridad:
 
         return usuario
     @staticmethod
-    def validar_delegaciones(funcionario, delegaciones):
+    def validar_delegaciones(
+        funcionario,
+        delegaciones,
+        delegaciones_existentes_ids=None,
+        validar_principal=True,
+    ):
         """
-        Valida que las delegaciones adicionales correspondan
-        al alcance de los roles del funcionario.
+        Impide asignaciones nuevas a delegaciones inactivas.
+
+        Permite conservar delegaciones inactivas que ya estaban
+        asociadas a una cuenta, sin permitir nuevas asignaciones.
         """
 
         delegaciones = list(delegaciones or [])
+        existentes = set(delegaciones_existentes_ids or [])
 
         if funcionario is None:
             if delegaciones:
                 raise ReglaNegocioError(
-                    "Una cuenta sin funcionario no puede tener delegaciones autorizadas."
+                    "Una cuenta sin funcionario no puede tener "
+                    "delegaciones autorizadas."
                 )
             return
 
-        inactivas = [
+        if validar_principal and not funcionario.delegacion.activa:
+            raise ReglaNegocioError(
+                "No se puede crear o reasignar una cuenta a un "
+                "funcionario perteneciente a una delegación inactiva."
+            )
+
+        inactivas_nuevas = [
             delegacion.nombre
             for delegacion in delegaciones
             if not delegacion.activa
+            and delegacion.pk not in existentes
         ]
 
-        if inactivas:
+        if inactivas_nuevas:
             raise ReglaNegocioError(
-                "No se pueden autorizar delegaciones inactivas: "
-                + ", ".join(inactivas)
+                "No se pueden asignar delegaciones inactivas: "
+                + ", ".join(inactivas_nuevas)
             )
 
         alcances = set(
@@ -649,16 +855,11 @@ class Seguridad:
             )
         )
 
-        if "global" in alcances:
-            return
-
-        if "multiples" in alcances:
+        if "global" in alcances or "multiples" in alcances:
             return
 
         if delegaciones:
             raise ReglaNegocioError(
-                "El funcionario tiene alcance propio y no puede recibir "
-                "delegaciones adicionales."
+                "El funcionario tiene alcance propio y no puede "
+                "recibir delegaciones adicionales."
             )
-
-    

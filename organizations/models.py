@@ -13,6 +13,9 @@ from django.db.models import Q
 from django.utils import timezone
 import uuid
 from django.conf import settings
+from datetime import datetime, time
+from django.utils.dateparse import parse_datetime
+
 
 def generar_codigo_delegacion():
     return uuid.uuid4().hex[:20].upper()
@@ -27,19 +30,47 @@ def generar_codigo_item():
 class Delegacion(models.Model):
     ESTADO_ACTIVA = "Activa"
     ESTADO_INACTIVA = "Inactiva"
-    ESTADOS = [(ESTADO_ACTIVA, "Activa"), (ESTADO_INACTIVA, "Inactiva")]
+    ESTADOS = [
+        (ESTADO_ACTIVA, "Activa"),
+        (ESTADO_INACTIVA, "Inactiva"),
+    ]
 
     id_delegacion = models.AutoField(primary_key=True)
-    codigo = models.CharField(max_length=20, unique=True, default=generar_codigo_delegacion,
-        error_messages={"unique": "Ya existe una delegación con ese código."})
-    nombre = models.CharField(
-        max_length=100, unique=True,
-        error_messages={"unique": "Ya existe una delegación con ese nombre."},
+
+    codigo = models.CharField(
+        max_length=20,
+        unique=True,
+        default=generar_codigo_delegacion,
+        error_messages={
+            "unique": "Ya existe una delegación con ese código."
+        },
     )
+
+    nombre = models.CharField(
+        max_length=100,
+        unique=True,
+        error_messages={
+            "unique": "Ya existe una delegación con ese nombre."
+        },
+    )
+
     direccion = models.CharField(max_length=200)
     comuna = models.CharField(max_length=100, default="La Serena")
-    estado = models.CharField(max_length=10, choices=ESTADOS, default=ESTADO_ACTIVA)
+
+    estado = models.CharField(
+        max_length=10,
+        choices=ESTADOS,
+        default=ESTADO_ACTIVA,
+    )
+
     ambito = models.CharField(max_length=150)
+
+    # Historial inmutable de las versiones anteriores y actuales.
+    historial_versiones = models.JSONField(
+        default=list,
+        blank=True,
+        editable=False,
+    )
 
     class Meta:
         db_table = "delegacion"
@@ -54,7 +85,69 @@ class Delegacion(models.Model):
     def activa(self):
         return self.estado == self.ESTADO_ACTIVA
 
+    def obtener_datos_actuales(self):
+        return {
+            "id_delegacion": self.pk,
+            "codigo": self.codigo,
+            "nombre": self.nombre,
+            "direccion": self.direccion,
+            "comuna": self.comuna,
+            "ambito": self.ambito,
+            "estado": self.estado,
+        }
 
+    def obtener_version_historica(self, fecha):
+        """
+        Recupera los datos de la delegación vigentes en una fecha.
+
+        Si fecha es anterior a la primera modificación registrada,
+        devuelve la primera versión histórica disponible.
+        """
+
+        if not self.historial_versiones:
+            return None
+
+        if isinstance(fecha, datetime):
+            momento = fecha
+
+            if timezone.is_naive(momento):
+                momento = timezone.make_aware(momento)
+        else:
+            momento = timezone.make_aware(
+                datetime.combine(fecha, time.min)
+            )
+
+        for version in reversed(self.historial_versiones):
+            desde = (
+                parse_datetime(version["vigente_desde"])
+                if version.get("vigente_desde")
+                else None
+            )
+
+            hasta = (
+                parse_datetime(version["vigente_hasta"])
+                if version.get("vigente_hasta")
+                else None
+            )
+
+            if desde and timezone.is_naive(desde):
+                desde = timezone.make_aware(desde)
+
+            if hasta and timezone.is_naive(hasta):
+                hasta = timezone.make_aware(hasta)
+
+            cumple_inicio = desde is None or desde <= momento
+            cumple_termino = hasta is None or momento < hasta
+
+            if cumple_inicio and cumple_termino:
+                return version["datos"]
+
+        # La primera versión puede no tener fecha de inicio conocida.
+        primera = self.historial_versiones[0]
+        if primera.get("vigente_desde") is None:
+            return primera.get("datos")
+
+        return None
 # ---------------------------------------------------------------------------
 # CARGO
 # ---------------------------------------------------------------------------

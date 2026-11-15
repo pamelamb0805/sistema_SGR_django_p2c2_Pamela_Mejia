@@ -11,13 +11,61 @@ from django.core.exceptions import ValidationError
 from django.core.exceptions import ValidationError
 
 class DelegacionForm(BootstrapFormMixin, forms.ModelForm):
+
     class Meta:
         model = Delegacion
-        fields = ["codigo", "nombre", "direccion", "comuna", "ambito", "estado"]
+        fields = [
+            "codigo",
+            "nombre",
+            "direccion",
+            "comuna",
+            "ambito",
+            "estado",
+        ]
+
+    def clean_codigo(self):
+        codigo = self.cleaned_data["codigo"].strip()
+
+        if not codigo:
+            raise ValidationError(
+                "El código de la delegación es obligatorio."
+            )
+
+        duplicados = Delegacion.objects.filter(
+            codigo__iexact=codigo
+        )
+
+        if self.instance and self.instance.pk:
+            duplicados = duplicados.exclude(pk=self.instance.pk)
+
+        if duplicados.exists():
+            raise ValidationError(
+                "Ya existe una delegación con ese código."
+            )
+
+        return codigo
 
     def clean_nombre(self):
-        return self.cleaned_data["nombre"].strip()
+        nombre = self.cleaned_data["nombre"].strip()
 
+        if not nombre:
+            raise ValidationError(
+                "El nombre de la delegación es obligatorio."
+            )
+
+        duplicados = Delegacion.objects.filter(
+            nombre__iexact=nombre
+        )
+
+        if self.instance and self.instance.pk:
+            duplicados = duplicados.exclude(pk=self.instance.pk)
+
+        if duplicados.exists():
+            raise ValidationError(
+                "Ya existe una delegación con ese nombre."
+            )
+
+        return nombre
 
 class CargoForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
@@ -51,7 +99,22 @@ class RolForm(BootstrapFormMixin, forms.ModelForm):
         super().__init__(*args, **kwargs)
         if self.instance and self.instance.pk:
             self.initial["permisos"] = self.instance.permisos or []
+            
+            delegaciones_actuales = (
+            usuario.delegaciones_autorizadas.values_list(
+                "pk",
+                flat=True,
+            )
+            if usuario
+            else []
+        )
 
+        self.fields["delegaciones_autorizadas"].queryset = (
+            Delegacion.objects.filter(
+                Q(estado=Delegacion.ESTADO_ACTIVA)
+                | Q(pk__in=delegaciones_actuales)
+            ).distinct()
+        )
     def clean_permisos(self):
         return self.cleaned_data.get("permisos", [])
 
@@ -65,32 +128,78 @@ class RolForm(BootstrapFormMixin, forms.ModelForm):
 
 
 class FuncionarioForm(BootstrapFormMixin, forms.ModelForm):
+
     roles = forms.ModelMultipleChoiceField(
-        queryset=Rol.objects.all(), label="Roles",
+        queryset=Rol.objects.all(),
+        label="Roles",
         help_text="Seleccione uno o más roles (Ctrl + clic para varios).",
-        error_messages={"required": "Debe asignar al menos un rol."},
+        error_messages={
+            "required": "Debe asignar al menos un rol."
+        },
     )
 
     class Meta:
         model = Funcionario
-        fields = ["identificador_institucional", "nombre", "estado", "cargo", "delegacion"]
+        fields = [
+            "identificador_institucional",
+            "nombre",
+            "estado",
+            "cargo",
+            "delegacion",
+        ]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
         cargos = Cargo.objects.vigentes()
-        delegaciones = Delegacion.objects.filter(estado=Delegacion.ESTADO_ACTIVA)
-        if self.instance.pk:
-            # Conservar el cargo/delegación actual aunque ya no estén vigentes/activos
-            cargos = Cargo.objects.filter(Q(pk=self.instance.cargo_id) | Q(pk__in=cargos.values("pk")))
+
+        delegaciones = Delegacion.objects.filter(
+            estado=Delegacion.ESTADO_ACTIVA
+        )
+
+        if self.instance and self.instance.pk:
+            cargos = Cargo.objects.filter(
+                Q(pk=self.instance.cargo_id)
+                | Q(pk__in=cargos.values("pk"))
+            )
+
             delegaciones = Delegacion.objects.filter(
-                Q(pk=self.instance.delegacion_id) | Q(pk__in=delegaciones.values("pk")))
-            self.fields["roles"].initial = list(self.instance.roles.values_list("pk", flat=True))
+                Q(estado=Delegacion.ESTADO_ACTIVA)
+                | Q(pk=self.instance.delegacion_id)
+            )
+
+            self.fields["roles"].initial = list(
+                self.instance.roles.values_list(
+                    "pk",
+                    flat=True,
+                )
+            )
+
         self.fields["cargo"].queryset = cargos
         self.fields["delegacion"].queryset = delegaciones
 
     def clean_identificador_institucional(self):
-        return self.cleaned_data["identificador_institucional"].strip()
+        return self.cleaned_data[
+            "identificador_institucional"
+        ].strip()
 
+    def clean_delegacion(self):
+        delegacion = self.cleaned_data["delegacion"]
+
+        if not delegacion.activa:
+            es_delegacion_actual = (
+                self.instance
+                and self.instance.pk
+                and self.instance.delegacion_id == delegacion.pk
+            )
+
+            if not es_delegacion_actual:
+                raise ValidationError(
+                    "No se puede asignar un funcionario a una "
+                    "delegación inactiva."
+                )
+
+        return delegacion
 
 class AccesoForm(BootstrapFormMixin, forms.Form):
     """Crea el acceso (usuario y contraseña) de un funcionario o cambia su contraseña."""
