@@ -1057,8 +1057,6 @@ class CalculoIndicadores:
 
 
     @staticmethod
-
-    @staticmethod
     def resumen_funcionario(
         funcionario,
         periodo,
