@@ -479,7 +479,7 @@ def exportar_actividades_excel(request):
             actividad.funcionario.nombre,
             actividad.funcionario.delegacion.nombre,
             actividad.item.nombre_item,
-            str(actividad.catalogo),
+            actividad.catalogo_nombre or actividad.catalogo.nombre,
             actividad.accion,
             actividad.contacto,
             actividad.estado,

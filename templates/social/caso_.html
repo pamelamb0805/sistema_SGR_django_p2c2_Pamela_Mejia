@@ -625,8 +625,12 @@
                     {% for g in gestiones %}
                     <tr>
                         <td class="fw-semibold">{{ g.numero_gestion }}</td>
-                        <td>{{ g.tipo_atencion.nombre|default:g.tipo_atencion }}</td>
-                        <td>{{ g.subatencion.nombre|default:"—" }}</td>
+                        <td>
+                            {{ g.tipo_atencion_nombre|default:g.tipo_atencion.nombre|default:g.tipo_atencion }}
+                        </td>
+                        <td>
+                            {{ g.subatencion_nombre|default:g.subatencion.nombre|default:"—" }}
+                        </td>
                         <td>{{ g.descripcion|default:"—" }}</td>
                         <td>{{ g.fecha|date:"d/m/Y" }}</td>
                         <td>{{ g.fecha_registro|date:"d/m/Y H:i"|default:"—" }}</td>

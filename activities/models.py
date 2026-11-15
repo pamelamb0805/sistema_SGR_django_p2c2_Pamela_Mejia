@@ -59,6 +59,13 @@ class Actividad(models.Model):
                              related_name="actividades", verbose_name="ítem medible")
     catalogo = models.ForeignKey(Catalogo, on_delete=models.PROTECT, db_column="id_catalogo",
                                  related_name="actividades", verbose_name="actividad / servicio")
+    # Nombre histórico del catálogo al registrar la actividad (RF-038).
+    catalogo_nombre = models.CharField(
+        max_length=150,
+        blank=True,
+        default="",
+        editable=False,
+    )
     periodo = models.ForeignKey(Periodo, on_delete=models.PROTECT, db_column="id_periodo",
                                 related_name="actividades", editable=False)
 

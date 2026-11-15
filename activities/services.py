@@ -134,8 +134,14 @@ class CRUDActividad:
     def crear_actividad(actividad, actor=None):
         with transaction.atomic():
             actividad.estado = Actividad.ESTADO_REGISTRADA
+
             CRUDActividad.validar_campos_actividad(actividad)
+
+            # Conserva el nombre del catálogo vigente al registrar.
+            actividad.catalogo_nombre = actividad.catalogo.nombre
+
             guardar(actividad, actor, "actividad")
+
         return actividad
 
     @staticmethod
@@ -147,15 +153,39 @@ class CRUDActividad:
     def buscar_actividad_id(id_actividad):
         return Actividad.objects.filter(pk=id_actividad).first()
 
+
     @staticmethod
     def modificar_actividad(actividad, actor=None):
-        original = Actividad.objects.get(pk=actividad.pk)
+        original = Actividad.objects.select_related("catalogo").get(
+            pk=actividad.pk
+        )
+
         _exigir_autor(original, actor)
+
         if not original.editable:
-            raise ReglaNegocioError(f"Una actividad en estado «{original.estado}» no puede modificarse.")
+            raise ReglaNegocioError(
+                f"Una actividad en estado «{original.estado}» "
+                "no puede modificarse."
+            )
+
         with transaction.atomic():
-            CRUDActividad.validar_campos_actividad(actividad, original)
+            CRUDActividad.validar_campos_actividad(
+                actividad,
+                original,
+            )
+
+            # Si se cambió el catálogo, toma el nombre del nuevo.
+            # Si no cambió, conserva la fotografía histórica.
+            if actividad.catalogo_id != original.catalogo_id:
+                actividad.catalogo_nombre = actividad.catalogo.nombre
+            else:
+                actividad.catalogo_nombre = (
+                    original.catalogo_nombre
+                    or original.catalogo.nombre
+                )
+
             guardar(actividad, actor, "actividad")
+
         return actividad
 
     @staticmethod

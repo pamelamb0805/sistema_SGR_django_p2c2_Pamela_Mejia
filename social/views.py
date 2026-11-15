@@ -236,8 +236,8 @@ def exportar_casos_excel(request):
             gestion.usuario_id,
             gestion.usuario.nombre,
             gestion.numero_gestion,
-            gestion.tipo_atencion.nombre,
-            gestion.subatencion.nombre,
+            gestion.tipo_atencion_nombre or gestion.tipo_atencion.nombre,
+            gestion.subatencion_nombre or gestion.subatencion.nombre,
             gestion.descripcion,
             gestion.fecha,
             gestion.fecha_registro.replace(tzinfo=None)

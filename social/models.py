@@ -95,6 +95,21 @@ class AtencionSocial(models.Model):
         limit_choices_to={"tipo_catalogo": Catalogo.TIPO_ATENCION},
     )
 
+    # Fotografías de los nombres del catálogo al registrar la gestión (RF-038).
+    tipo_atencion_nombre = models.CharField(
+        max_length=150,
+        blank=True,
+        default="",
+        editable=False,
+    )
+
+    subatencion_nombre = models.CharField(
+        max_length=150,
+        blank=True,
+        default="",
+        editable=False,
+    )
+
     # Subatención perteneciente al Tipo de Atención seleccionado.
     subatencion = models.ForeignKey(
         Catalogo,
@@ -102,6 +117,21 @@ class AtencionSocial(models.Model):
         db_column="id_subatencion",
         related_name="atenciones_como_subatencion",
         limit_choices_to={"tipo_catalogo": Catalogo.TIPO_SUBATENCION},
+    )
+
+        # Nombres históricos de los catálogos al registrar la gestión (RF-038).
+    tipo_atencion_nombre = models.CharField(
+        max_length=150,
+        blank=True,
+        default="",
+        editable=False,
+    )
+
+    subatencion_nombre = models.CharField(
+        max_length=150,
+        blank=True,
+        default="",
+        editable=False,
     )
 
     descripcion = models.TextField()
