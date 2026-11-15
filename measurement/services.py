@@ -1708,12 +1708,25 @@ class CalculoIndicadores:
             ),
         }
 
+
     @staticmethod
     def resumen_delegacion(
         funcionarios,
         periodo,
         fecha=None,
     ):
+        """
+        Consolida el desempeño de los funcionarios de una delegación.
+
+        RF-029:
+        - Responsables y sus resultados.
+        - Avance desglosado por ítem.
+        - Meta esperada al día.
+        - Promedio ponderado.
+        - Resultado global.
+        - Distribución del semáforo.
+        - Identificación de funcionarios bajo el umbral.
+        """
         filas = [
             CalculoIndicadores.resumen_funcionario(
                 funcionario,
@@ -1725,36 +1738,44 @@ class CalculoIndicadores:
 
         cerrado = not periodo.abierto
 
-        esperada = (
-            CalculoIndicadores.calcular_meta_esperada_al_dia(
-                periodo,
-                periodo.fecha_termino if cerrado else fecha,
-            )
-        )
-
-        fecha_reglas = (
+        fecha_calculo = (
             periodo.fecha_termino
             if cerrado
             else (fecha or timezone.localdate())
         )
 
+        esperada = (
+            CalculoIndicadores.calcular_meta_esperada_al_dia(
+                periodo,
+                fecha_calculo,
+            )
+        )
+
         reglas = CalculoIndicadores._reglas_periodo(
             periodo,
-            fecha_reglas,
+            fecha_calculo,
+        )
+
+        cantidad_funcionarios = len(filas)
+
+        suma_resultados = sum(
+            (
+                fila["total_ponderado"]
+                for fila in filas
+            ),
+            Decimal("0.00"),
         )
 
         promedio = (
             calc.redondear(
-                sum(
-                    (
-                        fila["total_ponderado"]
-                        for fila in filas
-                    ),
-                    Decimal("0"),
-                ) / len(filas)
+                suma_resultados / cantidad_funcionarios
             )
-            if filas
+            if cantidad_funcionarios
             else Decimal("0.00")
+        )
+
+        total_ponderado_delegacion = calc.redondear(
+            suma_resultados
         )
 
         conteo = {
@@ -1770,24 +1791,32 @@ class CalculoIndicadores:
             )
         }
 
+        bajo_umbral = [
+            fila
+            for fila in filas
+            if fila["bajo_umbral"]
+        ]
+
+        resultado_global = promedio
+
+        semaforo_global = (
+            calc.calcular_semaforo(
+                resultado_global,
+                esperada,
+                umbral_ambar=reglas["umbral_ambar"],
+            )
+            if cantidad_funcionarios
+            else ""
+        )
+
         return {
             "filas": filas,
             "promedio": promedio,
+            "resultado_global": resultado_global,
+            "total_ponderado_delegacion": total_ponderado_delegacion,
             "meta_esperada": esperada,
-            "semaforo": (
-                calc.calcular_semaforo(
-                    promedio,
-                    esperada,
-                    umbral_ambar=reglas["umbral_ambar"],
-                )
-                if filas
-                else ""
-            ),
+            "semaforo": semaforo_global,
             "conteo": conteo,
-            "total_funcionarios": len(filas),
-            "bajo_umbral": [
-                fila
-                for fila in filas
-                if fila["bajo_umbral"]
-            ],
+            "total_funcionarios": cantidad_funcionarios,
+            "bajo_umbral": bajo_umbral,
         }
