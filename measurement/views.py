@@ -27,7 +27,12 @@ from core.mixins import (
 from organizations.models import Cargo, Delegacion, Funcionario, ItemMedible
 
 from .forms import AjusteForm, MetaForm, PeriodoForm, ReabrirPeriodoForm
-from .models import Ajuste, Meta as MetaModel, Periodo
+from .models import (
+    Ajuste,
+    Meta as MetaModel,
+    MetaVersion,
+    Periodo,
+)
 from .services import CalculoIndicadores, CRUDAjuste, CRUDMeta, CRUDPeriodo
 
 from django.db.models import Q
@@ -364,6 +369,50 @@ class MetaDeleteView(AccionPostView):
         CRUDMeta.eliminar_meta(objeto, request.user)
         return "Meta eliminada."
 
+# ---------------------------------------------------------------------------
+# Historial de versiones de metas (RF-038)
+# ---------------------------------------------------------------------------
+
+@login_required
+def meta_historial(request, pk):
+    """
+    Muestra el historial de parámetros de una meta,
+    limitado al ámbito de delegación autorizado.
+    """
+    if not tiene_rol(request.user, *ROLES_SUPERVISION):
+        return denegar_acceso(request)
+
+    metas = filtrar_por_ambito(
+        MetaModel.objects.select_related(
+            "funcionario",
+            "funcionario__delegacion",
+            "item",
+            "periodo",
+            "cargo",
+        ),
+        request.user,
+        "funcionario__delegacion_id",
+    )
+
+    meta = get_object_or_404(metas, pk=pk)
+
+    versiones = (
+        MetaVersion.objects
+        .filter(objeto_id=meta.pk)
+        .select_related("creado_por")
+        .order_by("-numero_version")
+    )
+
+    return render(
+        request,
+        "measurement/meta_historial.html",
+        {
+            "titulo": "Historial de versiones",
+            "meta": meta,
+            "versiones": versiones,
+            "total_versiones": versiones.count(),
+        },
+    )
 
 # ---------------------------------------------------------------------------
 # Ajustes (incentivos y penalizaciones)

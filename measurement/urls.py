@@ -20,6 +20,11 @@ urlpatterns = [
     path("metas/<int:pk>/editar/", views.MetaUpdateView.as_view(), name="meta_update"),
     path("metas/<int:pk>/eliminar/", views.MetaDeleteView.as_view(), name="meta_delete"),
 
+    path(
+    "metas/<int:pk>/historial/",
+    views.meta_historial,
+    name="meta_historial",
+    ),
     # Ajustes
     path("ajustes/", views.AjusteListView.as_view(), name="ajuste_list"),
     path("ajustes/nuevo/", views.AjusteCreateView.as_view(), name="ajuste_create"),

@@ -14,6 +14,7 @@
          href="{% url 'measurement:meta_exportar_excel' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}">
         <i class="bi bi-file-earmark-excel me-1"></i>Exportar Excel
       </a>
+
       {% if puede_editar %}
         <a class="btn btn-primary" href="{% url 'measurement:meta_create' %}">
           <i class="bi bi-plus-lg me-1"></i>Nueva meta
@@ -72,7 +73,8 @@
         <div class="alert alert-warning">
           <strong>Importante:</strong>
           las ponderaciones deben sumar 100 % para completar la configuración
-          de evaluación del funcionario.
+          de evaluación del funcionario. Si la suma es inferior o superior,
+          revisa los valores pendientes o excedentes.
         </div>
 
         <div class="d-flex flex-wrap gap-2">
@@ -168,7 +170,7 @@
 
           <a href="{% url 'measurement:meta_list' %}"
              class="btn btn-outline-secondary">
-            Limpiar
+            <i class="bi bi-x-circle me-1"></i>Limpiar
           </a>
         </div>
 
@@ -201,7 +203,9 @@
       <div class="card shadow-sm h-100">
         <div class="card-body">
           <div class="text-body-secondary small">Configuración</div>
-          <div class="fs-6 fw-semibold">Metas por funcionario y período</div>
+          <div class="fs-6 fw-semibold">
+            Metas por funcionario y período
+          </div>
         </div>
       </div>
     </div>
@@ -209,7 +213,11 @@
 
   <div class="card shadow-sm">
     <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
-      <strong>Metas y ponderaciones registradas</strong>
+      <strong>
+        <i class="bi bi-bullseye me-1"></i>
+        Metas y ponderaciones registradas
+      </strong>
+
       <span class="badge text-bg-secondary">
         {{ page_obj.paginator.count }} registros
       </span>
@@ -227,6 +235,7 @@
             <th>Ponderación</th>
             <th>Umbral mínimo</th>
             <th>Máximo computable</th>
+
             {% if puede_editar %}
               <th class="text-end">Acciones</th>
             {% endif %}
@@ -237,24 +246,44 @@
           {% for meta in metas %}
             <tr>
               <td>{{ meta.periodo }}</td>
-              <td>{{ meta.funcionario.nombre }}</td>
+
+              <td>
+                <strong>{{ meta.funcionario.nombre }}</strong>
+              </td>
+
               <td>{{ meta.cargo }}</td>
+
               <td>{{ meta.item.nombre_item }}</td>
-              <td>{{ meta.valor_objetivo }} {{ meta.unidad }}</td>
+
+              <td>
+                {{ meta.valor_objetivo }} {{ meta.unidad }}
+              </td>
+
               <td>
                 <span class="badge text-bg-primary">
                   {{ meta.ponderador }} %
                 </span>
               </td>
+
               <td>{{ meta.umbral_minimo }} %</td>
+
               <td>{{ meta.maximo_computable }} %</td>
 
               {% if puede_editar %}
                 <td class="text-end">
                   <div class="d-inline-flex gap-1">
+
+                    <a class="btn btn-sm btn-outline-info"
+                       href="{% url 'measurement:meta_historial' meta.pk %}"
+                       title="Consultar historial de versiones"
+                       aria-label="Consultar historial de versiones">
+                      <i class="bi bi-clock-history"></i>
+                    </a>
+
                     <a class="btn btn-sm btn-outline-primary"
                        href="{% url 'measurement:meta_update' meta.pk %}"
-                       title="Editar meta">
+                       title="Editar meta"
+                       aria-label="Editar meta">
                       <i class="bi bi-pencil"></i>
                     </a>
 
@@ -262,12 +291,15 @@
                           action="{% url 'measurement:meta_delete' meta.pk %}"
                           onsubmit="return confirm('¿Estás seguro de eliminar esta meta?');">
                       {% csrf_token %}
+
                       <button type="submit"
                               class="btn btn-sm btn-outline-danger"
-                              title="Eliminar meta">
+                              title="Eliminar meta"
+                              aria-label="Eliminar meta">
                         <i class="bi bi-trash"></i>
                       </button>
                     </form>
+
                   </div>
                 </td>
               {% endif %}
