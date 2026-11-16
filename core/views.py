@@ -1408,6 +1408,9 @@ def validar_codigo(request):
             "email_enmascarado": _enmascarar_correo_sgr(
                 estado.get("email", "")
             ),
+            "codigo_expira_timestamp": int(
+                registro.expires_at.timestamp() * 1000
+            ),
         },
     )
 
