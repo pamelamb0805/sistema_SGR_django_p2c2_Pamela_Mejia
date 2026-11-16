@@ -17,7 +17,6 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.generic import CreateView, DetailView, ListView, UpdateView
 
-from core.decorators import funcionario_requerido
 from core.exceptions import ReglaNegocioError
 from core.mixins import (
     ROLES_CONFIGURACION, ROLES_MEDICION, ROLES_SUPERVISION, AccionPostView, AmbitoDelegacionMixin,
@@ -49,6 +48,7 @@ from django.core.paginator import Paginator
 from core.pagination import PageSizeMixin, PAGE_SIZE_OPTIONS, get_page_size
 from core.reporting import incorporar_metadatos_informe
 from core.reporting import informe_excel
+from core.decorators import permiso_requerido, funcionario_requerido
 
 class LecturaMixin(RolRequeridoMixin):
     roles_permitidos = ROLES_SUPERVISION
@@ -318,15 +318,12 @@ class PeriodoReabrirView(AccionPostView):
         return f"Período {objeto} reabierto. Quedó registrado en la auditoría."
 
 
-@login_required
+@permiso_requerido("periodos.editar")
 def configurar_reglas_periodo(request, pk):
     """
-    Permite al Administrador configurar reglas de cálculo
-    para un período abierto y conservar sus versiones.
+    Permite configurar reglas de cálculo para un período abierto
+    y conservar sus versiones históricas.
     """
-    if not tiene_rol(request.user, *ROLES_CONFIGURACION):
-        return denegar_acceso(request)
-
     periodo = get_object_or_404(Periodo, pk=pk)
 
     if not periodo.abierto:
@@ -379,7 +376,6 @@ def configurar_reglas_periodo(request, pk):
 
             except ReglaNegocioError as exc:
                 messages.error(request, str(exc))
-
     else:
         form = ReglasCalculoForm(
             initial={
@@ -408,20 +404,13 @@ def configurar_reglas_periodo(request, pk):
             "version_actual": version_actual,
         },
     )
-
-@login_required
+@permiso_requerido("periodos.ver")
 def historial_reglas_periodo(request, pk):
     """
     Consulta el historial de versiones de reglas de cálculo
     de un período, sin permitir modificar versiones anteriores.
     """
-    if not tiene_rol(request.user, *ROLES_SUPERVISION):
-        return denegar_acceso(request)
-
-    periodo = get_object_or_404(
-        Periodo,
-        pk=pk,
-    )
+    periodo = get_object_or_404(Periodo, pk=pk)
 
     versiones = (
         ReglaCalculoVersion.objects
@@ -440,7 +429,6 @@ def historial_reglas_periodo(request, pk):
             "total_versiones": versiones.count(),
         },
     )
-
 
 class PeriodoRecalcularView(AccionPostView):
     permisos_permitidos = ('periodos.editar',)
@@ -467,19 +455,12 @@ class PeriodoRecalcularView(AccionPostView):
         )
 
 
-@login_required
+@permiso_requerido("items.ver", respuesta_json=True)
 def items_vigentes_funcionario(request, funcionario_id):
     """
     Devuelve exclusivamente los ítems vigentes del cargo
     del funcionario seleccionado y dentro del ámbito autorizado.
     """
-
-    if not tiene_rol(request.user, *ROLES_MEDICION):
-        return JsonResponse(
-            {"error": "No tienes permiso para consultar estos ítems."},
-            status=403,
-        )
-
     funcionario = (
         filtrar_por_ambito(
             Funcionario.objects.select_related(
@@ -526,7 +507,6 @@ def items_vigentes_funcionario(request, funcionario_id):
             for item in items
         ],
     })
-
 # ---------------------------------------------------------------------------
 # Metas
 # ---------------------------------------------------------------------------
@@ -725,15 +705,12 @@ class MetaDeleteView(AccionPostView):
 # Historial de versiones de metas (RF-038)
 # ---------------------------------------------------------------------------
 
-@login_required
+@permiso_requerido("metas.ver")
 def meta_historial(request, pk):
     """
     Muestra el historial de parámetros de una meta,
     limitado al ámbito de delegación autorizado.
     """
-    if not tiene_rol(request.user, *ROLES_SUPERVISION):
-        return denegar_acceso(request)
-
     metas = filtrar_por_ambito(
         MetaModel.objects.select_related(
             "funcionario",
@@ -765,7 +742,6 @@ def meta_historial(request, pk):
             "total_versiones": versiones.count(),
         },
     )
-
 # ---------------------------------------------------------------------------
 # Ajustes (incentivos y penalizaciones)
 # ---------------------------------------------------------------------------
@@ -1085,87 +1061,36 @@ def mi_desempeno(request):
                   _contexto_panel(request, funcionario, "personal", "Mi desempeño"))
 
 
-@login_required
+@permiso_requerido("indicadores.ver")
 def desempeno_funcionario(request, pk):
-    """Panel de un funcionario para supervisión, dentro del ámbito del usuario (CA-07)."""
-    if not tiene_rol(request.user, *ROLES_SUPERVISION):
-        return denegar_acceso(request)
-    qs = filtrar_por_ambito(Funcionario.objects.select_related("cargo", "delegacion"), request.user,
-                            "delegacion_id")
-    funcionario = get_object_or_404(qs, pk=pk)
-    return render(request, "measurement/indicador_.html",
-                  _contexto_panel(request, funcionario, "funcionario", f"Desempeño: {funcionario.nombre}"))
-
-@login_required
-def semaforo(request):
-    """Tablero de delegación (RF-029, HU-08, HU-18, HU-21)."""
-    if not tiene_rol(request.user, *ROLES_SUPERVISION):
-        return denegar_acceso(request)
-
-    periodo = _periodo_seleccionado(request)
-
-    funcionarios = filtrar_por_ambito(
-        Funcionario.objects.filter(
-            estado=Funcionario.ESTADO_ACTIVO
-        ).select_related("cargo", "delegacion"),
+    """
+    Panel de un funcionario para supervisión,
+    respetando el ámbito de delegación autorizado.
+    """
+    qs = filtrar_por_ambito(
+        Funcionario.objects.select_related(
+            "cargo",
+            "delegacion",
+        ),
         request.user,
         "delegacion_id",
     )
 
-    delegacion_sel = request.GET.get("delegacion", "")
+    funcionario = get_object_or_404(qs, pk=pk)
 
-    if delegacion_sel and es_transversal(request.user):
-        funcionarios = funcionarios.filter(
-            delegacion_id=delegacion_sel
-        )
-
-    resumen = (
-        CalculoIndicadores.resumen_delegacion(funcionarios, periodo)
-        if periodo
-        else None
-    )
-
-    page_size = get_page_size(
+    return render(
         request,
-        "semaforo_page_size",
-    )
-
-    page_obj = None
-
-    if resumen:
-        paginator = Paginator(resumen["filas"], page_size)
-        page_obj = paginator.get_page(request.GET.get("page"))
-        resumen["filas"] = page_obj.object_list
-
-    return render(request, "measurement/semaforo.html", {
-        "titulo": "Semáforo de delegación",
-        "periodo": periodo,
-        "periodos": Periodo.objects.all(),
-        "resumen": resumen,
-        "delegaciones": (
-            Delegacion.objects.all()
-            if es_transversal(request.user)
-            else []
+        "measurement/indicador_.html",
+        _contexto_panel(
+            request,
+            funcionario,
+            "funcionario",
+            f"Desempeño: {funcionario.nombre}",
         ),
-        "delegacion_sel": delegacion_sel,
-        "hoy": timezone.localdate(),
-        "page_obj": page_obj,
-        "page_size": page_size,
-        "page_size_options": PAGE_SIZE_OPTIONS,
-    })
-
-
-@login_required
-def vista_global_cargos(request):
-    """
-    RF-031: vista global del desempeño agrupado por cargo.
-
-    Consolida funcionarios, metas, resultados y fechas relevantes,
-    respetando el ámbito de acceso del usuario.
-    """
-    if not tiene_rol(request.user, *ROLES_SUPERVISION):
-        return denegar_acceso(request)
-
+    )
+@permiso_requerido("indicadores.ver")
+def semaforo(request):
+    """Tablero de delegación (RF-029, HU-08, HU-18, HU-21)."""
     periodo = _periodo_seleccionado(request)
 
     funcionarios = filtrar_por_ambito(
@@ -1179,8 +1104,90 @@ def vista_global_cargos(request):
         "delegacion_id",
     )
 
-    delegacion_sel = request.GET.get("delegacion", "").strip()
-    cargo_sel = request.GET.get("cargo", "").strip()
+    delegacion_sel = request.GET.get("delegacion", "")
+
+    if delegacion_sel and es_transversal(request.user):
+        funcionarios = funcionarios.filter(
+            delegacion_id=delegacion_sel
+        )
+
+    resumen = (
+        CalculoIndicadores.resumen_delegacion(
+            funcionarios,
+            periodo,
+        )
+        if periodo
+        else None
+    )
+
+    page_size = get_page_size(
+        request,
+        "semaforo_page_size",
+    )
+
+    page_obj = None
+
+    if resumen:
+        paginator = Paginator(
+            resumen["filas"],
+            page_size,
+        )
+        page_obj = paginator.get_page(
+            request.GET.get("page")
+        )
+        resumen["filas"] = page_obj.object_list
+
+    return render(
+        request,
+        "measurement/semaforo.html",
+        {
+            "titulo": "Semáforo de delegación",
+            "periodo": periodo,
+            "periodos": Periodo.objects.all(),
+            "resumen": resumen,
+            "delegaciones": (
+                Delegacion.objects.all()
+                if es_transversal(request.user)
+                else []
+            ),
+            "delegacion_sel": delegacion_sel,
+            "hoy": timezone.localdate(),
+            "page_obj": page_obj,
+            "page_size": page_size,
+            "page_size_options": PAGE_SIZE_OPTIONS,
+        },
+    )
+
+@permiso_requerido("indicadores.ver")
+def vista_global_cargos(request):
+    """
+    RF-031: vista global del desempeño agrupado por cargo.
+
+    Consolida funcionarios, metas, resultados y fechas relevantes,
+    respetando el ámbito de acceso del usuario.
+    """
+    periodo = _periodo_seleccionado(request)
+
+    funcionarios = filtrar_por_ambito(
+        Funcionario.objects.filter(
+            estado=Funcionario.ESTADO_ACTIVO
+        ).select_related(
+            "cargo",
+            "delegacion",
+        ),
+        request.user,
+        "delegacion_id",
+    )
+
+    delegacion_sel = request.GET.get(
+        "delegacion",
+        "",
+    ).strip()
+
+    cargo_sel = request.GET.get(
+        "cargo",
+        "",
+    ).strip()
 
     if delegacion_sel.isdigit() and es_transversal(request.user):
         funcionarios = funcionarios.filter(
@@ -1287,7 +1294,6 @@ def vista_global_cargos(request):
             "hoy": timezone.localdate(),
         },
     )
-
 
 @login_required
 @informe_excel("Informe de metas")
