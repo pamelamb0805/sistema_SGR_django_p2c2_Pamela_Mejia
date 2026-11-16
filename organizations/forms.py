@@ -10,6 +10,61 @@ from .models import Cargo, Delegacion, Funcionario, ItemMedible, Rol, Usuario
 from django.core.exceptions import ValidationError
 from django.core.exceptions import ValidationError
 
+def _roles_disponibles_para_actor(actor, roles_actuales_ids=None):
+    """
+    Devuelve únicamente los roles que el actor puede delegar.
+
+    Conserva los roles que ya tenía el funcionario editado,
+    pero no permite conceder nuevos privilegios superiores.
+    """
+    roles_actuales_ids = set(roles_actuales_ids or [])
+
+    if actor is None:
+        return Rol.objects.all()
+
+    if not getattr(actor, "is_authenticated", False):
+        return Rol.objects.none()
+
+    if getattr(actor, "is_superuser", False):
+        return Rol.objects.all()
+
+    from core.mixins import get_permisos, get_alcances
+
+    permisos_actor = get_permisos(actor)
+    alcances_actor = get_alcances(actor)
+
+    roles_permitidos = []
+
+    for rol in Rol.objects.all():
+
+        # Permite conservar roles que ya estaban asignados.
+        if rol.pk in roles_actuales_ids:
+            roles_permitidos.append(rol.pk)
+            continue
+
+        # Nadie puede delegar el rol Administrador.
+        if rol.nombre_rol.strip().casefold() == "administrador":
+            continue
+
+        # El alcance global está reservado al superusuario.
+        if rol.alcance_autorizado == "global":
+            continue
+
+        permisos_rol = set(rol.permisos or [])
+
+        if not permisos_rol.issubset(permisos_actor):
+            continue
+
+        if (
+            rol.alcance_autorizado == "multiples"
+            and "multiples" not in alcances_actor
+        ):
+            continue
+
+        roles_permitidos.append(rol.pk)
+
+    return Rol.objects.filter(pk__in=roles_permitidos)
+
 class DelegacionForm(BootstrapFormMixin, forms.ModelForm):
 
     class Meta:
@@ -197,9 +252,9 @@ class RolForm(BootstrapFormMixin, forms.ModelForm):
 class FuncionarioForm(BootstrapFormMixin, forms.ModelForm):
 
     roles = forms.ModelMultipleChoiceField(
-        queryset=Rol.objects.all(),
+        queryset=Rol.objects.none(),
         label="Roles",
-        help_text="Seleccione uno o más roles (Ctrl + clic para varios).",
+        help_text="Seleccione uno o más roles autorizados.",
         error_messages={
             "required": "Debe asignar al menos un rol."
         },
@@ -224,7 +279,10 @@ class FuncionarioForm(BootstrapFormMixin, forms.ModelForm):
             estado=Delegacion.ESTADO_ACTIVA
         )
 
+        roles_actuales_ids = set()
+
         if self.instance and self.instance.pk:
+
             cargos = Cargo.objects.filter(
                 Q(pk=self.instance.cargo_id)
                 | Q(pk__in=cargos.values("pk"))
@@ -235,12 +293,14 @@ class FuncionarioForm(BootstrapFormMixin, forms.ModelForm):
                 | Q(pk=self.instance.delegacion_id)
             )
 
-            self.fields["roles"].initial = list(
+            roles_actuales_ids = set(
                 self.instance.roles.values_list(
                     "pk",
                     flat=True,
                 )
             )
+
+            self.fields["roles"].initial = roles_actuales_ids
 
         if actor is not None:
             from core.mixins import filtrar_por_ambito
@@ -252,7 +312,16 @@ class FuncionarioForm(BootstrapFormMixin, forms.ModelForm):
             )
 
         self.fields["cargo"].queryset = cargos
+
         self.fields["delegacion"].queryset = delegaciones
+
+        self.fields["roles"].queryset = (
+            _roles_disponibles_para_actor(
+                actor,
+                roles_actuales_ids=roles_actuales_ids,
+            )
+        )
+
     def clean_identificador_institucional(self):
         return self.cleaned_data[
             "identificador_institucional"
@@ -262,6 +331,7 @@ class FuncionarioForm(BootstrapFormMixin, forms.ModelForm):
         delegacion = self.cleaned_data["delegacion"]
 
         if not delegacion.activa:
+
             es_delegacion_actual = (
                 self.instance
                 and self.instance.pk
@@ -270,12 +340,11 @@ class FuncionarioForm(BootstrapFormMixin, forms.ModelForm):
 
             if not es_delegacion_actual:
                 raise ValidationError(
-                    "No se puede asignar un funcionario a una "
-                    "delegación inactiva."
+                    "No se puede asignar un funcionario "
+                    "a una delegación inactiva."
                 )
 
         return delegacion
-
 
 
 class AccesoForm(BootstrapFormMixin, forms.Form):

@@ -47,6 +47,7 @@ from core.mixins import (
     filtrar_por_ambito,
     tiene_rol,
     tiene_permiso,
+    auditar,
 )
 from core.pagination import PageSizeMixin
 from django.utils import timezone
@@ -766,10 +767,14 @@ class FuncionarioToggleView(AccionPostView):
             f"Funcionario «{objeto.nombre}» "
             f"{'activado' if objeto.activo else 'desactivado'}."
         )
+
 class FuncionarioAccesoView(EscrituraMixin, View):
     """
-    Crea el acceso de un funcionario o actualiza
-    sus credenciales.
+    Crea o actualiza el acceso de un funcionario.
+
+    Comprueba el ámbito autorizado, valida las delegaciones,
+    registra auditoría de los cambios y nunca almacena
+    contraseñas en texto plano ni en los eventos de auditoría.
     """
 
     http_method_names = ["post"]
@@ -777,6 +782,7 @@ class FuncionarioAccesoView(EscrituraMixin, View):
     permisos_permitidos = ("usuarios.editar",)
 
     def post(self, request, pk):
+
         funcionarios = filtrar_por_ambito(
             Funcionario.objects.select_related(
                 "delegacion",
@@ -802,120 +808,164 @@ class FuncionarioAccesoView(EscrituraMixin, View):
             actor=request.user,
         )
 
-        if form.is_valid():
-            try:
-                email = (
-                    form.cleaned_data["email"]
-                    .strip()
-                    .lower()
-                )
+        if not form.is_valid():
+            messages.error(
+                request,
+                _errores(form),
+            )
 
-                delegaciones = list(
-                    form.cleaned_data[
-                        "delegaciones_autorizadas"
-                    ]
-                )
+            return redirect(
+                "organizations:funcionario_detail",
+                pk=funcionario.pk,
+            )
 
-                delegaciones_existentes_ids = (
-                    set(
+        try:
+            email = (
+                form.cleaned_data["email"]
+                .strip()
+                .lower()
+            )
+
+            delegaciones = list(
+                form.cleaned_data[
+                    "delegaciones_autorizadas"
+                ]
+            )
+
+            delegaciones_existentes_ids = (
+                set(
+                    usuario.delegaciones_autorizadas.values_list(
+                        "pk",
+                        flat=True,
+                    )
+                )
+                if usuario
+                else set()
+            )
+
+            Seguridad.validar_delegaciones(
+                funcionario,
+                delegaciones,
+                delegaciones_existentes_ids=(
+                    delegaciones_existentes_ids
+                ),
+                validar_principal=usuario is None,
+            )
+
+            _validar_delegaciones_asignables(
+                request.user,
+                delegaciones,
+            )
+
+            if usuario:
+
+                if Usuario.objects.filter(
+                    email__iexact=email
+                ).exclude(
+                    pk=usuario.pk
+                ).exists():
+
+                    raise ReglaNegocioError(
+                        "Ese correo electrónico ya está registrado."
+                    )
+
+                with transaction.atomic():
+
+                    anterior = {
+                        "email": usuario.email,
+                        "activo_acceso": usuario.activo_acceso,
+                        "delegaciones_autorizadas": sorted(
+                            delegaciones_existentes_ids
+                        ),
+                    }
+
+                    usuario.email = email
+
+                    if (
+                        not funcionario.activo
+                        or not funcionario.delegacion.activa
+                    ):
+                        usuario.activo_acceso = False
+
+                    usuario.save(
+                        update_fields=[
+                            "email",
+                            "activo_acceso",
+                        ]
+                    )
+
+                    usuario.delegaciones_autorizadas.set(
+                        delegaciones
+                    )
+
+                    nuevas_delegaciones_ids = sorted(
                         usuario.delegaciones_autorizadas.values_list(
                             "pk",
                             flat=True,
                         )
                     )
-                    if usuario
-                    else set()
-                )
 
-                Seguridad.validar_delegaciones(
-                    funcionario,
-                    delegaciones,
-                    delegaciones_existentes_ids=(
-                        delegaciones_existentes_ids
-                    ),
-                    validar_principal=usuario is None,
-                )
+                    nuevo = {
+                        "email": usuario.email,
+                        "activo_acceso": usuario.activo_acceso,
+                        "delegaciones_autorizadas": (
+                            nuevas_delegaciones_ids
+                        ),
+                    }
 
-                _validar_delegaciones_asignables(
-                    request.user,
-                    delegaciones,
-                )
-
-                if usuario:
-                    if Usuario.objects.filter(
-                        email__iexact=email
-                    ).exclude(
-                        pk=usuario.pk
-                    ).exists():
-                        raise ReglaNegocioError(
-                            "Ese correo electrónico ya está registrado."
+                    if anterior != nuevo:
+                        auditar(
+                            request.user,
+                            "MODIFICAR_ACCESO",
+                            "usuario",
+                            usuario.pk,
+                            anterior,
+                            nuevo,
                         )
 
-                    with transaction.atomic():
-                        usuario.email = email
-
-                        if not funcionario.activo:
-                            usuario.activo_acceso = False
-
-                        usuario.save(
-                            update_fields=[
-                                "email",
-                                "activo_acceso",
-                            ]
-                        )
-
-                        usuario.delegaciones_autorizadas.set(
-                            delegaciones
-                        )
-
-                        password = form.cleaned_data.get(
-                            "password1"
-                        )
-
-                        if password:
-                            Seguridad.cambiar_contrasenia(
-                                usuario,
-                                password,
-                                request.user,
-                            )
-
-                    messages.success(
-                        request,
-                        "Acceso actualizado correctamente.",
+                    password = form.cleaned_data.get(
+                        "password1"
                     )
 
-                else:
-                    Seguridad.crear_usuario(
-                        funcionario=funcionario,
-                        username=form.cleaned_data["username"],
-                        password=form.cleaned_data["password1"],
-                        actor=request.user,
-                        email=email,
-                        delegaciones=delegaciones,
-                    )
+                    if password:
+                        Seguridad.cambiar_contrasenia(
+                            usuario,
+                            password,
+                            request.user,
+                        )
 
-                    messages.success(
-                        request,
-                        "Acceso creado correctamente.",
-                    )
-
-            except ReglaNegocioError as exc:
-                messages.error(
+                messages.success(
                     request,
-                    str(exc),
+                    "Acceso actualizado correctamente.",
                 )
 
-        else:
+            else:
+
+                Seguridad.crear_usuario(
+                    funcionario=funcionario,
+                    username=form.cleaned_data["username"],
+                    password=form.cleaned_data["password1"],
+                    actor=request.user,
+                    email=email,
+                    delegaciones=delegaciones,
+                )
+
+                messages.success(
+                    request,
+                    "Acceso creado correctamente.",
+                )
+
+        except ReglaNegocioError as exc:
+
             messages.error(
                 request,
-                _errores(form),
+                str(exc),
             )
 
         return redirect(
             "organizations:funcionario_detail",
             pk=funcionario.pk,
         )
-
 
 class UsuarioListView(
     PageSizeMixin,
