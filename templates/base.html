@@ -14,6 +14,10 @@
     <link rel="stylesheet" href="{% static 'css/sgr.css' %}?v=20261111-1">
     <link rel="stylesheet" href="{% static 'css/sgr-redesign.css' %}?v=20261114-1">
 
+    {% if user.is_authenticated %}
+    <link rel="stylesheet" href="{% static 'css/sgr-tutorial-chat.css' %}?v=1">
+    {% endif %}
+
     <style>
         .sgr-notification-menu {
             width: min(390px, calc(100vw - 24px));
@@ -149,6 +153,7 @@
 <body
     class="{% if user.is_authenticated %}sgr-app{% else %}sgr-guest{% endif %}"
     data-sgr-module="{{ request.resolver_match.app_name|default:'' }}"
+    data-sgr-url-name="{{ request.resolver_match.url_name|default:'' }}"
 >
 
 <a class="visually-hidden-focusable position-absolute p-2 bg-white" href="#contenido">
@@ -197,6 +202,7 @@
             id="sgrNotificationDropdown"
             class="btn sgr-notification-bell"
             type="button"
+            data-bs-toggle="dropdown"
             aria-expanded="false"
             aria-controls="sgrNotificationMenu"
             aria-label="Ver notificaciones"
@@ -242,54 +248,10 @@
                 {% csrf_token %}
             </form>
 
-            <div 
-    id="sgrNotificationList" 
-    class="sgr-notification-list"
-    data-list-url="{% url 'audit:notificaciones_listar' %}">
-
-    {% for notificacion in sgr_notificaciones %}
-    {% with operacion=notificacion.operacion %}
-    <div
-        class="sgr-notification-item{% if not notificacion.leida %} sgr-notification-unread{% endif %}"
-        data-notification-id="{{ notificacion.id_notificacion }}">
-
-        <div class="d-flex align-items-start gap-2">
-            <i class="bi bi-activity text-primary mt-1"></i>
-
-            <div class="flex-grow-1">
-                <div class="sgr-notification-title">
-                    {{ operacion.modulo_display }} · {{ operacion.accion_display }}
-                </div>
-
-                <span class="sgr-notification-detail">
-                    {{ operacion.object_label }}
-                </span>
-
-                <span class="sgr-notification-detail">
-                    <i class="bi bi-person me-1"></i>
-                    {{ operacion.actor_display }}
-                </span>
-
-                <span class="sgr-notification-detail">
-                    <i class="bi bi-diagram-3 me-1"></i>
-                    {{ operacion.delegacion_display }}
-                </span>
-
-                <span class="sgr-notification-date">
-                    <i class="bi bi-clock me-1"></i>
-                    {{ notificacion.fecha_creacion|date:"d/m/Y H:i" }}
-                </span>
-            </div>
-        </div>
-    </div>
-    {% endwith %}
-    {% empty %}
-    <div id="sgrNotificationEmpty" class="sgr-notification-empty">
-        <i class="bi bi-bell-slash fs-3 d-block mb-2"></i>
-        No hay notificaciones recientes.
-    </div>
-    {% endfor %}
-</div>
+            <div
+                id="sgrNotificationList"
+                class="sgr-notification-list"
+                data-list-url="{% url 'audit:notificaciones_listar' %}">
 
                 {% for notificacion in sgr_notificaciones %}
                 {% with operacion=notificacion.operacion %}
@@ -333,11 +295,9 @@
                     No hay notificaciones recientes.
                 </div>
                 {% endfor %}
-
             </div>
         </div>
     </div>
-
 
     <!-- PERFIL -->
     <div class="dropdown me-2 me-lg-3">
@@ -650,12 +610,18 @@
 {% block content %}{% endblock %}
 
 {% if user.is_authenticated %}
+
             <footer class="text-body-secondary small border-top mt-5 pt-3">
                 SGR · Delegaciones municipales · Proyecto académico INACAP — solo datos ficticios.
             </footer>
+
         </main>
     </div>
 </div>
+
+<!-- ASISTENTE TUTORIAL SGR: SOLO USUARIOS AUTENTICADOS -->
+{% include "partials/_sgr_tutorial_chat.html" %}
+
 {% else %}
     </main>
 {% endif %}
@@ -666,6 +632,10 @@
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.10.8/dist/sweetalert2.all.min.js"></script>
 <script src="{% static 'js/alerts.js' %}"></script>
 <script src="{% static 'js/sgr-websocket.js' %}?v=20261111-4"></script>
+
+{% if user.is_authenticated %}
+<script src="{% static 'js/sgr-tutorial-chat.js' %}?v=1" defer></script>
+{% endif %}
 
 {% block extra_js %}{% endblock %}
 
