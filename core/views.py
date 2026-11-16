@@ -41,6 +41,7 @@ import hmac
 from django.db import transaction
 
 from organizations.models import PasswordResetCode
+from core.activity_metrics import construir_resumen_actividad_reciente
 
 class SGRLoginView(LoginView):
     template_name = "registration/login.html"
@@ -485,6 +486,27 @@ def dashboard(request):
 
         datos["total_funcionarios"] = funcionarios_visibles.count()
 
+    # RF-030: actividad reciente por funcionario.
+    # funcionarios_visibles ya está limitado al ámbito autorizado.
+    datos["actividad_reciente"] = (
+        construir_resumen_actividad_reciente(
+            funcionarios=(
+                funcionarios_visibles
+                if es_supervision
+                else (
+                    funcionarios_visibles.filter(pk=funcionario.pk)
+                    if funcionario is not None
+                    and funcionarios_visibles is not None
+                    else Funcionario.objects.none()
+                )
+            ),
+            periodo=periodo,
+            hoy=hoy,
+        )
+        if funcionarios_visibles is not None
+        else []
+    )
+    
     # METAS DEL PERÍODO
     if (
         Meta is not None
