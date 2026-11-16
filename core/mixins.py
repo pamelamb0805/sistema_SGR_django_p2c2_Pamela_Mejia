@@ -27,6 +27,7 @@ from django.core.exceptions import ImproperlyConfigured
 
 from django.apps import apps
 from django.db import transaction
+from django import forms
 
 logger = logging.getLogger(__name__)
 
@@ -538,9 +539,32 @@ class ModoMixin:
 
 
 class GuardarMixin:
-    """form_valid delegando en un servicio; los errores de regla de negocio vuelven al formulario."""
+    """
+    Guardado centralizado con control de concurrencia optimista.
+
+    Cada formulario de edición recibe una huella del registro
+    cuando se abre.
+
+    Al guardar:
+    1. Bloquea la fila en la base de datos.
+    2. Calcula nuevamente su huella.
+    3. Compara la huella actual con la enviada por el formulario.
+    4. Si hubo una modificación previa, rechaza el guardado.
+    5. Si no hubo cambios, ejecuta el guardado dentro
+       de la misma transacción.
+    """
+
     success_url_name = ""
     mensaje_exito = "Guardado correctamente."
+
+    campo_version_concurrencia = "_sgr_version"
+
+    mensaje_conflicto_concurrencia = (
+        "Este registro fue modificado por otro usuario después "
+        "de que abriste el formulario. No se guardaron tus cambios "
+        "para evitar sobrescribir información. Actualiza la página, "
+        "revisa los datos actuales y vuelve a realizar tu modificación."
+    )
 
     def guardar(self, form):
         raise NotImplementedError
@@ -548,15 +572,132 @@ class GuardarMixin:
     def get_success_url(self):
         return reverse(self.success_url_name)
 
+    def get_form(self, form_class=None):
+        """
+        Incorpora un campo oculto con la huella del registro
+        cuando se trata de una edición.
+        """
+
+        form = super().get_form(form_class)
+
+        instancia = getattr(
+            self,
+            "object",
+            None,
+        )
+
+        if instancia is None or not instancia.pk:
+            return form
+
+        from core.services import huella_concurrencia
+
+        form.fields[
+            self.campo_version_concurrencia
+        ] = forms.CharField(
+            required=True,
+            widget=forms.HiddenInput(),
+        )
+
+        # Solo se genera la huella inicial al mostrar el formulario.
+        # En un POST se conserva el valor enviado por el navegador.
+        if not form.is_bound:
+            form.initial[
+                self.campo_version_concurrencia
+            ] = huella_concurrencia(instancia)
+
+        return form
+
     def form_valid(self, form):
+        """
+        Ejecuta el guardado verificando que el registro no haya
+        cambiado desde que se abrió el formulario.
+        """
+
+        instancia = getattr(
+            self,
+            "object",
+            None,
+        )
+
+        # -----------------------------------------------------
+        # CREACIÓN: no requiere comparar una versión anterior.
+        # -----------------------------------------------------
+
+        if instancia is None or not instancia.pk:
+            try:
+                self.guardar(form)
+
+            except ReglaNegocioError as exc:
+                form.add_error(None, str(exc))
+                return self.form_invalid(form)
+
+            messages.success(
+                self.request,
+                self.mensaje_exito,
+            )
+
+            return redirect(self.get_success_url())
+
+        # -----------------------------------------------------
+        # EDICIÓN: control de concurrencia.
+        # -----------------------------------------------------
+
+        from core.services import huella_concurrencia
+
+        version_enviada = form.cleaned_data.get(
+            self.campo_version_concurrencia
+        )
+
         try:
-            self.guardar(form)
+            with transaction.atomic():
+
+                # Bloquea el registro hasta finalizar la operación.
+                registro_actual = (
+                    type(instancia)
+                    ._base_manager
+                    .select_for_update()
+                    .get(pk=instancia.pk)
+                )
+
+                version_actual = huella_concurrencia(
+                    registro_actual
+                )
+
+                # Detecta si otro usuario guardó primero.
+                if (
+                    not version_enviada
+                    or version_enviada != version_actual
+                ):
+                    form.add_error(
+                        None,
+                        self.mensaje_conflicto_concurrencia,
+                    )
+
+                    return self.form_invalid(form)
+
+                # La fila permanece bloqueada mientras se ejecuta
+                # el servicio CRUD y se confirma la transacción.
+                self.guardar(form)
+
+        except type(instancia).DoesNotExist:
+            form.add_error(
+                None,
+                "El registro ya no existe. No se puede guardar "
+                "la modificación.",
+            )
+
+            return self.form_invalid(form)
+
         except ReglaNegocioError as exc:
             form.add_error(None, str(exc))
             return self.form_invalid(form)
-        messages.success(self.request, self.mensaje_exito)
-        return redirect(self.get_success_url())
 
+        messages.success(
+            self.request,
+            self.mensaje_exito,
+        )
+
+        return redirect(self.get_success_url())
 
 class AccionPostView(RolRequeridoMixin, View):
     """Acciones que cambian datos (activar, eliminar...): solo POST, con rol exigido."""

@@ -12,6 +12,7 @@ from django.db.models import ProtectedError
 from django.forms.models import model_to_dict
 
 from .exceptions import ReglaNegocioError
+import hashlib
 
 _EXCLUIDOS = [
     "password",
@@ -53,6 +54,43 @@ def snapshot(instancia):
         ensure_ascii=False,
     )
 
+def huella_concurrencia(instancia):
+    """
+    Genera una huella SHA-256 del estado actual de un registro.
+
+    Incluye:
+    - Todos los campos concretos del modelo.
+    - Las relaciones muchos a muchos.
+
+    La huella permite detectar si otro usuario modificó
+    el registro después de que se abrió el formulario.
+    """
+
+    valores = {}
+
+    for campo in instancia._meta.concrete_fields:
+        valores[campo.attname] = getattr(
+            instancia,
+            campo.attname,
+        )
+
+    for campo in instancia._meta.many_to_many:
+        valores[campo.name] = list(
+            getattr(instancia, campo.name)
+            .order_by("pk")
+            .values_list("pk", flat=True)
+        )
+
+    contenido = json.dumps(
+        valores,
+        default=str,
+        sort_keys=True,
+        ensure_ascii=False,
+    )
+
+    return hashlib.sha256(
+        contenido.encode("utf-8")
+    ).hexdigest()
 
 def mensaje_validacion(exc):
     if hasattr(exc, "error_dict"):
