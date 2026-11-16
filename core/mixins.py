@@ -484,11 +484,14 @@ def denegar_acceso(request, detalle="No tiene permisos para acceder a esta secci
 # Mixins para vistas basadas en clases
 # ---------------------------------------------------------------------------
 
+
 class RolRequeridoMixin(LoginRequiredMixin):
     """
-    Exige autenticación y uno de estos requisitos:
-    - Alguno de los roles permitidos.
-    - Alguno de los permisos funcionales permitidos.
+    Control de acceso basado en permisos funcionales configurados
+    en los roles asignados al funcionario.
+
+    Los roles no conceden acceso por sí solos.
+    Cada vista protegida debe declarar permisos_permitidos.
     """
 
     roles_permitidos = ()
@@ -498,37 +501,36 @@ class RolRequeridoMixin(LoginRequiredMixin):
         if not request.user.is_authenticated:
             return self.handle_no_permission()
 
-        autorizado = False
+        # El superusuario técnico conserva acceso total.
+        if request.user.is_superuser:
+            return super().dispatch(request, *args, **kwargs)
 
-        if self.roles_permitidos:
-            autorizado = tiene_rol(
-                request.user,
-                *self.roles_permitidos,
+        # Una vista protegida sin permisos declarados debe denegar.
+        if not self.permisos_permitidos:
+            return denegar_acceso(
+                request,
+                "La operación no tiene permisos funcionales configurados.",
             )
 
-        if (
-            not autorizado
-            and self.permisos_permitidos
+        # El permiso debe estar asignado en alguno de los roles
+        # del funcionario autenticado.
+        if not tiene_permiso(
+            request.user,
+            *self.permisos_permitidos,
         ):
-            autorizado = tiene_permiso(
-                request.user,
-                *self.permisos_permitidos,
-            )
-
-        if (
-            not self.roles_permitidos
-            and not self.permisos_permitidos
-        ):
-            autorizado = True
-
-        if not autorizado:
             return denegar_acceso(request)
 
-        return super().dispatch(
-            request,
-            *args,
-            **kwargs,
-        )
+        # No permitir operaciones a funcionarios inactivos
+        # ni a usuarios sin funcionario asociado.
+        funcionario = get_funcionario(request.user)
+
+        if funcionario is None or not funcionario.activo:
+            return denegar_acceso(
+                request,
+                "Su cuenta no tiene un funcionario activo asociado.",
+            )
+
+        return super().dispatch(request, *args, **kwargs)
 
     def get_paginate_by(self, queryset):
         valores_permitidos = (10, 15, 20)
@@ -566,13 +568,11 @@ class AmbitoDelegacionMixin:
 # Bloques reutilizables para vistas CRUD (todas las apps)
 # ---------------------------------------------------------------------------
 
+
 class ModoMixin:
     """
-    Contexto de presentación.
-
-    Los botones se muestran únicamente cuando el usuario posee
-    el permiso de edición configurado. La seguridad real siempre
-    se verifica nuevamente en la vista que recibe la operación.
+    Controla la presentación de botones según los permisos funcionales.
+    Ocultar botones no reemplaza la autorización del servidor.
     """
 
     modo = "lista"
@@ -583,10 +583,13 @@ class ModoMixin:
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
 
+        usuario = self.request.user
+
         puede_editar = bool(
-            self.permisos_edicion
+            usuario.is_authenticated
+            and self.permisos_edicion
             and tiene_permiso(
-                self.request.user,
+                usuario,
                 *self.permisos_edicion,
             )
         )
@@ -760,12 +763,13 @@ class GuardarMixin:
 
         return redirect(self.get_success_url())
 
+
 class AccionPostView(RolRequeridoMixin, View):
     """
     Acciones que modifican información.
 
     Cada subclase debe declarar permisos_permitidos.
-    Las acciones solo aceptan POST.
+    Solo acepta POST y verifica autorización en el servidor.
     """
 
     http_method_names = ["post"]
