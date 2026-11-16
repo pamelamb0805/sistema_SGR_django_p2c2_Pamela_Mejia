@@ -101,119 +101,105 @@ class CRUDPeriodo:
 
 
     @staticmethod
-    def _registrar_version_reglas(periodo, actor=None, datos=None):
+    def _registrar_version(
+        meta,
+        actor=None,
+        datos_anteriores=None,
+        fecha_inicio_anterior=None,
+    ):
         """
-        Registra una versión de las reglas de cálculo de un período.
-        Cierra la versión anterior y conserva el historial.
+        Registra el historial inmutable de una meta.
+
+        - Una meta nueva comienza en versión 1.
+        - Una meta modificada cierra la versión anterior.
+        - Una meta antigua sin historial conserva su configuración
+        anterior como versión 1.
+        - Cada versión conserva autor, fecha y vigencia.
         """
         with transaction.atomic():
-            periodo = (
-                Periodo.objects
+            meta = (
+                Meta.objects
                 .select_for_update()
-                .get(pk=periodo.pk)
+                .select_related("item")
+                .get(pk=meta.pk)
             )
 
+            ahora = timezone.now()
+
+            datos_actuales = CRUDMeta._datos_version(meta)
+
             versiones = (
-                ReglaCalculoVersion.objects
+                MetaVersion.objects
                 .select_for_update()
-                .filter(periodo=periodo)
+                .filter(objeto_id=meta.pk)
                 .order_by("-numero_version")
             )
 
             ultima = versiones.first()
 
-            if datos is None:
-                configuracion = (
-                    dict(ultima.datos or {})
-                    if ultima
-                    else CRUDPeriodo._datos_reglas_actuales()
-                )
-            else:
-                if not isinstance(datos, dict):
-                    raise ReglaNegocioError(
-                        "La configuración de reglas no es válida."
-                    )
-                configuracion = dict(datos)
-
-            campos = (
-                "tope_cumplimiento",
-                "umbral_colectivo",
-                "umbral_ambar",
+            vigentes = list(
+                versiones.filter(vigente_hasta__isnull=True)
             )
 
-            for campo in campos:
-                if campo not in configuracion:
-                    raise ReglaNegocioError(
-                        f"Falta el parámetro {campo}."
-                    )
-
-            try:
-                tope = Decimal(str(configuracion["tope_cumplimiento"]))
-                colectivo = Decimal(str(configuracion["umbral_colectivo"]))
-                ambar = Decimal(str(configuracion["umbral_ambar"]))
-            except (ValueError, TypeError, ArithmeticError) as exc:
-                raise ReglaNegocioError(
-                    "Los parámetros de las reglas deben ser numéricos."
-                ) from exc
-
-            if tope <= 0:
-                raise ReglaNegocioError(
-                    "El tope de cumplimiento debe ser mayor que cero."
-                )
-
-            if not Decimal("0") <= colectivo <= Decimal("100"):
-                raise ReglaNegocioError(
-                    "El umbral colectivo debe estar entre 0 y 100."
-                )
-
-            if not Decimal("0") <= ambar <= Decimal("100"):
-                raise ReglaNegocioError(
-                    "El umbral ámbar debe estar entre 0 y 100."
-                )
-
-            configuracion.update({
-                "tope_cumplimiento": str(tope),
-                "umbral_colectivo": str(colectivo),
-                "umbral_ambar": str(ambar),
-            })
-
-            # No genera versiones repetidas si la configuración no cambió.
+            # Evitar versiones repetidas si no hubo cambios.
             if (
-                ultima
-                and ultima.vigente_hasta is None
-                and ultima.datos == configuracion
+                len(vigentes) == 1
+                and vigentes[0].datos == datos_actuales
             ):
-                return ultima
+                return vigentes[0]
 
-            ahora = timezone.now()
-            numero_version = (
-                ultima.numero_version + 1
-                if ultima
-                else 1
-            )
+            if ultima is None and datos_anteriores is not None:
+                fecha_anterior = (
+                    fecha_inicio_anterior
+                    or meta.fecha_version
+                    or timezone.localdate()
+                )
 
-            versiones.filter(
-                vigente_hasta__isnull=True
-            ).update(
-                vigente_hasta=ahora
-            )
+                inicio_anterior = timezone.make_aware(
+                    datetime.combine(
+                        fecha_anterior,
+                        time.min,
+                    )
+                )
 
-            periodo.version_parametros = numero_version
-            periodo.save(update_fields=["version_parametros"])
+                MetaVersion.objects.create(
+                    meta=meta,
+                    objeto_id=meta.pk,
+                    numero_version=1,
+                    vigente_desde=inicio_anterior,
+                    vigente_hasta=ahora,
+                    datos=dict(datos_anteriores),
+                    creado_por=None,
+                )
 
-            return ReglaCalculoVersion.objects.create(
-                periodo=periodo,
-                numero_version=numero_version,
+                numero_nuevo = 2
+
+            else:
+                for version in vigentes:
+                    version.vigente_hasta = ahora
+                    version.save(
+                        update_fields=["vigente_hasta"]
+                    )
+
+                numero_nuevo = (
+                    ultima.numero_version + 1
+                    if ultima
+                    else 1
+                )
+
+            return MetaVersion.objects.create(
+                meta=meta,
+                objeto_id=meta.pk,
+                numero_version=numero_nuevo,
                 vigente_desde=ahora,
                 vigente_hasta=None,
-                datos=configuracion,
+                datos=datos_actuales,
                 creado_por=(
                     actor
                     if getattr(actor, "is_authenticated", False)
                     else None
                 ),
             )
-
     @staticmethod
     def actualizar_reglas_periodo(periodo, datos, actor=None):
         """Registra una nueva versión de reglas y recalcula el período abierto."""
@@ -948,18 +934,27 @@ class CRUDMeta:
     # MODIFICAR META Y VERSIONAR
     # ---------------------------------------------------------
 
-
     @staticmethod
     def modificar_meta(meta, actor=None):
+        """
+        Modifica una meta sin alterar su identidad histórica.
+
+        Conserva funcionario, ítem y período originales.
+        Registra los parámetros anteriores y crea una nueva versión.
+        """
         with transaction.atomic():
             original = (
                 Meta.objects
                 .select_for_update()
+                .select_related(
+                    "item",
+                    "periodo",
+                    "funcionario",
+                    "cargo",
+                )
                 .get(pk=meta.pk)
             )
 
-            # No se permite trasladar una meta a otro funcionario,
-            # ítem o período. Para ello debe crearse otra meta.
             identificacion_original = (
                 original.funcionario_id,
                 original.item_id,
@@ -979,8 +974,13 @@ class CRUDMeta:
                     "Para otro período debe crearse una nueva meta."
                 )
 
-            # Fotografía anterior antes de modificar los valores.
-            datos_anteriores = CRUDMeta._datos_version(original)
+            # Capturar los datos y la fecha originales ANTES
+            # de que _preparar actualice fecha_version.
+            datos_anteriores = CRUDMeta._datos_version(
+                original
+            )
+
+            fecha_inicio_anterior = original.fecha_version
 
             CRUDMeta._preparar(meta)
 
@@ -989,27 +989,24 @@ class CRUDMeta:
                 es_nueva=False,
             )
 
-            # Persiste los nuevos parámetros.
             guardar(
                 meta,
                 actor,
                 "meta",
             )
 
-            # Cierra la versión anterior y registra la nueva.
             CRUDMeta._registrar_version(
                 meta,
                 actor=actor,
                 datos_anteriores=datos_anteriores,
+                fecha_inicio_anterior=fecha_inicio_anterior,
             )
 
-            # Actualiza el indicador con la configuración vigente.
             CalculoIndicadores.recalcular_indicador_meta(
                 meta
             )
 
-        return meta
-
+            return meta
     # ---------------------------------------------------------
     # ELIMINAR META
     # ---------------------------------------------------------
