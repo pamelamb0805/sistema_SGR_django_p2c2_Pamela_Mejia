@@ -644,12 +644,13 @@ class CRUDRol:
             if actuales == ids_nuevos:
                 return
 
-            validar_roles_delegables(
+            
+            _validar_roles_delegables(
                 actor,
                 nuevos.values(),
                 roles_actuales_ids=actuales,
             )
-            
+
             funcionario.funcionario_roles.exclude(
                 rol_id__in=ids_nuevos
             ).delete()

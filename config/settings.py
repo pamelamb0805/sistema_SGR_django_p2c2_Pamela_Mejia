@@ -225,7 +225,3 @@ else:
         "En producción debes configurar REDIS_URL "
         "para utilizar Django Channels con Redis."
     )
-    "default": {
-        "BACKEND": "channels.layers.InMemoryChannelLayer",
-    }
-}
