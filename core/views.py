@@ -272,7 +272,7 @@ def construir_alertas_operativas(user, periodo=None, hoy=None):
 
         agregar_alerta(
             tipo="evidencia",
-            titulo="Evidencia pendiente de revisión",
+            titulo=f"Evidencia pendiente: {evidencia.codigo_evidencia}",
             motivo=(
                 f"La evidencia {evidencia.codigo_evidencia} "
                 f"de la actividad {actividad.codigo} "
@@ -386,7 +386,7 @@ def construir_alertas_operativas(user, periodo=None, hoy=None):
 
                 agregar_alerta(
                     tipo="bajo_umbral",
-                    titulo="Avance bajo el umbral",
+                    titulo=f"Avance bajo el umbral: {nombre_item} (meta #{meta.pk})",
                     motivo=(
                         f"{nombre_item}: cumplimiento "
                         f"{cumplimiento}% frente al umbral "
@@ -416,14 +416,13 @@ def construir_alertas_operativas(user, periodo=None, hoy=None):
 
         if hasattr(fecha_alerta, "date"):
             fecha_alerta = fecha_alerta.date()
-
-        # La clave identifica el origen concreto de la alerta.
+        # La identidad no debe depender del motivo ni de la fecha:
+        # esos datos pueden cambiar sin que cambie el origen de la alerta.
         identidad = "|".join([
             str(datos_alerta["tipo"]),
             str(datos_alerta["titulo"]),
             str(datos_alerta["responsable"]),
             str(datos_alerta["url"]),
-            str(datos_alerta["motivo"]),
         ])
 
         clave = hashlib.sha256(
