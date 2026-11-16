@@ -100,100 +100,6 @@ class CRUDPeriodo:
         }
 
     @staticmethod
-    def _registrar_version(
-        meta,
-        actor=None,
-        datos_anteriores=None,
-        fecha_inicio_anterior=None,
-    ):
-        """
-        Registra el versionamiento histórico de una meta.
-
-        Si la meta ya existía sin historial, conserva primero
-        su fotografía anterior y después registra la nueva.
-        """
-        with transaction.atomic():
-            meta_bloqueada = (
-                Meta.objects
-                .select_for_update()
-                .get(pk=meta.pk)
-            )
-
-            ahora = timezone.now()
-            datos_actuales = CRUDMeta._datos_version(meta_bloqueada)
-
-            versiones = (
-                MetaVersion.objects
-                .select_for_update()
-                .filter(objeto_id=meta_bloqueada.pk)
-                .order_by("-numero_version")
-            )
-
-            ultima = versiones.first()
-
-            vigentes = list(
-                versiones.filter(vigente_hasta__isnull=True)
-            )
-
-            if (
-                len(vigentes) == 1
-                and vigentes[0].datos == datos_actuales
-            ):
-                return vigentes[0]
-
-            if ultima is None and datos_anteriores is not None:
-                fecha_anterior = (
-                    fecha_inicio_anterior
-                    or meta_bloqueada.fecha_version
-                    or timezone.localdate()
-                )
-
-                inicio_anterior = timezone.make_aware(
-                    datetime.combine(
-                        fecha_anterior,
-                        time.min,
-                    )
-                )
-
-                MetaVersion.objects.create(
-                    meta=meta_bloqueada,
-                    objeto_id=meta_bloqueada.pk,
-                    numero_version=1,
-                    vigente_desde=inicio_anterior,
-                    vigente_hasta=ahora,
-                    datos=dict(datos_anteriores),
-                    creado_por=None,
-                )
-
-                numero_nuevo = 2
-            else:
-                for version in vigentes:
-                    version.vigente_hasta = ahora
-                    version.save(
-                        update_fields=["vigente_hasta"]
-                    )
-
-                numero_nuevo = (
-                    ultima.numero_version + 1
-                    if ultima
-                    else 1
-                )
-
-            return MetaVersion.objects.create(
-                meta=meta_bloqueada,
-                objeto_id=meta_bloqueada.pk,
-                numero_version=numero_nuevo,
-                vigente_desde=ahora,
-                vigente_hasta=None,
-                datos=datos_actuales,
-                creado_por=(
-                    actor
-                    if getattr(actor, "is_authenticated", False)
-                    else None
-                ),
-            )
-
-    @staticmethod
     def actualizar_reglas_periodo(periodo, datos, actor=None):
         """Registra una nueva versión de reglas y recalcula el período abierto."""
         _exigir_rol(
@@ -579,25 +485,35 @@ class CRUDMeta:
             "item_tipo": item.tipo,
         }
 
-
     @staticmethod
-    def _registrar_version(meta, actor=None, datos_anteriores=None):
+    def _registrar_version(
+        meta,
+        actor=None,
+        datos_anteriores=None,
+        fecha_inicio_anterior=None,
+    ):
         """
         Registra el historial de una meta.
-
-        Si es nueva, crea la versión 1.
-        Si cambia, cierra la versión anterior y crea la siguiente.
-        Si es una meta antigua sin historial, conserva sus datos
-        anteriores sin atribuirlos al usuario que la modifica.
+        Conserva la versión anterior cuando una meta antigua
+        todavía no tiene historial.
         """
         with transaction.atomic():
+            meta_bloqueada = (
+                Meta.objects
+                .select_for_update()
+                .select_related("item")
+                .get(pk=meta.pk)
+            )
+
             ahora = timezone.now()
-            datos_actuales = CRUDMeta._datos_version(meta)
+            datos_actuales = CRUDMeta._datos_version(
+                meta_bloqueada
+            )
 
             versiones = (
                 MetaVersion.objects
                 .select_for_update()
-                .filter(objeto_id=meta.pk)
+                .filter(objeto_id=meta_bloqueada.pk)
                 .order_by("-numero_version")
             )
 
@@ -615,16 +531,21 @@ class CRUDMeta:
 
             if ultima is None and datos_anteriores is not None:
                 fecha_anterior = (
-                    meta.fecha_version or timezone.localdate()
+                    fecha_inicio_anterior
+                    or meta_bloqueada.fecha_version
+                    or timezone.localdate()
                 )
 
                 inicio_anterior = timezone.make_aware(
-                    datetime.combine(fecha_anterior, time.min)
+                    datetime.combine(
+                        fecha_anterior,
+                        time.min,
+                    )
                 )
 
                 MetaVersion.objects.create(
-                    meta=meta,
-                    objeto_id=meta.pk,
+                    meta=meta_bloqueada,
+                    objeto_id=meta_bloqueada.pk,
                     numero_version=1,
                     vigente_desde=inicio_anterior,
                     vigente_hasta=ahora,
@@ -648,8 +569,8 @@ class CRUDMeta:
                 )
 
             return MetaVersion.objects.create(
-                meta=meta,
-                objeto_id=meta.pk,
+                meta=meta_bloqueada,
+                objeto_id=meta_bloqueada.pk,
                 numero_version=numero_nuevo,
                 vigente_desde=ahora,
                 vigente_hasta=None,
