@@ -297,10 +297,6 @@ class CRUDCompromiso:
         motivo,
         actor=None,
     ):
-        """
-        Reasigna un compromiso conservando la trazabilidad
-        del responsable anterior y del nuevo responsable.
-        """
         motivo = (motivo or "").strip()
 
         if not motivo:
@@ -336,6 +332,7 @@ class CRUDCompromiso:
                 )
 
             anterior = c.funcionario
+            delegacion_anterior_id = c.delegacion_id
             anterior_snapshot = snapshot(c)
 
             c.funcionario = nuevo_responsable
@@ -371,6 +368,7 @@ class CRUDCompromiso:
                 snapshot(c),
             )
 
+            # Notificar a la delegación nueva.
             _notificar_crud(
                 "compromiso",
                 "actualizar",
@@ -379,7 +377,18 @@ class CRUDCompromiso:
                 delegacion_id=c.delegacion_id,
             )
 
+            # Si cambió de delegación, notificar también a la anterior.
+            if delegacion_anterior_id != c.delegacion_id:
+                _notificar_crud(
+                    "compromiso",
+                    "actualizar",
+                    actor,
+                    c,
+                    delegacion_id=delegacion_anterior_id,
+                )
+
         return c
+
     @staticmethod
     def controlar_plazos(delegacion=None, queryset=None, hoy=None):
         """Próximos a vencer, vencidos y realizados fuera de plazo (RF-019)."""

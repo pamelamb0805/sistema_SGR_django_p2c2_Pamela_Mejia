@@ -13,7 +13,12 @@ from django.db import IntegrityError, transaction
 from django.db.models import ProtectedError, Q
 
 from core.exceptions import ReglaNegocioError
-from core.mixins import auditar, filtrar_por_ambito
+from core.mixins import (
+    auditar,
+    filtrar_por_ambito,
+    get_permisos,
+    get_alcances,
+)
 from core.services import (
     eliminar,
     guardar,
@@ -27,6 +32,59 @@ from .models import (
 from django.utils import timezone
 from datetime import datetime, time
 
+def _validar_roles_delegables(
+    actor,
+    roles,
+    roles_actuales_ids=None,
+):
+    """
+    Impide conceder privilegios superiores a los que
+    el administrador puede delegar.
+    """
+    if (
+        actor is None
+        or not getattr(actor, "is_authenticated", False)
+        or getattr(actor, "is_superuser", False)
+    ):
+        return
+
+    actuales = set(roles_actuales_ids or [])
+    permisos_actor = get_permisos(actor)
+    alcances_actor = get_alcances(actor)
+
+    for rol in roles:
+        if rol.pk in actuales:
+            continue
+
+        if rol.nombre_rol.strip().casefold() == "administrador":
+            raise ReglaNegocioError(
+                "Solo el superusuario técnico puede asignar "
+                "el rol Administrador."
+            )
+
+        if rol.alcance_autorizado == "global":
+            raise ReglaNegocioError(
+                "Solo el superusuario técnico puede conceder "
+                "alcance global."
+            )
+
+        permisos_rol = set(rol.permisos or [])
+
+        if not permisos_rol.issubset(permisos_actor):
+            raise ReglaNegocioError(
+                f"No puede conceder el rol «{rol.nombre_rol}»: "
+                "contiene permisos que usted no posee."
+            )
+
+        if (
+            rol.alcance_autorizado == "multiples"
+            and "multiples" not in alcances_actor
+        ):
+            raise ReglaNegocioError(
+                f"No puede conceder el alcance del rol "
+                f"«{rol.nombre_rol}»."
+            )
+        
 # Helpers compartidos (core.services)
 _guardar = guardar
 _eliminar = eliminar
@@ -508,16 +566,19 @@ class CRUDCargo:
 # CRUDRol (RF-002)
 # ---------------------------------------------------------------------------
 class CRUDRol:
+   
     @staticmethod
     def crear_rol(rol, actor=None):
+        _validar_roles_delegables(actor, [rol])
         return _guardar(rol, actor, "rol")
-
+   
     @staticmethod
     def mostrar_roles():
         return Rol.objects.all()
 
     @staticmethod
     def modificar_rol(rol, actor=None):
+        _validar_roles_delegables(actor, [rol])
         return _guardar(rol, actor, "rol")
 
     @staticmethod
@@ -570,6 +631,7 @@ class CRUDRol:
                 )
             )
 
+
             anterior = sorted(
                 funcionario.funcionario_roles.values_list(
                     "rol__nombre_rol",
@@ -582,6 +644,12 @@ class CRUDRol:
             if actuales == ids_nuevos:
                 return
 
+            validar_roles_delegables(
+                actor,
+                nuevos.values(),
+                roles_actuales_ids=actuales,
+            )
+            
             funcionario.funcionario_roles.exclude(
                 rol_id__in=ids_nuevos
             ).delete()

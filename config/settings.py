@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -194,8 +195,36 @@ SGR_EVIDENCIA_EXTENSIONES = ["jpg", "jpeg", "png", "pdf"]
 FILE_UPLOAD_MAX_MEMORY_SIZE = SGR_EVIDENCIA_MAX_MB * 1024 * 1024
 DATA_UPLOAD_MAX_MEMORY_SIZE = FILE_UPLOAD_MAX_MEMORY_SIZE
 
-#Websocket
-CHANNEL_LAYERS = {
+# ---------------------------------------------------------
+# WebSockets: Redis en producción e InMemory en desarrollo
+# ---------------------------------------------------------
+
+REDIS_URL = os.getenv("REDIS_URL", "").strip()
+
+if REDIS_URL:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {
+                "hosts": [REDIS_URL],
+                "capacity": 1500,
+                "expiry": 10,
+            },
+        },
+    }
+
+elif DEBUG:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels.layers.InMemoryChannelLayer",
+        },
+    }
+
+else:
+    raise ImproperlyConfigured(
+        "En producción debes configurar REDIS_URL "
+        "para utilizar Django Channels con Redis."
+    )
     "default": {
         "BACKEND": "channels.layers.InMemoryChannelLayer",
     }

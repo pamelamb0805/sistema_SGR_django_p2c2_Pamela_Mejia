@@ -555,7 +555,62 @@ class UsuarioAdminForm(BootstrapFormMixin, forms.ModelForm):
             )
 
         self.fields["funcionario"].queryset = funcionarios
-        self.fields["roles"].queryset = Rol.objects.all()
+        roles_queryset = Rol.objects.all()
+
+        if (
+            actor is not None
+            and getattr(actor, "is_authenticated", False)
+            and not getattr(actor, "is_superuser", False)
+        ):
+            from core.mixins import get_permisos, get_alcances
+
+            permisos_actor = get_permisos(actor)
+            alcances_actor = get_alcances(actor)
+
+            roles_permitidos = []
+
+            for rol in roles_queryset:
+                if (
+                    rol.nombre_rol.strip().casefold()
+                    == "administrador"
+                ):
+                    continue
+
+                if rol.alcance_autorizado == "global":
+                    continue
+
+                if not set(
+                    rol.permisos or []
+                ).issubset(permisos_actor):
+                    continue
+
+                if (
+                    rol.alcance_autorizado == "multiples"
+                    and "multiples" not in alcances_actor
+                ):
+                    continue
+
+                roles_permitidos.append(rol.pk)
+
+            roles_actuales_ids = set()
+
+            if self.instance and self.instance.pk:
+                if self.instance.funcionario_id:
+                    roles_actuales_ids = set(
+                        self.instance.funcionario.roles.values_list(
+                            "pk",
+                            flat=True,
+                        )
+                    )
+
+            roles_queryset = Rol.objects.filter(
+                pk__in=(
+                    set(roles_permitidos)
+                    | roles_actuales_ids
+                )
+            )
+
+        self.fields["roles"].queryset = roles_queryset
         self.fields[
             "delegaciones_autorizadas"
         ].queryset = delegaciones
