@@ -96,6 +96,7 @@ def _filtrar_usuarios_por_estado(queryset, estado):
 # Delegaciones
 # ---------------------------------------------------------------------------
 class DelegacionListView(PageSizeMixin, LecturaMixin, AmbitoDelegacionMixin, ModoMixin, ListView):
+    permisos_permitidos = ('delegaciones.ver',)
     model = Delegacion
     template_name = "organization/delegacion_.html"
     context_object_name = "delegaciones"
@@ -142,6 +143,7 @@ class DelegacionCreateView(
     GuardarMixin,
     CreateView,
 ):
+    permisos_permitidos = ('delegaciones.editar',)
     model = Delegacion
     form_class = DelegacionForm
     template_name = "organization/delegacion_.html"
@@ -164,6 +166,7 @@ class DelegacionUpdateView(
     GuardarMixin,
     UpdateView,
 ):
+    permisos_permitidos = ('delegaciones.editar',)
     model = Delegacion
     form_class = DelegacionForm
     template_name = "organization/delegacion_.html"
@@ -185,6 +188,7 @@ class DelegacionUpdateView(
         )
 
 class DelegacionToggleView(AccionPostView):
+    permisos_permitidos = ('delegaciones.editar',)
     redirect_name = "organizations:delegacion_list"
 
     def get_objeto(self, pk):
@@ -218,6 +222,7 @@ class DelegacionToggleView(AccionPostView):
 # Cargos e ítems medibles
 # ---------------------------------------------------------------------------
 class CargoListView(PageSizeMixin, LecturaMixin, ModoMixin, ListView):
+    permisos_permitidos = ('cargos.ver',)
     model = Cargo
     template_name = "organization/cargo_.html"
     context_object_name = "cargos"
@@ -245,6 +250,7 @@ class CargoListView(PageSizeMixin, LecturaMixin, ModoMixin, ListView):
 
 class CargoDetailView(LecturaMixin, ModoMixin, DetailView):
     """Detalle del cargo y administración de sus ítems medibles."""
+    permisos_permitidos = ('cargos.ver',)
 
     model = Cargo
     template_name = "organization/cargo_.html"
@@ -276,6 +282,7 @@ class CargoDetailView(LecturaMixin, ModoMixin, DetailView):
 
 
 class CargoCreateView(EscrituraMixin, ModalFormPageMixin, ModoMixin, GuardarMixin, CreateView):
+    permisos_permitidos = ('cargos.editar',)
     model = Cargo
     form_class = CargoForm
     template_name = "organization/cargo_.html"
@@ -292,6 +299,7 @@ class CargoCreateView(EscrituraMixin, ModalFormPageMixin, ModoMixin, GuardarMixi
 
 
 class CargoUpdateView(EscrituraMixin, ModalFormPageMixin, ModoMixin, GuardarMixin, UpdateView):
+    permisos_permitidos = ('cargos.editar',)
     model = Cargo
     form_class = CargoForm
     template_name = "organization/cargo_.html"
@@ -305,6 +313,7 @@ class CargoUpdateView(EscrituraMixin, ModalFormPageMixin, ModoMixin, GuardarMixi
 
 
 class CargoDeleteView(AccionPostView):
+    permisos_permitidos = ('cargos.editar',)
     redirect_name = "organizations:cargo_list"
 
     def get_objeto(self, pk):
@@ -323,6 +332,7 @@ class CargoDeleteView(AccionPostView):
 
 
 class ItemCreateView(EscrituraMixin, View):
+    permisos_permitidos = ('cargos.editar',)
     http_method_names = ["post"]
 
     def post(self, request, pk):
@@ -369,6 +379,7 @@ class ItemCreateView(EscrituraMixin, View):
 
 
 class ItemToggleView(AccionPostView):
+    permisos_permitidos = ('cargos.editar',)
     roles_permitidos = ROLES_CONFIGURACION
     redirect_name = "organizations:cargo_list"
 
@@ -402,6 +413,7 @@ class ItemToggleView(AccionPostView):
         )
 
 class ItemHistorialView(LecturaMixin, DetailView):
+    permisos_permitidos = ('cargos.ver',)
     model = ItemMedible
     template_name = "organization/item_historial.html"
     context_object_name = "item"
@@ -435,7 +447,7 @@ class RolListView(PageSizeMixin, LecturaMixin, ModoMixin, ListView):
     paginate_by = 10
     page_size_session_key = "rol_page_size"
     titulo = "Roles y permisos"
-    permisos_permitidos = ("roles.ver",)
+    permisos_permitidos = ('roles.ver',)
     permisos_edicion = ("roles.editar",)
 
     def get_queryset(self):
@@ -480,7 +492,7 @@ class RolCreateView(EscrituraMixin,ModalFormPageMixin, ModoMixin, GuardarMixin, 
     success_url_name = "organizations:rol_list"
     mensaje_exito = "Rol creado."
     list_view_class = RolListView
-    permisos_permitidos = ("roles.editar",)
+    permisos_permitidos = ('roles.editar',)
 
     def guardar(self, form):
         self.object = CRUDRol.crear_rol(form.instance, self.request.user)
@@ -494,7 +506,7 @@ class RolUpdateView(EscrituraMixin,ModalFormPageMixin, ModoMixin, GuardarMixin, 
     success_url_name = "organizations:rol_list"
     mensaje_exito = "Rol actualizado."
     list_view_class = RolListView
-    permisos_permitidos = ("roles.editar",)
+    permisos_permitidos = ('roles.editar',)
 
     def guardar(self, form):
         self.object = CRUDRol.modificar_rol(form.instance, self.request.user)
@@ -502,7 +514,7 @@ class RolUpdateView(EscrituraMixin,ModalFormPageMixin, ModoMixin, GuardarMixin, 
 
 class RolDeleteView(AccionPostView):
     redirect_name = "organizations:rol_list"
-    permisos_permitidos = ("roles.editar",)
+    permisos_permitidos = ('roles.editar',)
 
     def get_objeto(self, pk):
         return get_object_or_404(Rol, pk=pk)
@@ -534,7 +546,7 @@ class FuncionarioListView(
 
     titulo = "Funcionarios"
 
-    permisos_permitidos = ("funcionarios.ver",)
+    permisos_permitidos = ('funcionarios.ver',)
     permisos_edicion = ("funcionarios.editar",)
 
     def get_queryset(self):
@@ -615,7 +627,7 @@ class FuncionarioDetailView(
     ambito_campo = "delegacion_id"
     modo = "detalle"
 
-    permisos_permitidos = ("funcionarios.ver",)
+    permisos_permitidos = ('funcionarios.ver',)
     permisos_edicion = ("funcionarios.editar",)
 
     def get_context_data(self, **kwargs):
@@ -677,7 +689,7 @@ class FuncionarioCreateView(
 
     list_view_class = FuncionarioListView
 
-    permisos_permitidos = ("funcionarios.editar",)
+    permisos_permitidos = ('funcionarios.editar',)
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
@@ -720,7 +732,7 @@ class FuncionarioUpdateView(
 
     list_view_class = FuncionarioListView
 
-    permisos_permitidos = ("funcionarios.editar",)
+    permisos_permitidos = ('funcionarios.editar',)
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
@@ -743,7 +755,7 @@ class FuncionarioUpdateView(
 class FuncionarioToggleView(AccionPostView):
     redirect_name = "organizations:funcionario_list"
 
-    permisos_permitidos = ("funcionarios.editar",)
+    permisos_permitidos = ('funcionarios.editar',)
 
     def get_objeto(self, pk):
         funcionarios = filtrar_por_ambito(
@@ -779,7 +791,7 @@ class FuncionarioAccesoView(EscrituraMixin, View):
 
     http_method_names = ["post"]
 
-    permisos_permitidos = ("usuarios.editar",)
+    permisos_permitidos = ('usuarios.editar',)
 
     def post(self, request, pk):
 
@@ -984,7 +996,7 @@ class UsuarioListView(
     paginate_by = 15
     page_size_session_key = "usuario_page_size"
 
-    permisos_permitidos = ("usuarios.ver",)
+    permisos_permitidos = ('usuarios.ver',)
     permisos_edicion = ("usuarios.editar",)
 
     def get_queryset(self):
@@ -1060,7 +1072,7 @@ class UsuarioCreateView(
 
     list_view_class = UsuarioListView
 
-    permisos_permitidos = ("usuarios.editar",)
+    permisos_permitidos = ('usuarios.editar',)
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
@@ -1095,7 +1107,7 @@ class UsuarioUpdateView(
 
     list_view_class = UsuarioListView
 
-    permisos_permitidos = ("usuarios.editar",)
+    permisos_permitidos = ('usuarios.editar',)
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
@@ -1111,7 +1123,7 @@ class UsuarioUpdateView(
 class UsuarioToggleView(EscrituraMixin, AccionPostView):
     redirect_name = "organizations:usuario_list"
 
-    permisos_permitidos = ("usuarios.editar",)
+    permisos_permitidos = ('usuarios.editar',)
 
     def get_objeto(self, pk):
         usuarios = filtrar_por_ambito(

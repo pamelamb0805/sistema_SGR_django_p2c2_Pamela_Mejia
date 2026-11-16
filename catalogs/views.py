@@ -33,6 +33,7 @@ def _areas():
 
 
 class CatalogoListView(PageSizeMixin, LecturaMixin, ModoMixin, ListView):
+    permisos_permitidos = ('catalogos.ver',)
     model = Catalogo
     template_name = "catalogs/catalogo_.html"
     context_object_name = "elementos"
@@ -90,6 +91,7 @@ class CatalogoFormMixin(EscrituraMixin, ModalFormPageMixin, ModoMixin, GuardarMi
 
 
 class CatalogoCreateView(CatalogoFormMixin, CreateView):
+    permisos_permitidos = ('catalogos.editar',)
     titulo = "Nuevo elemento de catálogo"
     mensaje_exito = "Elemento creado."
 
@@ -98,6 +100,7 @@ class CatalogoCreateView(CatalogoFormMixin, CreateView):
 
 
 class CatalogoUpdateView(CatalogoFormMixin, UpdateView):
+    permisos_permitidos = ('catalogos.editar',)
     titulo = "Editar elemento de catálogo"
     mensaje_exito = "Elemento actualizado. Los registros históricos no se alteran."
 
@@ -106,6 +109,7 @@ class CatalogoUpdateView(CatalogoFormMixin, UpdateView):
 
 
 class CatalogoToggleView(AccionPostView):
+    permisos_permitidos = ('catalogos.editar',)
     redirect_name = "catalogs:catalogo_list"
 
     def get_objeto(self, pk):
@@ -118,6 +122,7 @@ class CatalogoToggleView(AccionPostView):
         CRUDCatalogo.activar_elemento_catalogo(objeto, request.user)
         return f"«{objeto.nombre}» activado."
 class CatalogoHistorialView(LecturaMixin, DetailView):
+    permisos_permitidos = ('catalogos.ver',)
     model = Catalogo
     template_name = "catalogs/catalogo_historial.html"
     context_object_name = "elemento"

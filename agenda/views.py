@@ -63,6 +63,7 @@ class OperativoMixin(RolRequeridoMixin):
 
 class CompromisoListView(PageSizeMixin, RolRequeridoMixin, ModoMixin, ListView):
     """Agenda colectiva ordenada por fecha comprometida (el agrupado por fecha se hace en la plantilla)."""
+    permisos_permitidos = ('agenda.ver',)
     template_name = "agenda/compromiso_.html"
     context_object_name = "compromisos"
     paginate_by = 20
@@ -103,6 +104,7 @@ class CompromisoListView(PageSizeMixin, RolRequeridoMixin, ModoMixin, ListView):
         return contexto
 
 class CompromisoDetailView(RolRequeridoMixin, ModoMixin, DetailView):
+    permisos_permitidos = ('agenda.ver',)
     template_name = "agenda/compromiso_.html"
     context_object_name = "compromiso"
     modo = "detalle"
@@ -148,6 +150,7 @@ class _FormularioCompromisoMixin(ModoMixin, GuardarMixin):
 
 
 class CompromisoCreateView(OperativoMixin, _FormularioCompromisoMixin, CreateView):
+    permisos_permitidos = ('agenda.registrar',)
     titulo = "Nuevo compromiso"
     mensaje_exito = "Compromiso registrado en la agenda colectiva."
 
@@ -172,6 +175,7 @@ class CompromisoCreateView(OperativoMixin, _FormularioCompromisoMixin, CreateVie
 
 
 class CompromisoUpdateView(OperativoMixin, _FormularioCompromisoMixin, UpdateView):
+    permisos_permitidos = ('agenda.editar',)
     titulo = "Editar compromiso"
     mensaje_exito = "Compromiso actualizado."
 
@@ -190,6 +194,7 @@ class CompromisoUpdateView(OperativoMixin, _FormularioCompromisoMixin, UpdateVie
 
 
 class CompromisoEstadoView(AccionPostView):
+    permisos_permitidos = ('agenda.estado',)
     roles_permitidos = ()      # la autorización fina se valida en el servicio
 
     def get_objeto(self, pk):
@@ -208,6 +213,7 @@ class CompromisoEstadoView(AccionPostView):
 
 
 class CompromisoReasignarView(AccionPostView):
+    permisos_permitidos = ('agenda.reasignar',)
     roles_permitidos = ()
 
     def get_objeto(self, pk):
@@ -226,6 +232,7 @@ class CompromisoReasignarView(AccionPostView):
 
 
 class CompromisoHistorialView(RolRequeridoMixin, DetailView):
+    permisos_permitidos = ('agenda.ver',)
     template_name = "agenda/historial.html"
     context_object_name = "compromiso"
 

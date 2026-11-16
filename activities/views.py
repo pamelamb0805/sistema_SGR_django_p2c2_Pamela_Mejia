@@ -67,6 +67,7 @@ def _puede_anular(user, actividad):
 
 class ActividadListView(PageSizeMixin, RolRequeridoMixin, ModoMixin, ListView):
     """Historial de actividades con filtros completos y ámbito autorizado (RF-032)."""
+    permisos_permitidos = ('actividades.ver',)
 
     template_name = "activities/actividad_.html"
     context_object_name = "actividades"
@@ -227,6 +228,7 @@ class ActividadListView(PageSizeMixin, RolRequeridoMixin, ModoMixin, ListView):
 
 
 class ActividadDetailView(RolRequeridoMixin, ModoMixin, DetailView):
+    permisos_permitidos = ('actividades.ver',)
     template_name = "activities/actividad_.html"
     context_object_name = "actividad"
     modo = "detalle"
@@ -265,6 +267,7 @@ class _FormularioActividadMixin(ModoMixin, GuardarMixin):
 
 
 class ActividadCreateView(OperativoMixin, _FormularioActividadMixin, CreateView):
+    permisos_permitidos = ('actividades.registrar',)
     titulo = "Registrar actividad"
 
     def get_form_kwargs(self):
@@ -299,6 +302,7 @@ class ActividadCreateView(OperativoMixin, _FormularioActividadMixin, CreateView)
 
 
 class ActividadUpdateView(OperativoMixin, _FormularioActividadMixin, UpdateView):
+    permisos_permitidos = ('actividades.editar',)
     titulo = "Editar actividad"
     mensaje_exito = "Actividad actualizada."
 
@@ -320,6 +324,7 @@ class ActividadUpdateView(OperativoMixin, _FormularioActividadMixin, UpdateView)
 
 
 class ActividadAnularView(AccionPostView):
+    permisos_permitidos = ('actividades.editar',)
     roles_permitidos = ()   # la autorización fina se valida en accion()
 
     def get_objeto(self, pk):
@@ -353,6 +358,7 @@ def buscar_codigo(request):
 # Evidencias
 # ---------------------------------------------------------------------------
 class EvidenciaCreateView(OperativoMixin, ModoMixin, GuardarMixin, FormView):
+    permisos_permitidos = ('actividades.editar',)
     form_class = EvidenciaForm
     template_name = "activities/evidencia_.html"
     modo, titulo = "form", "Adjuntar evidencia"
@@ -399,6 +405,7 @@ def evidencia_archivo(request, pk):
 # ---------------------------------------------------------------------------
 class ValidacionBandejaView(PageSizeMixin, VerificadorMixin, ModoMixin, ListView):
     """Bandeja filtrable de evidencias pendientes dentro del ámbito autorizado."""
+    permisos_permitidos = ('validaciones.gestionar',)
     template_name = "activities/validacion_.html"
     context_object_name = "evidencias"
     paginate_by = 15
@@ -489,6 +496,7 @@ class ValidacionBandejaView(PageSizeMixin, VerificadorMixin, ModoMixin, ListView
         return contexto
 
 class ValidacionCreateView(VerificadorMixin, ModoMixin, GuardarMixin, FormView):
+    permisos_permitidos = ('validaciones.gestionar',)
     form_class = ValidacionForm
     template_name = "activities/validacion_.html"
     modo, titulo = "form", "Revisar evidencia"

@@ -93,6 +93,7 @@ def cargar_subatenciones(request):
 # Casos
 # ---------------------------------------------------------------------------
 class CasoListView(PageSizeMixin, SocialMixin, ModoMixin, ListView):
+    permisos_permitidos = ('atenciones.ver',)
     template_name = "social/caso_.html"
     context_object_name = "casos"
     paginate_by = 15
@@ -314,6 +315,7 @@ def exportar_casos_excel(request):
 
 class CasoDetailView(SocialMixin, ModoMixin, DetailView):
     """Secuencia completa de gestiones desde un único caso (CA-04)."""
+    permisos_permitidos = ('atenciones.ver',)
     template_name = "social/caso_.html"
     context_object_name = "caso"
     modo = "detalle"
@@ -347,6 +349,7 @@ class CasoCreateView(
     GuardarMixin,
     FormView,
 ):
+    permisos_permitidos = ('atenciones.registrar',)
     form_class = NuevoCasoForm
     template_name = "social/caso_.html"
     modo, titulo = "form", "Nuevo caso de atención social"
@@ -392,6 +395,7 @@ class CasoCreateView(
 
 
 class CasoUpdateView(EscrituraSocialMixin, ModoMixin, GuardarMixin, UpdateView):
+    permisos_permitidos = ('atenciones.editar',)
     form_class = CasoForm
     template_name = "social/caso_.html"
     modo, titulo = "form", "Editar datos del caso"
@@ -409,6 +413,7 @@ class CasoUpdateView(EscrituraSocialMixin, ModoMixin, GuardarMixin, UpdateView):
 
 
 class CasoEstadoView(AccionPostView):
+    permisos_permitidos = ('atenciones.editar',)
     roles_permitidos = ROLES_SOCIAL
 
     def get_objeto(self, pk):
@@ -434,6 +439,7 @@ class GestionCreateView(
     GuardarMixin,
     CreateView,
 ):
+    permisos_permitidos = ('atenciones.gestionar',)
     model = AtencionSocial
     form_class = GestionForm
     template_name = "social/gestion_.html"
@@ -512,6 +518,7 @@ class GestionUpdateView(
     GuardarMixin,
     UpdateView,
 ):
+    permisos_permitidos = ('atenciones.gestionar',)
     form_class = GestionForm
     template_name = "social/gestion_.html"
     modo, titulo = "form", "Corregir gestión"

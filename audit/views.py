@@ -56,6 +56,7 @@ class FiltrosMixin:
 
 
 class AuditoriaListView(AuditoriaMixin, FiltrosMixin, ModoMixin, ListView):
+    permisos_permitidos = ('auditoria.ver',)
     template_name = "audit/auditoria_.html"
     context_object_name = "eventos"
     paginate_by = 25
@@ -74,6 +75,7 @@ class AuditoriaListView(AuditoriaMixin, FiltrosMixin, ModoMixin, ListView):
 
 class HistorialEntidadView(AuditoriaListView):
     """Historial completo de un registro: /audit/historial/<entidad>/<id>/ (HU-30, CA-09)."""
+    permisos_permitidos = ('auditoria.ver',)
     modo = "historial"
 
     def dispatch(self, request, *args, **kwargs):
@@ -88,6 +90,7 @@ class HistorialEntidadView(AuditoriaListView):
 
 
 class AuditoriaDetailView(AuditoriaMixin, ModoMixin, DetailView):
+    permisos_permitidos = ('auditoria.ver',)
     template_name = "audit/auditoria_.html"
     context_object_name = "evento"
     model = Auditoria
@@ -104,6 +107,7 @@ class AuditoriaDetailView(AuditoriaMixin, ModoMixin, DetailView):
 
 class AuditoriaExportarView(AuditoriaMixin, FiltrosMixin, View):
     """Exporta el informe de auditoría en Excel (RF-033, RF-036)."""
+    permisos_permitidos = ('auditoria.exportar',)
 
     http_method_names = ["get"]
 

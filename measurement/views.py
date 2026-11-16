@@ -71,6 +71,7 @@ def _periodo_seleccionado(request):
 # ---------------------------------------------------------------------------
 
 class PeriodoListView(PageSizeMixin, LecturaMixin, ModoMixin, ListView):
+    permisos_permitidos = ('periodos.ver',)
     model = Periodo
     template_name = "measurement/periodo_.html"
     context_object_name = "periodos"
@@ -182,6 +183,7 @@ def get_context_data(self, **kwargs):
 
 class PeriodoDetailView(LecturaMixin, ModoMixin, DetailView):
     """Resumen del período y estado de ponderaciones por funcionario."""
+    permisos_permitidos = ('periodos.ver',)
 
     model = Periodo
     template_name = "measurement/periodo_.html"
@@ -273,6 +275,7 @@ class PeriodoFormMixin(MedicionMixin, ModoMixin, GuardarMixin):
 
 
 class PeriodoCreateView(PeriodoFormMixin, CreateView):
+    permisos_permitidos = ('periodos.editar',)
     titulo = "Nuevo período"
     mensaje_exito = "Período creado. Los días computables se calcularon automáticamente."
 
@@ -281,6 +284,7 @@ class PeriodoCreateView(PeriodoFormMixin, CreateView):
 
 
 class PeriodoUpdateView(PeriodoFormMixin, UpdateView):
+    permisos_permitidos = ('periodos.editar',)
     titulo = "Editar período"
     mensaje_exito = "Período actualizado; los indicadores se recalcularon."
 
@@ -289,6 +293,7 @@ class PeriodoUpdateView(PeriodoFormMixin, UpdateView):
 
 
 class PeriodoCerrarView(AccionPostView):
+    permisos_permitidos = ('periodos.cerrar',)
     roles_permitidos = ROLES_MEDICION
     redirect_name = "measurement:periodo_list"
 
@@ -301,6 +306,7 @@ class PeriodoCerrarView(AccionPostView):
 
 
 class PeriodoReabrirView(AccionPostView):
+    permisos_permitidos = ('periodos.reabrir',)
     roles_permitidos = ROLES_CONFIGURACION        # solo Administrador (RN-013)
     redirect_name = "measurement:periodo_list"
 
@@ -437,6 +443,7 @@ def historial_reglas_periodo(request, pk):
 
 
 class PeriodoRecalcularView(AccionPostView):
+    permisos_permitidos = ('periodos.editar',)
     roles_permitidos = ROLES_MEDICION
     redirect_name = "measurement:periodo_list"
 
@@ -532,6 +539,7 @@ class MetaListView(
     ModoMixin,
     ListView,
 ):
+    permisos_permitidos = ('metas.ver',)
     model = MetaModel
     template_name = "measurement/meta_.html"
     context_object_name = "metas"
@@ -668,6 +676,7 @@ class MetaFormMixin(MedicionMixin, ModoMixin, GuardarMixin):
 
 
 class MetaCreateView(MetaFormMixin, CreateView):
+    permisos_permitidos = ('metas.editar',)
     titulo = "Nueva meta"
     mensaje_exito = "Meta creada."
 
@@ -686,6 +695,7 @@ class MetaCreateView(MetaFormMixin, CreateView):
 
 
 class MetaUpdateView(MetaFormMixin, UpdateView):
+    permisos_permitidos = ('metas.editar',)
     titulo = "Editar meta"
     mensaje_exito = "Meta actualizada y versionada."
 
@@ -694,6 +704,7 @@ class MetaUpdateView(MetaFormMixin, UpdateView):
 
 
 class MetaDeleteView(AccionPostView):
+    permisos_permitidos = ('metas.editar',)
     roles_permitidos = ROLES_MEDICION
     redirect_name = "measurement:meta_list"
 
@@ -754,6 +765,7 @@ def meta_historial(request, pk):
 # ---------------------------------------------------------------------------
 
 class AjusteListView(PageSizeMixin, LecturaMixin, AmbitoDelegacionMixin, ModoMixin, ListView):
+    permisos_permitidos = ('ajustes.ver',)
     model = Ajuste
     template_name = "measurement/ajuste_.html"
     context_object_name = "ajustes"
@@ -809,6 +821,7 @@ class AjusteListView(PageSizeMixin, LecturaMixin, AmbitoDelegacionMixin, ModoMix
         return contexto
 
 class AjusteCreateView(MedicionMixin, ModoMixin, GuardarMixin, CreateView):
+    permisos_permitidos = ('ajustes.editar',)
     model = Ajuste
     form_class = AjusteForm
     template_name = "measurement/ajuste_.html"
@@ -822,6 +835,7 @@ class AjusteCreateView(MedicionMixin, ModoMixin, GuardarMixin, CreateView):
 
 
 class AjusteUpdateView(MedicionMixin, ModoMixin, GuardarMixin, UpdateView):
+    permisos_permitidos = ('ajustes.editar',)
     model = Ajuste
     form_class = AjusteForm
     template_name = "measurement/ajuste_.html"
@@ -856,6 +870,7 @@ class AjusteUpdateView(MedicionMixin, ModoMixin, GuardarMixin, UpdateView):
         )
 
 class AjusteDeleteView(AccionPostView):
+    permisos_permitidos = ('ajustes.editar',)
     roles_permitidos = ROLES_MEDICION
     redirect_name = "measurement:ajuste_list"
 
