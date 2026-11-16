@@ -7,10 +7,7 @@
 {% block page_title %}Editar perfil{% endblock %}
 
 {% block extra_css %}
-<link
-    rel="stylesheet"
-    href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css"
->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css">
 
 <style>
     .sgr-photo-preview {
@@ -68,13 +65,9 @@
 {% endblock %}
 
 {% block content %}
-
 <div class="row justify-content-center">
-
     <div class="col-xl-8 col-lg-10">
-
         <div class="card border-0 shadow-sm">
-
             <div class="card-header bg-white py-3">
                 <h2 class="h6 fw-bold mb-0">
                     <i class="bi bi-person-gear me-2"></i>
@@ -83,120 +76,68 @@
             </div>
 
             <div class="card-body p-4">
-
                 <p class="text-body-secondary mb-4">
                     Actualiza tu correo electrónico y personaliza
                     tu fotografía de perfil.
                 </p>
 
-                <form
-                    method="POST"
-                    enctype="multipart/form-data"
-                    novalidate
-                    id="formPerfil"
-                >
-
+                <form method="POST" enctype="multipart/form-data" novalidate id="formPerfil">
                     {% csrf_token %}
 
-                    <!-- NOMBRE DE USUARIO -->
                     <div class="mb-4">
-
-                        <label class="form-label fw-semibold">
-                            Nombre de usuario
-                        </label>
-
-                        <input
-                            type="text"
-                            class="form-control"
-                            value="{{ request.user.username }}"
-                            disabled
-                        >
-
-                        <div class="form-text">
-                            El nombre de usuario no se puede modificar.
-                        </div>
-
+                        <label class="form-label fw-semibold">Nombre de usuario</label>
+                        <input type="text" class="form-control" value="{{ request.user.username }}" disabled>
+                        <div class="form-text">El nombre de usuario no se puede modificar.</div>
                     </div>
 
-                    <!-- FOTOGRAFÍA -->
                     <div class="mb-4">
-
-                        <label class="form-label fw-semibold d-block">
-                            Fotografía de perfil
-                        </label>
+                        <label class="form-label fw-semibold d-block">Fotografía de perfil</label>
 
                         <div class="d-flex flex-wrap align-items-center gap-4">
-
                             <div id="contenedorVistaPrevia">
-
                                 {% if request.user.foto_perfil %}
-
                                     <img
                                         id="vistaPreviaFoto"
                                         src="{{ request.user.foto_perfil.url }}"
                                         alt="Fotografía de perfil"
                                         class="sgr-photo-preview"
                                     >
-
                                 {% else %}
-
-                                    <div
-                                        id="vistaPreviaFotoVacia"
-                                        class="sgr-photo-placeholder"
-                                    >
+                                    <div id="vistaPreviaFotoVacia" class="sgr-photo-placeholder">
                                         <i class="bi bi-person-circle"></i>
                                     </div>
-
                                     <img
                                         id="vistaPreviaFoto"
                                         src=""
                                         alt="Vista previa de fotografía"
                                         class="sgr-photo-preview d-none"
                                     >
-
                                 {% endif %}
-
                             </div>
 
                             <div class="flex-grow-1">
-
-                                <label
-                                    for="id_foto_perfil"
-                                    class="form-label"
-                                >
+                                <label for="id_foto_perfil" class="form-label">
                                     Selecciona una imagen
                                 </label>
 
                                 {{ form.foto_perfil }}
 
-                                <div class="form-text">
-                                    JPG, JPEG, PNG o WEBP. Máximo 3 MB.
-                                </div>
+                                <div class="form-text">JPG, JPEG, PNG o WEBP. Máximo 3 MB.</div>
 
                                 <p class="sgr-crop-help mt-2 mb-0">
                                     Después de seleccionar tu fotografía,
                                     podrás ajustar el recorte antes de guardarla.
                                 </p>
-
                             </div>
-
                         </div>
 
                         {% for error in form.foto_perfil.errors %}
-                            <div class="text-danger small mt-2">
-                                {{ error }}
-                            </div>
+                            <div class="text-danger small mt-2">{{ error }}</div>
                         {% endfor %}
-
                     </div>
 
-                    <!-- CORREO ELECTRÓNICO -->
                     <div class="mb-3">
-
-                        <label
-                            for="{{ form.email.id_for_label }}"
-                            class="form-label fw-semibold"
-                        >
+                        <label for="{{ form.email.id_for_label }}" class="form-label fw-semibold">
                             Correo electrónico
                         </label>
 
@@ -208,10 +149,8 @@
                                 {{ error }}
                             </div>
                         {% endfor %}
-
                     </div>
 
-                    <!-- ERRORES GENERALES -->
                     {% if form.non_field_errors %}
                         <div class="alert alert-danger">
                             {% for error in form.non_field_errors %}
@@ -222,29 +161,18 @@
 
                     <hr class="my-4">
 
-                    <!-- BOTONES -->
                     <div class="d-flex flex-wrap justify-content-end gap-2">
-
-                        <a
-                            href="{% url 'perfil' %}"
-                            class="btn btn-outline-secondary"
-                        >
+                        <a href="{% url 'perfil' %}" class="btn btn-outline-secondary">
                             <i class="bi bi-x-circle me-1"></i>
                             Cancelar
                         </a>
 
-                        <button
-                            type="submit"
-                            class="btn btn-primary"
-                        >
+                        <button type="submit" class="btn btn-primary">
                             <i class="bi bi-check-circle me-1"></i>
                             Guardar cambios
                         </button>
-
                     </div>
-
                 </form>
-
             </div>
         </div>
     </div>
@@ -259,11 +187,8 @@
     aria-hidden="true"
 >
     <div class="modal-dialog modal-dialog-centered modal-lg">
-
         <div class="modal-content">
-
             <div class="modal-header">
-
                 <h5 class="modal-title fw-bold" id="tituloModalRecorte">
                     <i class="bi bi-crop me-2"></i>
                     Ajustar fotografía de perfil
@@ -275,116 +200,76 @@
                     data-bs-dismiss="modal"
                     aria-label="Cerrar"
                 ></button>
-
             </div>
 
             <div class="modal-body">
-
                 <p class="text-body-secondary small">
                     Mueve la imagen y ajusta el zoom para seleccionar
                     la parte que deseas utilizar.
                 </p>
 
                 <div class="sgr-crop-container">
-                    <img
-                        id="imagenParaRecortar"
-                        src=""
-                        alt="Imagen para recortar"
-                    >
+                    <img id="imagenParaRecortar" src="" alt="Imagen para recortar">
                 </div>
 
                 <div class="d-flex flex-wrap justify-content-center gap-2 mt-3">
-
-                    <button
-                        type="button"
-                        class="btn btn-outline-secondary btn-sm"
-                        id="alejarImagen"
-                        title="Alejar"
-                    >
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="alejarImagen" title="Alejar">
                         <i class="bi bi-zoom-out"></i>
                     </button>
 
-                    <button
-                        type="button"
-                        class="btn btn-outline-secondary btn-sm"
-                        id="acercarImagen"
-                        title="Acercar"
-                    >
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="acercarImagen" title="Acercar">
                         <i class="bi bi-zoom-in"></i>
                     </button>
 
-                    <button
-                        type="button"
-                        class="btn btn-outline-secondary btn-sm"
-                        id="rotarIzquierda"
-                        title="Rotar a la izquierda"
-                    >
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="rotarIzquierda" title="Rotar a la izquierda">
                         <i class="bi bi-arrow-counterclockwise"></i>
                     </button>
 
-                    <button
-                        type="button"
-                        class="btn btn-outline-secondary btn-sm"
-                        id="rotarDerecha"
-                        title="Rotar a la derecha"
-                    >
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="rotarDerecha" title="Rotar a la derecha">
                         <i class="bi bi-arrow-clockwise"></i>
                     </button>
 
-                    <button
-                        type="button"
-                        class="btn btn-outline-secondary btn-sm"
-                        id="restablecerRecorte"
-                    >
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="restablecerRecorte">
                         <i class="bi bi-arrow-repeat me-1"></i>
                         Restablecer
                     </button>
-
                 </div>
 
                 <div class="text-center sgr-crop-help mt-3">
                     La fotografía se guardará con un formato cuadrado.
                 </div>
-
             </div>
 
             <div class="modal-footer">
-
-                <button
-                    type="button"
-                    class="btn btn-outline-secondary"
-                    data-bs-dismiss="modal"
-                >
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
                     Cancelar
                 </button>
 
-                <button
-                    type="button"
-                    class="btn btn-primary"
-                    id="confirmarRecorte"
-                >
+                <button type="button" class="btn btn-primary" id="confirmarRecorte">
                     <i class="bi bi-check-circle me-1"></i>
                     Utilizar esta fotografía
                 </button>
-
             </div>
-
         </div>
     </div>
 </div>
-
 {% endblock %}
 
 {% block extra_js %}
-
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
 
 <script>
 document.addEventListener("DOMContentLoaded", function () {
-
     const inputFoto = document.getElementById("id_foto_perfil");
     const imagenRecorte = document.getElementById("imagenParaRecortar");
     const modalElemento = document.getElementById("modalRecorte");
+
+    /*
+     * CORRECCIÓN:
+     * Mover el modal directamente al body evita que el z-index
+     * de main#contenido lo deje detrás del fondo oscuro de Bootstrap.
+     */
+    document.body.appendChild(modalElemento);
 
     const modalRecorte = new bootstrap.Modal(modalElemento);
 
@@ -396,18 +281,12 @@ document.addEventListener("DOMContentLoaded", function () {
     let recorteConfirmado = false;
     let urlTemporal = null;
 
-    if (!inputFoto) {
-        return;
-    }
+    if (!inputFoto) return;
 
-    // Seleccionar fotografía.
     inputFoto.addEventListener("change", function () {
-
         const archivo = this.files[0];
 
-        if (!archivo) {
-            return;
-        }
+        if (!archivo) return;
 
         const formatosPermitidos = [
             "image/jpeg",
@@ -433,110 +312,59 @@ document.addEventListener("DOMContentLoaded", function () {
         const lector = new FileReader();
 
         lector.onload = function (evento) {
-
             imagenRecorte.src = evento.target.result;
-
             modalRecorte.show();
-
         };
 
         lector.readAsDataURL(archivo);
-
     });
 
-    // Inicializar recortador cuando el modal esté visible.
     modalElemento.addEventListener("shown.bs.modal", function () {
-
         if (cropper) {
             cropper.destroy();
             cropper = null;
         }
 
         cropper = new Cropper(imagenRecorte, {
-
             aspectRatio: 1,
-
             viewMode: 1,
-
             dragMode: "move",
-
             autoCropArea: 0.85,
-
             responsive: true,
-
             background: false,
-
             guides: true,
-
             center: true,
-
             highlight: true,
-
             cropBoxMovable: true,
-
             cropBoxResizable: true,
-
             toggleDragModeOnDblclick: false,
-
             minContainerWidth: 250,
-
             minContainerHeight: 250
-
         });
-
     });
 
-    // Acercar.
     document.getElementById("acercarImagen").addEventListener("click", function () {
-
-        if (cropper) {
-            cropper.zoom(0.1);
-        }
-
+        if (cropper) cropper.zoom(0.1);
     });
 
-    // Alejar.
     document.getElementById("alejarImagen").addEventListener("click", function () {
-
-        if (cropper) {
-            cropper.zoom(-0.1);
-        }
-
+        if (cropper) cropper.zoom(-0.1);
     });
 
-    // Rotar a la izquierda.
     document.getElementById("rotarIzquierda").addEventListener("click", function () {
-
-        if (cropper) {
-            cropper.rotate(-90);
-        }
-
+        if (cropper) cropper.rotate(-90);
     });
 
-    // Rotar a la derecha.
     document.getElementById("rotarDerecha").addEventListener("click", function () {
-
-        if (cropper) {
-            cropper.rotate(90);
-        }
-
+        if (cropper) cropper.rotate(90);
     });
 
-    // Restablecer recorte.
     document.getElementById("restablecerRecorte").addEventListener("click", function () {
-
-        if (cropper) {
-            cropper.reset();
-        }
-
+        if (cropper) cropper.reset();
     });
 
-    // Confirmar recorte y reemplazar el archivo del formulario.
     document.getElementById("confirmarRecorte").addEventListener("click", function () {
-
-        if (!cropper || !archivoOriginal) {
-            return;
-        }
+        if (!cropper || !archivoOriginal) return;
 
         const boton = this;
 
@@ -544,34 +372,24 @@ document.addEventListener("DOMContentLoaded", function () {
         boton.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Procesando...';
 
         const canvas = cropper.getCroppedCanvas({
-
             width: 600,
             height: 600,
-
             imageSmoothingEnabled: true,
             imageSmoothingQuality: "high"
-
         });
 
         if (!canvas) {
-
             boton.disabled = false;
             boton.innerHTML = '<i class="bi bi-check-circle me-1"></i> Utilizar esta fotografía';
-
             alert("No se pudo procesar la fotografía. Inténtalo nuevamente.");
-
             return;
         }
 
         canvas.toBlob(function (blob) {
-
             if (!blob) {
-
                 boton.disabled = false;
                 boton.innerHTML = '<i class="bi bi-check-circle me-1"></i> Utilizar esta fotografía';
-
                 alert("No se pudo generar la imagen recortada.");
-
                 return;
             }
 
@@ -587,12 +405,9 @@ document.addEventListener("DOMContentLoaded", function () {
             );
 
             const transferencia = new DataTransfer();
-
             transferencia.items.add(archivoRecortado);
-
             inputFoto.files = transferencia.files;
 
-            // Actualizar vista previa.
             if (urlTemporal) {
                 URL.revokeObjectURL(urlTemporal);
             }
@@ -607,48 +422,30 @@ document.addEventListener("DOMContentLoaded", function () {
             }
 
             recorteConfirmado = true;
-
             modalRecorte.hide();
 
             boton.disabled = false;
             boton.innerHTML = '<i class="bi bi-check-circle me-1"></i> Utilizar esta fotografía';
-
         }, "image/jpeg", 0.92);
-
     });
 
-    // Si se cancela, no enviar una imagen sin recortar.
     modalElemento.addEventListener("hidden.bs.modal", function () {
-
         if (!recorteConfirmado) {
-
             inputFoto.value = "";
-
         }
 
         if (cropper) {
-
             cropper.destroy();
             cropper = null;
-
         }
-
     });
 
-    // Impedir envío si se seleccionó una imagen pero no se confirmó el recorte.
     document.getElementById("formPerfil").addEventListener("submit", function (evento) {
-
         if (archivoOriginal && !recorteConfirmado) {
-
             evento.preventDefault();
-
             alert("Debes confirmar el recorte de la fotografía antes de guardar.");
-
         }
-
     });
-
 });
 </script>
-
 {% endblock %}
