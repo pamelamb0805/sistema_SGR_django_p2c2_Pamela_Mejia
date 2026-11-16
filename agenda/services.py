@@ -61,35 +61,58 @@ def _es_responsable(actor, compromiso):
     return f is not None and f.pk == compromiso.funcionario_id
 
 
+
 def supervisa(actor, delegacion_id):
-    """Comprueba permiso de supervisión y ámbito territorial."""
-    if not tiene_permiso(actor, "agenda.reasignar"):
+    """
+    Comprueba si el actor tiene un rol de supervisión y autorización
+    sobre la delegación indicada.
+    """
+    if not getattr(actor, "is_authenticated", False):
         return False
 
-    if es_transversal(actor):
+    if getattr(actor, "is_superuser", False):
         return True
 
-    funcionario = get_funcionario(actor)
-    return (
-        funcionario is not None
-        and funcionario.delegacion_id == delegacion_id
-    )
+    if not tiene_rol(actor, *ROLES_SUPERVISION):
+        return False
+
+    if delegacion_id is None:
+        return False
+
+    return filtrar_por_ambito(
+        Funcionario.objects.filter(delegacion_id=delegacion_id),
+        actor,
+        "delegacion_id",
+    ).exists()
 
 def puede_gestionar(actor, compromiso):
     return _es_responsable(actor, compromiso) or supervisa(actor, compromiso.delegacion_id)
 
 
+
 def funcionarios_asignables(actor):
-    """Responsables que el usuario puede elegir: él mismo, o su equipo si supervisa."""
-    activos = Funcionario.objects.filter(estado=Funcionario.ESTADO_ACTIVO).select_related("cargo", "delegacion")
-    f = get_funcionario(actor)
-    if f is None:
+    """
+    Devuelve únicamente funcionarios activos que el actor puede asignar.
+    La supervisión respeta los alcances propia, multiples y global.
+    """
+    activos = Funcionario.objects.filter(
+        estado=Funcionario.ESTADO_ACTIVO
+    ).select_related("cargo", "delegacion")
+
+    if not getattr(actor, "is_authenticated", False):
         return activos.none()
-    if es_transversal(actor):
+
+    if getattr(actor, "is_superuser", False):
         return activos
+
+    funcionario = get_funcionario(actor)
+    if funcionario is None or not funcionario.activo:
+        return activos.none()
+
     if tiene_rol(actor, *ROLES_SUPERVISION):
-        return activos.filter(delegacion_id=f.delegacion_id)
-    return activos.filter(pk=f.pk)
+        return filtrar_por_ambito(activos, actor, "delegacion_id")
+
+    return activos.filter(pk=funcionario.pk)
 
 
 def _validar_item(compromiso):

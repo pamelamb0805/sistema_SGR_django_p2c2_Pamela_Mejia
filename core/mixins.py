@@ -147,22 +147,80 @@ def get_rol_principal(user):
     return next(iter(sorted(roles)), None)
 
 
-def get_alcances(user):
-    """
-    Obtiene los alcances autorizados configurados en los roles
-    asignados al funcionario.
-    """
-    funcionario = get_funcionario(user)
 
+def get_alcances(user):
+    """Obtiene los alcances autorizados de todos los roles del funcionario."""
+    funcionario = get_funcionario(user)
     if funcionario is None:
         return set()
 
     return set(
-        funcionario.roles.values_list(
-            "alcance_autorizado",
-            flat=True,
-        )
+        funcionario.roles.values_list("alcance_autorizado", flat=True)
     )
+
+
+def get_permisos(user):
+    """
+    Une los permisos funcionales configurados en los roles del usuario.
+    Los permisos se almacenan como listas JSON en Rol.permisos.
+    """
+    if not getattr(user, "is_authenticated", False):
+        return set()
+
+    if getattr(user, "is_superuser", False):
+        return {"*"}
+
+    funcionario = get_funcionario(user)
+    if funcionario is None or not funcionario.activo:
+        return set()
+
+    permisos = set()
+    for lista in funcionario.roles.values_list("permisos", flat=True):
+        if isinstance(lista, (list, tuple, set)):
+            permisos.update(str(item).strip() for item in lista if item)
+
+    return permisos
+
+
+def tiene_permiso(user, *permisos):
+    """
+    Comprueba permisos funcionales configurados en los roles.
+    Si se solicitan varios, deben estar todos concedidos.
+    """
+    if not getattr(user, "is_authenticated", False):
+        return False
+
+    if getattr(user, "is_superuser", False):
+        return True
+
+    concedidos = get_permisos(user)
+    if "*" in concedidos:
+        return True
+
+    if not permisos:
+        return True
+
+    return all(permiso in concedidos for permiso in permisos)
+
+
+def get_delegaciones_autorizadas_ids(user):
+    """Devuelve la delegación principal y las delegaciones adicionales."""
+    funcionario = get_funcionario(user)
+
+    if funcionario is None or not funcionario.activo:
+        return []
+
+    ids = set()
+    if funcionario.delegacion_id:
+        ids.add(funcionario.delegacion_id)
+
+    alcances = get_alcances(user)
+    if "multiples" in alcances and hasattr(user, "delegaciones_autorizadas"):
+        ids.update(
+            user.delegaciones_autorizadas.values_list("pk", flat=True)
+        )
+
+    return sorted(ids)
 
 
 def es_transversal(user):
@@ -205,23 +263,15 @@ def get_delegaciones_autorizadas_ids(user):
     return list(ids)
 
 
+
 def filtrar_por_ambito(queryset, user, campo="delegacion_id"):
     """
-    Filtra los registros según el alcance autorizado del usuario.
+    Limita los registros al ámbito territorial autorizado.
 
-    propia:
-        Solo su delegación.
-
-    multiples:
-        Su delegación y las delegaciones adicionales autorizadas.
-
-    global:
-        Todas las delegaciones.
-
-    Superusuario:
-        Acceso transversal.
+    propia: delegación principal.
+    multiples: delegación principal y delegaciones adicionales autorizadas.
+    global: todas las delegaciones.
     """
-
     if not getattr(user, "is_authenticated", False):
         return queryset.none()
 
@@ -229,7 +279,6 @@ def filtrar_por_ambito(queryset, user, campo="delegacion_id"):
         return queryset
 
     funcionario = get_funcionario(user)
-
     if funcionario is None or not funcionario.activo:
         return queryset.none()
 
@@ -238,25 +287,12 @@ def filtrar_por_ambito(queryset, user, campo="delegacion_id"):
     if "global" in alcances:
         return queryset
 
-    delegacion_id = funcionario.delegacion_id
-
-    if not delegacion_id:
-        return queryset.none()
-
     if "multiples" in alcances:
-        delegaciones_ids = get_delegaciones_autorizadas_ids(user)
+        ids = get_delegaciones_autorizadas_ids(user)
+        return queryset.filter(**{f"{campo}__in": ids}) if ids else queryset.none()
 
-        if not delegaciones_ids:
-            return queryset.none()
-
-        return queryset.filter(
-            **{f"{campo}__in": delegaciones_ids}
-        )
-
-    if "propia" in alcances:
-        return queryset.filter(
-            **{campo: delegacion_id}
-        )
+    if "propia" in alcances and funcionario.delegacion_id:
+        return queryset.filter(**{campo: funcionario.delegacion_id})
 
     return queryset.none()
 
@@ -473,68 +509,47 @@ def denegar_acceso(request, detalle="No tiene permisos para acceder a esta secci
 
 class RolRequeridoMixin(LoginRequiredMixin):
     """
-    Control de acceso basado en permisos funcionales configurados
-    en los roles asignados al funcionario.
-
-    Los roles no conceden acceso por sí solos.
-    Cada vista protegida debe declarar permisos_permitidos.
+    Exige autenticación, rol permitido y, cuando se declara,
+    los permisos funcionales correspondientes.
     """
-
     roles_permitidos = ()
-    permisos_permitidos = ()
+    permisos_requeridos = ()
 
     def dispatch(self, request, *args, **kwargs):
         if not request.user.is_authenticated:
             return self.handle_no_permission()
 
-        # El superusuario técnico conserva acceso total.
-        if request.user.is_superuser:
-            return super().dispatch(request, *args, **kwargs)
-
-        # Una vista protegida sin permisos declarados debe denegar.
-        if not self.permisos_permitidos:
-            return denegar_acceso(
-                request,
-                "La operación no tiene permisos funcionales configurados.",
-            )
-
-        # El permiso debe estar asignado en alguno de los roles
-        # del funcionario autenticado.
-        if not tiene_permiso(
-            request.user,
-            *self.permisos_permitidos,
-        ):
+        if not tiene_rol(request.user, *self.roles_permitidos):
             return denegar_acceso(request)
 
-        # No permitir operaciones a funcionarios inactivos
-        # ni a usuarios sin funcionario asociado.
-        funcionario = get_funcionario(request.user)
-
-        if funcionario is None or not funcionario.activo:
+        if self.permisos_requeridos and not tiene_permiso(
+            request.user, *self.permisos_requeridos
+        ):
             return denegar_acceso(
                 request,
-                "Su cuenta no tiene un funcionario activo asociado.",
+                "Su rol no tiene autorización para realizar esta operación.",
             )
 
         return super().dispatch(request, *args, **kwargs)
 
-    def get_paginate_by(self, queryset):
-        valores_permitidos = (10, 15, 20)
 
-        try:
-            cantidad = int(
-                self.request.GET.get(
-                    "page_size",
-                    self.paginate_by,
-                )
+class PermisoRequeridoMixin:
+    """
+    Exige permisos funcionales configurados en Rol.permisos.
+    Se puede combinar con RolRequeridoMixin en vistas basadas en clases.
+    """
+    permisos_requeridos = ()
+
+    def dispatch(self, request, *args, **kwargs):
+        if self.permisos_requeridos and not tiene_permiso(
+            request.user, *self.permisos_requeridos
+        ):
+            return denegar_acceso(
+                request,
+                "Su rol no tiene autorización para realizar esta operación.",
             )
-        except (TypeError, ValueError):
-            cantidad = self.paginate_by
 
-        if cantidad not in valores_permitidos:
-            cantidad = self.paginate_by
-
-        return cantidad
+        return super().dispatch(request, *args, **kwargs)
 
 
 class AmbitoDelegacionMixin:
