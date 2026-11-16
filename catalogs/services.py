@@ -63,30 +63,45 @@ class CRUDCatalogo:
     @staticmethod
     def _crear_version_base_si_no_existe(elemento, actor=None):
         """
-        Conserva los datos anteriores de catálogos que ya existían
-        antes de implementar el versionamiento.
+        Conserva una fotografía del catálogo antiguo antes
+        de su primera modificación con versionamiento.
+
+        La versión queda abierta para que _registrar_version()
+        pueda cerrarla al registrar la nueva configuración.
+        No se inventa una fecha de creación histórica.
         """
-        existe = CatalogoVersion.objects.filter(
-            objeto_id=elemento.pk
-        ).exists()
+        with transaction.atomic():
+            elemento_bloqueado = (
+                Catalogo.objects
+                .select_for_update()
+                .select_related("tipo_atencion_padre")
+                .get(pk=elemento.pk)
+            )
 
-        if existe:
-            return
+            existe = (
+                CatalogoVersion.objects
+                .select_for_update()
+                .filter(objeto_id=elemento_bloqueado.pk)
+                .exists()
+            )
 
-        ahora = timezone.now()
+            if existe:
+                return
 
-        CatalogoVersion.objects.create(
-            objeto_id=elemento.pk,
-            numero_version=1,
-            vigente_desde=ahora,
-            vigente_hasta=ahora,
-            datos=CRUDCatalogo._datos_version(elemento),
-            creado_por=(
-                actor
-                if getattr(actor, "is_authenticated", False)
-                else None
-            ),
-        )
+            CatalogoVersion.objects.create(
+                objeto_id=elemento_bloqueado.pk,
+                numero_version=1,
+                vigente_desde=timezone.now(),
+                vigente_hasta=None,
+                datos=CRUDCatalogo._datos_version(
+                    elemento_bloqueado
+                ),
+                creado_por=(
+                    actor
+                    if getattr(actor, "is_authenticated", False)
+                    else None
+                ),
+            )
 
     @staticmethod
     def crear_elemento_catalogo(elemento, actor=None):

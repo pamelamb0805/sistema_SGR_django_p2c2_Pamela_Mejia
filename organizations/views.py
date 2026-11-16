@@ -319,23 +319,47 @@ class CargoDeleteView(AccionPostView):
             else reverse("organizations:cargo_detail", args=[objeto.pk])
 
 
+
 class ItemCreateView(EscrituraMixin, View):
     http_method_names = ["post"]
 
     def post(self, request, pk):
         cargo = get_object_or_404(Cargo, pk=pk)
         form = ItemMedibleForm(request.POST)
+
         if form.is_valid():
             item = form.save(commit=False)
             item.cargo = cargo
+
             try:
-                CRUDCargo.asociar_funcion_al_cargo(item, request.user)
-                messages.success(request, "Ítem medible asociado al cargo.")
+                CRUDCargo.asociar_funcion_al_cargo(
+                    item,
+                    request.user,
+                )
+
+                item.refresh_from_db()
+
+                CRUDCargo._registrar_version_item(
+                    item,
+                    actor=request.user,
+                )
+
+                messages.success(
+                    request,
+                    "Ítem medible asociado al cargo y "
+                    "primera versión registrada.",
+                )
+
             except ReglaNegocioError as exc:
                 messages.error(request, str(exc))
+
         else:
             messages.error(request, _errores(form))
-        return redirect("organizations:cargo_detail", pk=cargo.pk)
+
+        return redirect(
+            "organizations:cargo_detail",
+            pk=cargo.pk,
+        )
 
 
 
