@@ -30,6 +30,10 @@
 
         .sgr-notification-menu.show {
             display: block !important;
+            position: absolute;
+            inset: 0 0 auto auto;
+            margin: 0;
+            transform: translateY(42px);
         }
 
         .sgr-notification-header {
@@ -203,6 +207,7 @@
             class="btn sgr-notification-bell"
             type="button"
             data-bs-toggle="dropdown"
+            data-bs-auto-close="outside"
             aria-expanded="false"
             aria-controls="sgrNotificationMenu"
             aria-label="Ver notificaciones"
@@ -222,7 +227,8 @@
         <div
             id="sgrNotificationMenu"
             class="dropdown-menu dropdown-menu-end shadow sgr-notification-menu"
-            aria-labelledby="sgrNotificationDropdown">
+            aria-labelledby="sgrNotificationDropdown"
+            data-bs-popper="static">
 
             <div class="sgr-notification-header">
                 <div>

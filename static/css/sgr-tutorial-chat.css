@@ -4,6 +4,7 @@
    Municipalidad de La Serena
 ===================================================== */
 
+
 .sgr-chat {
     --chat-primary: #AD0000;
     --chat-dark: #660000;
@@ -16,7 +17,17 @@
     bottom: 24px;
     z-index: 1080;
     font-family: inherit;
+
+    /* El contenedor no debe bloquear clics fuera del asistente */
+    pointer-events: none;
 }
+
+/* Solo los elementos interactivos del asistente reciben clics */
+.sgr-chat-toggle,
+.sgr-chat-window {
+    pointer-events: auto;
+}
+
 
 /* Botón flotante */
 
