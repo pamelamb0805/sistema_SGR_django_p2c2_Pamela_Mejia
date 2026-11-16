@@ -32,6 +32,7 @@ from .models import (
 from django.utils import timezone
 from datetime import datetime, time
 
+
 def _validar_roles_delegables(
     actor,
     roles,
@@ -41,11 +42,16 @@ def _validar_roles_delegables(
     Impide conceder privilegios superiores a los que
     el administrador puede delegar.
     """
-    if (
-        actor is None
-        or not getattr(actor, "is_authenticated", False)
-        or getattr(actor, "is_superuser", False)
-    ):
+
+    if actor is None:
+        return
+
+    if not getattr(actor, "is_authenticated", False):
+        raise ReglaNegocioError(
+            "Debe iniciar sesión para administrar roles."
+        )
+
+    if getattr(actor, "is_superuser", False):
         return
 
     actuales = set(roles_actuales_ids or [])
@@ -53,10 +59,15 @@ def _validar_roles_delegables(
     alcances_actor = get_alcances(actor)
 
     for rol in roles:
+
+        # Mantiene los roles que el funcionario ya tenía.
         if rol.pk in actuales:
             continue
 
-        if rol.nombre_rol.strip().casefold() == "administrador":
+        if (
+            rol.nombre_rol.strip().casefold()
+            == "administrador"
+        ):
             raise ReglaNegocioError(
                 "Solo el superusuario técnico puede asignar "
                 "el rol Administrador."
@@ -84,11 +95,12 @@ def _validar_roles_delegables(
                 f"No puede conceder el alcance del rol "
                 f"«{rol.nombre_rol}»."
             )
-        
+    
 # Helpers compartidos (core.services)
 _guardar = guardar
 _eliminar = eliminar
 _snapshot = snapshot
+
 def _validar_ambito_asignacion(
     actor,
     queryset,
@@ -101,14 +113,17 @@ def _validar_ambito_asignacion(
     Comprueba que el actor pueda operar sobre el objeto
     según sus delegaciones y alcances autorizados.
 
-    Registra los intentos de asignación fuera del ámbito.
+    Los procesos internos pueden operar sin actor.
+    Un usuario no autenticado nunca obtiene autorización.
     """
 
     if actor is None:
         return
 
     if not getattr(actor, "is_authenticated", False):
-        return
+        raise ReglaNegocioError(
+            "Debe iniciar sesión para realizar esta operación."
+        )
 
     if getattr(actor, "is_superuser", False):
         return
@@ -586,11 +601,60 @@ class CRUDRol:
         _eliminar(rol, actor, "rol", "No se puede eliminar: el rol está asignado a funcionarios.")
 
     @staticmethod
-    def asignar_rol_a_funcionario(funcionario, rol, actor=None):
+    def asignar_rol_a_funcionario(
+        funcionario,
+        rol,
+        actor=None,
+    ):
         with transaction.atomic():
-            vinculo, creado = FuncionarioRol.objects.get_or_create(
-                funcionario=funcionario,
-                rol=rol,
+
+            funcionario = (
+                Funcionario.objects
+                .select_for_update()
+                .select_related("delegacion")
+                .get(pk=funcionario.pk)
+            )
+
+            if not funcionario.activo:
+                raise ReglaNegocioError(
+                    "No se pueden asignar roles a un funcionario inactivo."
+                )
+
+            if not funcionario.delegacion.activa:
+                raise ReglaNegocioError(
+                    "No se pueden asignar roles en una delegación inactiva."
+                )
+
+            _validar_ambito_asignacion(
+                actor=actor,
+                queryset=Delegacion.objects.all(),
+                campo="id_delegacion",
+                objeto_id=funcionario.delegacion_id,
+                entidad="funcionario_rol",
+                mensaje=(
+                    "No tienes autorización para asignar roles "
+                    "en esa delegación."
+                ),
+            )
+
+            roles_actuales_ids = set(
+                funcionario.roles.values_list(
+                    "pk",
+                    flat=True,
+                )
+            )
+
+            _validar_roles_delegables(
+                actor,
+                [rol],
+                roles_actuales_ids=roles_actuales_ids,
+            )
+
+            vinculo, creado = (
+                FuncionarioRol.objects.get_or_create(
+                    funcionario=funcionario,
+                    rol=rol,
+                )
             )
 
             if creado:
