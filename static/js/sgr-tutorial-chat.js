@@ -3,252 +3,50 @@ document.addEventListener("DOMContentLoaded", function () {
     "use strict";
 
     const root = document.getElementById("sgrTutorialChat");
-    if (!root) return;
+    if (!root || root.dataset.initialized === "true") return;
+    root.dataset.initialized = "true";
 
-    const toggle = document.getElementById("sgrChatToggle");
-    const close = document.getElementById("sgrChatClose");
-    const windowChat = document.getElementById("sgrChatWindow");
-    const messages = document.getElementById("sgrChatMessages");
-    const options = document.getElementById("sgrChatOptions");
-    const tutorial = document.getElementById("sgrChatTutorial");
-    const questionArea = document.getElementById("sgrChatQuestionArea");
-    const form = document.getElementById("sgrChatForm");
-    const input = document.getElementById("sgrChatInput");
+    const $ = (id) => document.getElementById(id);
+
+    const toggle = $("sgrChatToggle");
+    const close = $("sgrChatClose");
+    const windowChat = $("sgrChatWindow");
+    const messages = $("sgrChatMessages");
+    const options = $("sgrChatOptions");
+    const tutorialPanel = $("sgrChatTutorial");
+    const questionArea = $("sgrChatQuestionArea");
+    const form = $("sgrChatForm");
+    const input = $("sgrChatInput");
+
+    const required = [
+        toggle, close, windowChat, messages, options,
+        tutorialPanel, questionArea, form, input,
+        $("sgrTutorialTitle"), $("sgrTutorialProgress"),
+        $("sgrTutorialProgressBar"), $("sgrTutorialStep"),
+        $("sgrTutorialPrevious"), $("sgrTutorialNext"),
+        $("sgrTutorialExit")
+    ];
+
+    if (required.some((element) => !element)) return;
 
     const moduleName = root.dataset.module || "";
     const urlName = root.dataset.urlName || "";
 
-    const link = (id) => {
-        const element = document.getElementById(id);
-        return element ? element.getAttribute("href") : null;
-    };
-
     let currentTutorial = null;
     let currentStep = 0;
 
-    const tutorials = {
-        dashboard: {
-            title: "Conocer el panel principal",
-            keywords: ["panel", "inicio", "dashboard", "principal"],
-            steps: [
-                {
-                    title: "Paso 1. Panel principal",
-                    text: "El panel principal es la pantalla de inicio del SGR. Desde aquí puedes consultar información general y acceder a las funciones disponibles para tu cuenta."
-                },
-                {
-                    title: "Paso 2. Menú lateral",
-                    text: "Utiliza el menú lateral para acceder a los módulos habilitados. Las opciones visibles dependen de tus permisos y del rol asignado."
-                },
-                {
-                    title: "Paso 3. Indicadores y alertas",
-                    text: "Revisa los indicadores y alertas disponibles. Estos elementos ayudan a identificar actividades, compromisos y situaciones que requieren atención."
-                },
-                {
-                    title: "Paso 4. Notificaciones",
-                    text: "En la parte superior puedes consultar las notificaciones del sistema y revisar la actividad reciente."
-                },
-                {
-                    title: "Paso 5. Perfil y sesión",
-                    text: "Desde el menú de usuario puedes consultar o editar tu perfil y cerrar la sesión de forma segura."
-                }
-            ],
-            link: "chatDashboard"
-        },
+    function getLink(id) {
+        const element = $(id);
+        return element ? element.getAttribute("href") : null;
+    }
 
-        actividades: {
-            title: "Registrar y consultar actividades",
-            keywords: ["actividad", "actividades", "registro", "evidencia"],
-            steps: [
-                {
-                    title: "Paso 1. Ingresar a actividades",
-                    text: "Accede al módulo Actividades desde el menú lateral para consultar los registros que están disponibles para tu usuario."
-                },
-                {
-                    title: "Paso 2. Crear una actividad",
-                    text: "Si tienes permiso para registrar, utiliza la opción Registrar actividad. El sistema abrirá el formulario correspondiente."
-                },
-                {
-                    title: "Paso 3. Completar el formulario",
-                    text: "Completa los campos obligatorios de acuerdo con la información real de la actividad. Revisa especialmente fechas, descripción, responsable y los datos de clasificación que solicite el formulario."
-                },
-                {
-                    title: "Paso 4. Guardar",
-                    text: "Antes de guardar, revisa que la información sea correcta. Si el formulario presenta errores, corrige los campos indicados por el sistema."
-                },
-                {
-                    title: "Paso 5. Consultar y respaldar",
-                    text: "Desde el listado puedes consultar los registros y acceder a sus detalles. Cuando corresponda, utiliza las opciones de evidencias para adjuntar respaldos."
-                }
-            ],
-            link: "chatActividades",
-            createLink: "chatNuevaActividad"
-        },
-
-        validaciones: {
-            title: "Validar evidencias",
-            keywords: ["validar", "validacion", "validación", "evidencia", "revisar"],
-            steps: [
-                {
-                    title: "Paso 1. Abrir validaciones",
-                    text: "Ingresa a Validación de evidencias desde el menú lateral. Esta opción está disponible para los perfiles autorizados."
-                },
-                {
-                    title: "Paso 2. Revisar los antecedentes",
-                    text: "Selecciona un registro pendiente y revisa la información de la actividad y los archivos de respaldo disponibles."
-                },
-                {
-                    title: "Paso 3. Evaluar la evidencia",
-                    text: "Comprueba que el archivo y la información presentada correspondan a la actividad registrada y permitan respaldar lo informado."
-                },
-                {
-                    title: "Paso 4. Registrar la decisión",
-                    text: "Utiliza las opciones de validación que presenta el sistema y completa las observaciones que correspondan."
-                },
-                {
-                    title: "Paso 5. Confirmar",
-                    text: "Revisa la decisión antes de confirmar. La operación quedará registrada en el sistema."
-                }
-            ],
-            link: "chatValidaciones"
-        },
-
-        agenda: {
-            title: "Utilizar la agenda colectiva",
-            keywords: ["agenda", "compromiso", "compromisos", "calendario"],
-            steps: [
-                {
-                    title: "Paso 1. Abrir la agenda",
-                    text: "Ingresa a Agenda colectiva para consultar los compromisos que puedes visualizar según tu ámbito de acceso."
-                },
-                {
-                    title: "Paso 2. Crear un compromiso",
-                    text: "Si tienes permiso de registro, utiliza Nuevo compromiso desde el menú lateral."
-                },
-                {
-                    title: "Paso 3. Completar los datos",
-                    text: "Registra la información solicitada en el formulario. Comprueba responsables, fechas y descripción antes de guardar."
-                },
-                {
-                    title: "Paso 4. Consultar compromisos",
-                    text: "Desde el listado puedes revisar los compromisos y acceder al detalle de cada uno."
-                },
-                {
-                    title: "Paso 5. Revisar el resumen",
-                    text: "El resumen de agenda permite consultar información consolidada de los compromisos disponibles para tu usuario."
-                }
-            ],
-            link: "chatAgenda",
-            createLink: "chatNuevoCompromiso"
-        },
-
-        social: {
-            title: "Gestionar atención social",
-            keywords: ["social", "atencion", "atención", "caso", "casos", "subatencion"],
-            steps: [
-                {
-                    title: "Paso 1. Abrir atención social",
-                    text: "Ingresa al módulo Atención social si está habilitado para tu perfil."
-                },
-                {
-                    title: "Paso 2. Consultar casos",
-                    text: "El listado permite consultar los casos visibles según los permisos y el ámbito de acceso de tu cuenta."
-                },
-                {
-                    title: "Paso 3. Registrar un caso",
-                    text: "Si tienes autorización, utiliza la opción de nuevo caso y completa los antecedentes solicitados."
-                },
-                {
-                    title: "Paso 4. Revisar clasificación",
-                    text: "Comprueba que la atención y subatención seleccionadas correspondan a la situación registrada."
-                },
-                {
-                    title: "Paso 5. Consultar gestiones",
-                    text: "Accede al detalle del caso para revisar su información y las gestiones disponibles."
-                }
-            ],
-            link: "chatAtencionSocial"
-        },
-
-        desempeno: {
-            title: "Consultar mi desempeño",
-            keywords: ["desempeno", "desempeño", "mis metas", "mi desempeño"],
-            steps: [
-                {
-                    title: "Paso 1. Abrir mi desempeño",
-                    text: "Ingresa a Mi desempeño desde el menú lateral, si esta opción está habilitada para tu cuenta."
-                },
-                {
-                    title: "Paso 2. Revisar el período",
-                    text: "Identifica el período de medición al que corresponde la información que estás consultando."
-                },
-                {
-                    title: "Paso 3. Consultar metas",
-                    text: "Revisa las metas e indicadores que aparecen asociados a tu desempeño."
-                },
-                {
-                    title: "Paso 4. Revisar resultados",
-                    text: "Consulta los avances y resultados que presenta el sistema. Si tienes dudas sobre un dato, contacta a la unidad responsable de su gestión."
-                }
-            ],
-            link: "chatDesempeno"
-        },
-
-        supervision: {
-            title: "Supervisión y medición",
-            keywords: ["metas", "periodos", "períodos", "semaforo", "semáforo", "supervision", "supervisión"],
-            steps: [
-                {
-                    title: "Paso 1. Acceder a medición",
-                    text: "El área de medición y supervisión agrupa las funciones habilitadas para los perfiles autorizados."
-                },
-                {
-                    title: "Paso 2. Consultar períodos",
-                    text: "Desde Períodos puedes revisar los períodos de medición y las opciones que correspondan a tu rol."
-                },
-                {
-                    title: "Paso 3. Consultar metas",
-                    text: "Desde Metas puedes revisar los registros y acceder a las acciones disponibles según tus permisos."
-                },
-                {
-                    title: "Paso 4. Revisar el semáforo",
-                    text: "El semáforo de delegación permite consultar el estado de avance que presenta el sistema."
-                },
-                {
-                    title: "Paso 5. Verificar antes de modificar",
-                    text: "Si tu perfil permite administrar información, revisa cuidadosamente el período y los antecedentes antes de guardar cualquier cambio."
-                }
-            ],
-            link: "chatMetas"
-        },
-
-        organizacion: {
-            title: "Administrar la organización",
-            keywords: ["funcionario", "funcionarios", "delegacion", "delegación", "roles", "cargo", "cargos", "usuarios"],
-            steps: [
-                {
-                    title: "Paso 1. Abrir organización",
-                    text: "El módulo Organización contiene funciones de administración de funcionarios, delegaciones, cargos y roles para los perfiles autorizados."
-                },
-                {
-                    title: "Paso 2. Seleccionar el registro",
-                    text: "Ingresa a la sección correspondiente y consulta los registros disponibles."
-                },
-                {
-                    title: "Paso 3. Crear o editar",
-                    text: "Utiliza las opciones disponibles para crear o modificar información. Solo realiza cambios para los que tengas autorización."
-                },
-                {
-                    title: "Paso 4. Revisar los datos",
-                    text: "Comprueba que los datos ingresados sean correctos antes de guardar."
-                },
-                {
-                    title: "Paso 5. Comprobar los permisos",
-                    text: "Recuerda que las acciones visibles dependen de los permisos asignados a tu cuenta."
-                }
-            ],
-            link: "chatFuncionarios"
+    function firstAvailableLink(ids) {
+        for (const id of ids || []) {
+            const destination = getLink(id);
+            if (destination) return destination;
         }
-    };
+        return null;
+    }
 
     function addMessage(text, type = "bot", linkUrl = null, linkLabel = null) {
         const message = document.createElement("div");
@@ -257,7 +55,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (type === "bot") {
             const avatar = document.createElement("div");
             avatar.className = "sgr-chat-message-avatar";
-            avatar.innerHTML = '<i class="bi bi-mortarboard-fill"></i>';
+            avatar.innerHTML = '<i class="bi bi-mortarboard-fill" aria-hidden="true"></i>';
             message.appendChild(avatar);
         }
 
@@ -271,7 +69,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (linkUrl) {
             const anchor = document.createElement("a");
             anchor.href = linkUrl;
-            anchor.textContent = linkLabel || "Abrir módulo";
+            anchor.textContent = linkLabel || "Abrir sección";
             anchor.className = "d-inline-block mt-2";
             bubble.appendChild(anchor);
         }
@@ -281,43 +79,355 @@ document.addEventListener("DOMContentLoaded", function () {
         messages.scrollTop = messages.scrollHeight;
     }
 
+    function addActionButton(label, destination, icon = "bi-arrow-up-right") {
+        if (!destination) return;
+
+        const button = document.createElement("a");
+        button.href = destination;
+        button.className = "btn btn-sm btn-outline-danger ms-5 mb-2";
+        button.innerHTML =
+            '<i class="bi ' + icon + ' me-1" aria-hidden="true"></i>';
+        button.appendChild(document.createTextNode(label));
+        messages.appendChild(button);
+        messages.scrollTop = messages.scrollHeight;
+    }
+
     function openChat() {
         windowChat.hidden = false;
         toggle.setAttribute("aria-expanded", "true");
-        toggle.innerHTML = '<i class="bi bi-chat-dots-fill"></i>';
         input.focus();
     }
 
     function closeChat() {
         windowChat.hidden = true;
         toggle.setAttribute("aria-expanded", "false");
-        toggle.innerHTML = '<i class="bi bi-chat-dots-fill"></i>';
-    }
-
-    function getLink(id) {
-        return link(id);
+        toggle.focus();
     }
 
     function showOptions() {
         options.hidden = false;
-        tutorial.hidden = true;
+        tutorialPanel.hidden = true;
         questionArea.hidden = false;
     }
 
-    function findTutorialByName(name) {
-        return tutorials[name] || null;
+    const tutorials = {
+        dashboard: {
+            title: "Panel principal",
+            links: ["chatDashboard"],
+            steps: [
+                {
+                    title: "Paso 1. Reconocer el panel principal",
+                    text: "El panel principal es el punto de entrada al Sistema de Gestión de Resultados. Desde esta pantalla puedes consultar los accesos y la información que se encuentra habilitada para tu cuenta."
+                },
+                {
+                    title: "Paso 2. Utilizar el menú de navegación",
+                    text: "El menú lateral organiza las funciones por módulo. Selecciona la sección que necesitas. Las opciones disponibles dependen de los permisos asociados a tu usuario."
+                },
+                {
+                    title: "Paso 3. Revisar los indicadores",
+                    text: "Consulta los indicadores y resúmenes que presenta el panel. Considera el período y el ámbito al que corresponde la información antes de interpretar los resultados."
+                },
+                {
+                    title: "Paso 4. Consultar notificaciones",
+                    text: "Utiliza el ícono de campana de la barra superior para revisar las notificaciones disponibles. Abre cada aviso para consultar el antecedente relacionado, cuando corresponda."
+                },
+                {
+                    title: "Paso 5. Gestionar tu sesión",
+                    text: "Desde el menú de usuario puedes acceder a las opciones de perfil disponibles y cerrar sesión. Cierra la sesión al terminar de utilizar el sistema, especialmente en equipos compartidos."
+                }
+            ]
+        },
+
+        actividades: {
+            title: "Registro y consulta de actividades",
+            links: ["chatActividades"],
+            steps: [
+                {
+                    title: "Paso 1. Ingresar al módulo",
+                    text: "Abre Actividades desde el menú lateral. El listado presenta los registros que puedes consultar de acuerdo con tu perfil y ámbito de acceso.",
+                    action: "chatActividades",
+                    actionLabel: "Abrir actividades"
+                },
+                {
+                    title: "Paso 2. Iniciar un registro",
+                    text: "Si tu cuenta tiene permiso para registrar, utiliza el botón «Registrar actividad». Se abrirá el formulario de creación.",
+                    action: "chatNuevaActividad",
+                    actionLabel: "Registrar actividad"
+                },
+                {
+                    title: "Paso 3. Completar los antecedentes",
+                    text: "Completa los campos que muestra el formulario. La pantalla identifica los campos obligatorios. Revisa especialmente la fecha, el funcionario, la clasificación, el período y la descripción de la acción ejecutada, según los campos que estén habilitados."
+                },
+                {
+                    title: "Paso 4. Revisar y guardar",
+                    text: "Antes de guardar, verifica que la información describa correctamente la actividad realizada. Si el sistema muestra errores, lee los mensajes junto a los campos, corrige los datos y vuelve a enviar el formulario."
+                },
+                {
+                    title: "Paso 5. Consultar el detalle",
+                    text: "Desde el listado puedes abrir el detalle de una actividad. Allí se muestran sus antecedentes, estado, período y datos asociados."
+                },
+                {
+                    title: "Paso 6. Adjuntar respaldos",
+                    text: "Cuando la operación y tus permisos lo permitan, utiliza «Adjuntar evidencia» desde el detalle de la actividad. El formulario permite cargar archivos JPG, JPEG, PNG o PDF, sujetos a los límites configurados en el sistema."
+                },
+                {
+                    title: "Paso 7. Revisar el estado de la evidencia",
+                    text: "Después de adjuntar un respaldo, consulta su estado. La revisión y decisión de validación corresponden a los perfiles autorizados."
+                }
+            ]
+        },
+
+        validaciones: {
+            title: "Validación de evidencias",
+            links: ["chatValidaciones"],
+            steps: [
+                {
+                    title: "Paso 1. Abrir la bandeja",
+                    text: "Ingresa a Validación de evidencias. Esta sección está destinada a los perfiles autorizados para revisar respaldos.",
+                    action: "chatValidaciones",
+                    actionLabel: "Abrir validaciones"
+                },
+                {
+                    title: "Paso 2. Seleccionar una evidencia",
+                    text: "Abre un registro pendiente. Revisa el código de la evidencia y los antecedentes de la actividad asociada."
+                },
+                {
+                    title: "Paso 3. Examinar el archivo",
+                    text: "Abre el archivo adjunto y comprueba que sea legible y que corresponda a la actividad informada. Contrasta el respaldo con la descripción y los antecedentes disponibles."
+                },
+                {
+                    title: "Paso 4. Registrar la decisión",
+                    text: "Selecciona la decisión que corresponda en el formulario. Si rechazas la evidencia o solicitas una corrección, debes ingresar una observación que explique el motivo."
+                },
+                {
+                    title: "Paso 5. Confirmar la revisión",
+                    text: "Antes de enviar, revisa la decisión y la observación. El sistema registra la revisión y la incorpora al historial de la evidencia."
+                },
+                {
+                    title: "Paso 6. Considerar las restricciones",
+                    text: "El sistema impide que un usuario valide una evidencia asociada a una actividad propia. Si aparece ese aviso, no intentes continuar con esa validación."
+                }
+            ]
+        },
+
+        agenda: {
+            title: "Agenda colectiva y compromisos",
+            links: ["chatAgenda", "chatResumenAgenda"],
+            steps: [
+                {
+                    title: "Paso 1. Consultar la agenda",
+                    text: "Ingresa a Agenda colectiva para revisar los compromisos disponibles para tu usuario. El listado permite consultar los antecedentes y el estado de cada compromiso.",
+                    action: "chatAgenda",
+                    actionLabel: "Abrir agenda"
+                },
+                {
+                    title: "Paso 2. Registrar un compromiso",
+                    text: "Si tienes autorización, selecciona «Nuevo compromiso». Completa el formulario con los antecedentes solicitados.",
+                    action: "chatNuevoCompromiso",
+                    actionLabel: "Nuevo compromiso"
+                },
+                {
+                    title: "Paso 3. Revisar los datos",
+                    text: "Comprueba el origen, solicitante, territorio, responsable, fecha comprometida y demás antecedentes que solicite el formulario. Verifica especialmente la fecha y la persona responsable antes de guardar."
+                },
+                {
+                    title: "Paso 4. Consultar el detalle",
+                    text: "Abre un compromiso del listado para revisar sus datos, plazo, estado, observaciones y acciones disponibles según tus permisos."
+                },
+                {
+                    title: "Paso 5. Actualizar o reasignar",
+                    text: "Cuando tengas autorización, utiliza las acciones del detalle para actualizar el estado o reasignar al responsable. Revisa cuidadosamente los cambios antes de confirmarlos."
+                },
+                {
+                    title: "Paso 6. Revisar el historial",
+                    text: "El detalle dispone de una opción para consultar el historial del compromiso. Úsala para revisar los cambios registrados."
+                },
+                {
+                    title: "Paso 7. Consultar el resumen",
+                    text: "El resumen de agenda presenta información colectiva de los compromisos que puedes consultar. Puedes acceder a él desde la sección correspondiente.",
+                    action: "chatResumenAgenda",
+                    actionLabel: "Abrir resumen de agenda"
+                }
+            ]
+        },
+
+        social: {
+            title: "Atención social y gestión de casos",
+            links: ["chatAtencionSocial"],
+            steps: [
+                {
+                    title: "Paso 1. Ingresar a Atención social",
+                    text: "Abre Atención social para consultar los casos que están disponibles dentro de tu ámbito de acceso.",
+                    action: "chatAtencionSocial",
+                    actionLabel: "Abrir atención social"
+                },
+                {
+                    title: "Paso 2. Buscar un caso",
+                    text: "Utiliza los filtros del listado para localizar los registros. Comprueba los datos de la persona atendida y los antecedentes del caso antes de abrirlo."
+                },
+                {
+                    title: "Paso 3. Registrar un caso",
+                    text: "Si tu perfil tiene autorización, utiliza «Registrar caso». Completa los antecedentes solicitados y revisa la información antes de guardar.",
+                    action: "chatNuevoCaso",
+                    actionLabel: "Registrar caso"
+                },
+                {
+                    title: "Paso 4. Revisar la clasificación",
+                    text: "Comprueba que el tipo de atención y la subatención seleccionados correspondan al caso. Si el sistema utiliza un selector dependiente, selecciona primero el tipo de atención para cargar las subatenciones disponibles."
+                },
+                {
+                    title: "Paso 5. Abrir el detalle",
+                    text: "Desde el listado puedes abrir el detalle del caso para revisar la información de la persona atendida, territorio, delegación y estado."
+                },
+                {
+                    title: "Paso 6. Registrar una gestión",
+                    text: "Cuando corresponda y tengas autorización, ingresa al caso y utiliza la opción para agregar una gestión. La delegación, el responsable y la fecha de registro se asignan automáticamente según la configuración del sistema."
+                },
+                {
+                    title: "Paso 7. Consultar estadísticas",
+                    text: "Si tu perfil tiene acceso, puedes consultar las estadísticas sociales para revisar información consolidada.",
+                    action: "chatEstadisticasSociales",
+                    actionLabel: "Consultar estadísticas sociales"
+                }
+            ]
+        },
+
+        desempeno: {
+            title: "Consulta de mi desempeño",
+            links: ["chatDesempeno"],
+            steps: [
+                {
+                    title: "Paso 1. Abrir Mi desempeño",
+                    text: "Ingresa a Mi desempeño para consultar la información asociada a tu usuario y a los períodos de medición disponibles.",
+                    action: "chatDesempeno",
+                    actionLabel: "Abrir mi desempeño"
+                },
+                {
+                    title: "Paso 2. Identificar el período",
+                    text: "Comprueba a qué período corresponde la información mostrada. Los resultados deben interpretarse considerando las fechas y reglas aplicables a ese período."
+                },
+                {
+                    title: "Paso 3. Revisar metas e ítems",
+                    text: "Consulta las metas e ítems medibles que aparecen asociados a tu desempeño. Revisa sus ponderaciones y los antecedentes que se muestran."
+                },
+                {
+                    title: "Paso 4. Interpretar los resultados",
+                    text: "Revisa los avances y resultados presentados por el sistema. Si detectas una diferencia o tienes dudas sobre un dato, consulta a la unidad responsable de la medición."
+                },
+                {
+                    title: "Paso 5. Distinguir consulta y administración",
+                    text: "Mi desempeño es una vista de consulta personal. La creación o modificación de metas y períodos corresponde a funciones de administración y requiere permisos específicos."
+                }
+            ]
+        },
+
+        supervision: {
+            title: "Administración de metas y medición",
+            links: ["chatMetas", "chatPeriodos", "chatSemaforo"],
+            steps: [
+                {
+                    title: "Paso 1. Abrir la administración de metas",
+                    text: "Si tu perfil tiene permisos de supervisión, ingresa al listado de metas. Desde allí puedes consultar registros y acceder a las acciones que estén habilitadas.",
+                    action: "chatMetas",
+                    actionLabel: "Abrir metas"
+                },
+                {
+                    title: "Paso 2. Aplicar filtros",
+                    text: "En el listado puedes filtrar por período, cargo, funcionario e ítem medible. Utiliza los filtros para acotar la consulta y revisa que los criterios seleccionados sean correctos."
+                },
+                {
+                    title: "Paso 3. Crear o editar una meta",
+                    text: "Cuando esté habilitado, utiliza la opción para crear o editar una meta. Comprueba el funcionario, período, ítem medible y ponderación. La suma de ponderaciones por funcionario dentro de un período no debe superar el 100 %."
+                },
+                {
+                    title: "Paso 4. Revisar períodos",
+                    text: "En Períodos puedes consultar los períodos de medición, sus fechas, estado y versión. Las acciones de edición dependen de que el período y tus permisos lo permitan.",
+                    action: "chatPeriodos",
+                    actionLabel: "Abrir períodos"
+                },
+                {
+                    title: "Paso 5. Configurar reglas",
+                    text: "Desde el detalle de un período, los perfiles autorizados pueden acceder a la configuración de reglas y a su historial. Verifica el período antes de modificar una regla."
+                },
+                {
+                    title: "Paso 6. Consultar el semáforo",
+                    text: "El semáforo permite consultar el estado de avance de la medición según los datos disponibles. Interpreta sus resultados considerando el período seleccionado.",
+                    action: "chatSemaforo",
+                    actionLabel: "Abrir semáforo"
+                },
+                {
+                    title: "Paso 7. Revisar antes de confirmar",
+                    text: "Antes de guardar cambios de metas, períodos o reglas, verifica los datos y sus efectos. No modifiques registros si tu perfil no tiene autorización."
+                }
+            ]
+        },
+
+        organizacion: {
+            title: "Administración de la organización",
+            links: [
+                "chatFuncionarios",
+                "chatDelegaciones",
+                "chatCargos",
+                "chatRoles",
+                "chatCatalogos"
+            ],
+            steps: [
+                {
+                    title: "Paso 1. Ingresar a Organización",
+                    text: "El módulo Organización reúne las funciones para consultar y administrar funcionarios, delegaciones, cargos, ítems y roles. Los accesos dependen de los permisos de tu cuenta."
+                },
+                {
+                    title: "Paso 2. Consultar funcionarios",
+                    text: "En el listado de funcionarios puedes buscar registros y abrir su detalle. Según tus permisos, podrás crear, editar, cambiar el estado o gestionar el acceso de un funcionario.",
+                    action: "chatFuncionarios",
+                    actionLabel: "Abrir funcionarios"
+                },
+                {
+                    title: "Paso 3. Administrar delegaciones",
+                    text: "La sección de delegaciones permite consultar los registros territoriales. Si tienes autorización, puedes crear, editar o cambiar el estado de una delegación.",
+                    action: "chatDelegaciones",
+                    actionLabel: "Abrir delegaciones"
+                },
+                {
+                    title: "Paso 4. Revisar cargos e ítems",
+                    text: "En Cargos puedes consultar los cargos y sus ítems medibles asociados. Las opciones disponibles pueden incluir creación, edición, eliminación y revisión del historial de ítems.",
+                    action: "chatCargos",
+                    actionLabel: "Abrir cargos"
+                },
+                {
+                    title: "Paso 5. Administrar roles",
+                    text: "La sección de roles permite revisar los perfiles y las opciones de administración habilitadas para tu cuenta. Verifica los permisos y el alcance autorizado antes de guardar modificaciones.",
+                    action: "chatRoles",
+                    actionLabel: "Abrir roles"
+                },
+                {
+                    title: "Paso 6. Consultar catálogos",
+                    text: "Los catálogos contienen opciones de clasificación utilizadas por los módulos del sistema. Modifica sus registros únicamente si tu perfil tiene autorización y conoces el efecto que tendrán en los formularios.",
+                    action: "chatCatalogos",
+                    actionLabel: "Abrir catálogos"
+                },
+                {
+                    title: "Paso 7. Verificar los cambios",
+                    text: "Después de crear o modificar un registro, vuelve al listado y comprueba que la información se haya guardado correctamente."
+                }
+            ]
+        }
+    };
+
+    function tutorialAvailable(item) {
+        return !!firstAvailableLink(item.links);
     }
 
     function startTutorial(name) {
-        const selected = findTutorialByName(name);
+        const selected = tutorials[name];
 
         if (!selected) {
-            addMessage("No encontré ese tutorial. Puedes elegir otro tema o escribir tu pregunta.");
+            addMessage("No encontré ese tutorial. Puedes seleccionar otro tema disponible.");
             return;
         }
 
-        if (selected.link && !getLink(selected.link)) {
-            addMessage("Esta función no está habilitada para tu perfil. Puedes consultar otro tutorial disponible.");
+        if (!tutorialAvailable(selected)) {
+            addMessage("Este módulo no está habilitado para tu perfil. Puedes consultar otro tutorial disponible.");
             return;
         }
 
@@ -325,11 +435,10 @@ document.addEventListener("DOMContentLoaded", function () {
         currentStep = 0;
 
         options.hidden = true;
-        tutorial.hidden = false;
+        tutorialPanel.hidden = false;
         questionArea.hidden = true;
 
         renderTutorialStep();
-
         addMessage("Comenzaremos el tutorial: " + selected.title + ".");
     }
 
@@ -338,43 +447,50 @@ document.addEventListener("DOMContentLoaded", function () {
 
         const step = currentTutorial.steps[currentStep];
 
-        document.getElementById("sgrTutorialTitle").textContent =
-            currentTutorial.title;
-
-        document.getElementById("sgrTutorialProgress").textContent =
+        $("sgrTutorialTitle").textContent = currentTutorial.title;
+        $("sgrTutorialProgress").textContent =
             "Paso " + (currentStep + 1) + " de " + currentTutorial.steps.length;
 
-        document.getElementById("sgrTutorialProgressBar").style.width =
+        $("sgrTutorialProgressBar").style.width =
             ((currentStep + 1) / currentTutorial.steps.length * 100) + "%";
 
-        const stepContainer = document.getElementById("sgrTutorialStep");
+        const stepContainer = $("sgrTutorialStep");
         stepContainer.replaceChildren();
 
-        const title = document.createElement("strong");
-        title.textContent = step.title;
+        const heading = document.createElement("strong");
+        heading.textContent = step.title;
 
         const description = document.createElement("p");
         description.textContent = step.text;
 
-        stepContainer.append(title, description);
+        stepContainer.append(heading, description);
 
-        const previous = document.getElementById("sgrTutorialPrevious");
-        const next = document.getElementById("sgrTutorialNext");
+        const actionUrl = step.action ? getLink(step.action) : null;
 
-        previous.disabled = currentStep === 0;
+        if (actionUrl) {
+            const action = document.createElement("a");
+            action.href = actionUrl;
+            action.className = "btn btn-sm btn-outline-danger mt-2";
+            action.textContent = step.actionLabel || "Abrir sección";
+            stepContainer.appendChild(action);
+        }
 
-        next.innerHTML = currentStep === currentTutorial.steps.length - 1
-            ? 'Finalizar <i class="bi bi-check-lg"></i>'
-            : 'Siguiente <i class="bi bi-arrow-right"></i>';
+        $("sgrTutorialPrevious").disabled = currentStep === 0;
+        $("sgrTutorialNext").textContent =
+            currentStep === currentTutorial.steps.length - 1
+                ? "Finalizar"
+                : "Siguiente";
     }
 
     function finishTutorial() {
         if (currentTutorial) {
-            const destination = getLink(currentTutorial.link);
-            addMessage("¡Has terminado el tutorial! Puedes consultar otro tema cuando lo necesites.",
+            const destination = firstAvailableLink(currentTutorial.links);
+            addMessage(
+                "¡Has terminado el tutorial! Puedes volver a realizarlo cuando necesites orientación.",
                 "bot",
                 destination,
-                "Abrir módulo relacionado");
+                "Abrir módulo relacionado"
+            );
         }
 
         currentTutorial = null;
@@ -384,18 +500,21 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function getContextTutorial() {
         if (moduleName === "activities") {
-            if (urlName.includes("validacion")) {
-                return "validaciones";
-            }
+            if (urlName.includes("validacion")) return "validaciones";
             return "actividades";
         }
 
         if (moduleName === "agenda") return "agenda";
         if (moduleName === "social") return "social";
+
         if (moduleName === "measurement") {
-            if (urlName.includes("mi_desempeno")) return "desempeno";
+            if (urlName.includes("mi_desempeno") ||
+                urlName.includes("desempeno_funcionario")) {
+                return "desempeno";
+            }
             return "supervision";
         }
+
         if (moduleName === "organizations") return "organizacion";
 
         return "dashboard";
@@ -407,11 +526,11 @@ document.addEventListener("DOMContentLoaded", function () {
         const available = [
             ["dashboard", "Panel principal"],
             ["actividades", "Actividades"],
-            ["agenda", "Agenda colectiva"],
-            ["desempeno", "Mi desempeño"],
-            ["social", "Atención social"],
             ["validaciones", "Validación de evidencias"],
-            ["supervision", "Medición y supervisión"],
+            ["agenda", "Agenda colectiva"],
+            ["social", "Atención social"],
+            ["desempeno", "Mi desempeño"],
+            ["supervision", "Metas y medición"],
             ["organizacion", "Organización"]
         ];
 
@@ -423,14 +542,15 @@ document.addEventListener("DOMContentLoaded", function () {
 
         available.forEach(([key, label]) => {
             const item = tutorials[key];
-
-            if (item.link && !getLink(item.link)) return;
+            if (!tutorialAvailable(item)) return;
 
             const button = document.createElement("button");
             button.type = "button";
-            button.className = "btn btn-sm btn-outline-danger d-block w-100 text-start mb-2";
+            button.className =
+                "btn btn-sm btn-outline-danger d-block w-100 text-start mb-2";
             button.textContent = label;
-            button.addEventListener("click", () => {
+
+            button.addEventListener("click", function () {
                 wrapper.remove();
                 addMessage(label, "user");
                 startTutorial(key);
@@ -439,135 +559,155 @@ document.addEventListener("DOMContentLoaded", function () {
             bubble.appendChild(button);
         });
 
+        if (!bubble.children.length) {
+            addMessage("No hay tutoriales de módulos habilitados para tu perfil.");
+            return;
+        }
+
         wrapper.appendChild(bubble);
         messages.appendChild(wrapper);
         messages.scrollTop = messages.scrollHeight;
     }
 
-    function normalize(text) {
-        return text
+    function normalize(value) {
+        return value
             .toLowerCase()
             .normalize("NFD")
             .replace(/[\u0300-\u036f]/g, "")
-            .replace(/[¿?¡!.,]/g, "")
+            .replace(/[¿?¡!.,;:]/g, " ")
+            .replace(/\s+/g, " ")
             .trim();
     }
 
     const answers = [
         {
-            keywords: ["actividad", "registrar actividad", "crear actividad"],
-            response: "Para registrar una actividad, utiliza la opción Registrar actividad si está habilitada para tu cuenta. Puedo acompañarte con un tutorial paso a paso.",
-            tutorial: "actividades"
-        },
-        {
-            keywords: ["evidencia", "validar", "validacion"],
-            response: "Las evidencias se consultan desde el módulo de Actividades. La validación está disponible para los perfiles autorizados.",
-            tutorial: "validaciones"
-        },
-        {
-            keywords: ["agenda", "compromiso", "compromisos"],
-            response: "La Agenda colectiva permite consultar los compromisos disponibles para tu usuario. También puedes revisar su resumen.",
-            tutorial: "agenda"
-        },
-        {
-            keywords: ["meta", "metas", "desempeno"],
-            response: "Puedes consultar tu desempeño desde Mi desempeño. Las funciones de administración de metas dependen de tus permisos.",
+            keywords: ["mi desempeno", "mi rendimiento", "mis resultados", "desempeno personal"],
+            response: "Mi desempeño permite consultar tus metas y resultados personales para el período disponible. Es una vista de consulta; no es la sección para administrar metas.",
             tutorial: "desempeno"
         },
         {
-            keywords: ["social", "caso", "atencion social"],
-            response: "El módulo de Atención social permite consultar y gestionar los casos disponibles para tu ámbito de acceso.",
+            keywords: ["administrar metas", "crear meta", "nueva meta", "editar meta", "metas", "ponderacion", "ponderaciones"],
+            response: "La administración de metas corresponde al área de medición y requiere permisos de supervisión. Desde allí puedes consultar metas, aplicar filtros y, si está habilitado, crear o editar registros. Recuerda revisar que las ponderaciones no superen el 100 % por funcionario y período.",
+            tutorial: "supervision"
+        },
+        {
+            keywords: ["periodo", "periodos", "medicion", "reglas de periodo", "cerrar periodo", "reabrir periodo"],
+            response: "Los períodos de medición se consultan en la sección Períodos. Sus opciones de edición, cierre, reapertura y configuración de reglas dependen del estado del período y de tus permisos.",
+            tutorial: "supervision"
+        },
+        {
+            keywords: ["semaforo", "avance", "estado de avance"],
+            response: "El semáforo presenta el estado de avance de la medición según los datos disponibles. Debes revisar el período al que corresponden los resultados.",
+            tutorial: "supervision"
+        },
+        {
+            keywords: ["actividad", "actividades", "registrar actividad", "crear actividad"],
+            response: "El módulo Actividades permite registrar y consultar acciones ejecutadas. Desde el detalle también puedes revisar los antecedentes y adjuntar evidencias cuando tu perfil lo permita.",
+            tutorial: "actividades"
+        },
+        {
+            keywords: ["evidencia", "evidencias", "archivo adjunto", "adjuntar archivo"],
+            response: "Las evidencias se adjuntan desde el detalle de una actividad. El sistema admite archivos JPG, JPEG, PNG y PDF, sujetos a los límites configurados. Su validación corresponde a los perfiles autorizados.",
+            tutorial: "actividades"
+        },
+        {
+            keywords: ["validar", "validacion", "rechazar evidencia", "aprobar evidencia", "bandeja de validacion"],
+            response: "La bandeja de validación permite revisar evidencias pendientes. Debes comprobar el archivo y los antecedentes. Si rechazas o solicitas corrección, registra una observación. No puedes validar evidencias de actividades propias.",
+            tutorial: "validaciones"
+        },
+        {
+            keywords: ["agenda", "compromiso", "compromisos", "nuevo compromiso"],
+            response: "La Agenda colectiva permite consultar compromisos, revisar su detalle, plazo, estado e historial. Si tienes permiso, también puedes registrar compromisos y utilizar las acciones habilitadas.",
+            tutorial: "agenda"
+        },
+        {
+            keywords: ["caso social", "casos sociales", "atencion social", "persona atendida", "subatencion", "subatenciones"],
+            response: "Atención social permite consultar y gestionar casos dentro de tu ámbito de acceso. La clasificación debe corresponder al tipo de atención y subatención seleccionados. En las gestiones, la delegación, el responsable y la fecha se asignan automáticamente.",
             tutorial: "social"
         },
         {
-            keywords: ["funcionario", "delegacion", "rol", "cargo", "usuario"],
-            response: "Las funciones de organización permiten administrar funcionarios, delegaciones, cargos y roles cuando tu perfil tiene autorización.",
+            keywords: ["funcionario", "funcionarios", "delegacion", "delegaciones", "rol", "roles", "cargo", "cargos", "usuario", "usuarios", "catalogo", "catalogos"],
+            response: "Organización reúne la administración de funcionarios, delegaciones, cargos, ítems y roles. Las opciones para crear, editar o cambiar estados dependen de los permisos de tu cuenta.",
             tutorial: "organizacion"
         },
         {
-            keywords: ["panel", "inicio", "dashboard"],
-            response: "El panel principal presenta información general y accesos a los módulos habilitados para tu cuenta.",
+            keywords: ["notificacion", "notificaciones", "campana", "avisos"],
+            response: "Las notificaciones se consultan desde el ícono de campana ubicado en la barra superior. Abre el aviso para revisar su contenido y el registro relacionado, si corresponde.",
             tutorial: "dashboard"
         },
         {
-            keywords: ["notificacion", "notificaciones"],
-            response: "Puedes revisar las notificaciones desde el ícono de campana de la barra superior.",
+            keywords: ["perfil", "contrasena", "cambiar clave", "cerrar sesion", "salir"],
+            response: "Las opciones de perfil y cierre de sesión se encuentran en el menú de usuario de la barra superior. Cierra la sesión al terminar, especialmente si utilizas un equipo compartido."
+        },
+        {
+            keywords: ["panel", "inicio", "dashboard", "pagina principal"],
+            response: "El panel principal reúne accesos e información general del SGR. Utiliza el menú lateral para entrar a los módulos habilitados para tu cuenta.",
             tutorial: "dashboard"
         },
         {
-            keywords: ["perfil", "contrasena", "contrasena", "sesion"],
-            response: "Puedes consultar tu perfil desde el menú de usuario ubicado en la parte superior derecha. Allí también encontrarás la opción para cerrar sesión."
-        },
-        {
-            keywords: ["ayuda", "tutorial", "como funciona", "como usar"],
-            response: "Puedo guiarte paso a paso por los módulos del SGR. Selecciona Tutorial paso a paso para comenzar."
+            keywords: ["ayuda", "tutorial", "como funciona", "como usar", "orientacion"],
+            response: "Puedo orientarte sobre el uso de los módulos del SGR y guiarte paso a paso. Selecciona «Tutorial paso a paso» para elegir un módulo o «Ayuda de esta pantalla» para recibir orientación contextual."
         }
     ];
 
     function answerQuestion(question) {
         const normalized = normalize(question);
-
         if (!normalized) return;
 
         addMessage(question, "user");
 
-        const answer = answers.find(item =>
-            item.keywords.some(keyword =>
+        const answer = answers.find((item) =>
+            item.keywords.some((keyword) =>
                 normalized.includes(normalize(keyword))
             )
         );
 
-        if (answer) {
-            const selected = answer.tutorial;
-            const selectedTutorial = selected ? tutorials[selected] : null;
-            const destination = selectedTutorial
-                ? getLink(selectedTutorial.link)
-                : null;
-
+        if (!answer) {
             addMessage(
-                answer.response,
-                "bot",
-                destination,
-                destination ? "Abrir módulo" : null
+                "No encontré una respuesta específica para esa consulta. Puedes preguntar por actividades, evidencias, validaciones, agenda, compromisos, atención social, metas, períodos, desempeño, funcionarios, delegaciones, roles o notificaciones. También puedes iniciar un tutorial paso a paso."
             );
+            return;
+        }
 
-            if (selected) {
+        addMessage(answer.response);
+
+        if (answer.tutorial) {
+            const selected = tutorials[answer.tutorial];
+
+            if (selected && tutorialAvailable(selected)) {
                 const button = document.createElement("button");
                 button.type = "button";
                 button.className = "btn btn-sm btn-outline-danger ms-5 mb-3";
                 button.textContent = "Ver tutorial paso a paso";
 
-                button.addEventListener("click", () => {
+                button.addEventListener("click", function () {
                     button.remove();
-                    startTutorial(selected);
+                    startTutorial(answer.tutorial);
                 });
 
                 messages.appendChild(button);
-                messages.scrollTop = messages.scrollHeight;
+            } else if (selected) {
+                addMessage("El tutorial de esa sección no está habilitado para tu perfil. Puedes consultar otra orientación desde el menú de tutoriales.");
             }
-
-            return;
         }
 
-        addMessage(
-            "No encontré una respuesta específica para esa pregunta. Prueba con palabras como actividades, agenda, metas, evidencias, atención social o funcionarios. También puedes elegir un tutorial paso a paso."
-        );
+        messages.scrollTop = messages.scrollHeight;
     }
 
-    toggle.addEventListener("click", () => {
+    toggle.addEventListener("click", function () {
         if (windowChat.hidden) openChat();
         else closeChat();
     });
 
     close.addEventListener("click", closeChat);
 
-    document.addEventListener("keydown", (event) => {
+    document.addEventListener("keydown", function (event) {
         if (event.key === "Escape" && !windowChat.hidden) {
             closeChat();
         }
     });
 
-    options.addEventListener("click", (event) => {
+    options.addEventListener("click", function (event) {
         const button = event.target.closest("[data-chat-action]");
         if (!button) return;
 
@@ -575,48 +715,42 @@ document.addEventListener("DOMContentLoaded", function () {
 
         if (action === "tutorial") {
             showTutorialMenu();
-        }
-
-        if (action === "question") {
+        } else if (action === "question") {
             input.focus();
             addMessage("Escribe tu pregunta sobre el funcionamiento del SGR.");
-        }
-
-        if (action === "context") {
+        } else if (action === "context") {
             const key = getContextTutorial();
-            addMessage("Te mostraré la orientación relacionada con esta pantalla.");
+            addMessage("Esta es la orientación relacionada con la sección en la que te encuentras.");
             startTutorial(key);
         }
     });
 
-    document.getElementById("sgrTutorialPrevious")
-        .addEventListener("click", () => {
-            if (currentStep > 0) {
-                currentStep--;
-                renderTutorialStep();
-            }
-        });
+    $("sgrTutorialPrevious").addEventListener("click", function () {
+        if (currentStep > 0) {
+            currentStep--;
+            renderTutorialStep();
+        }
+    });
 
-    document.getElementById("sgrTutorialNext")
-        .addEventListener("click", () => {
-            if (!currentTutorial) return;
+    $("sgrTutorialNext").addEventListener("click", function () {
+        if (!currentTutorial) return;
 
-            if (currentStep < currentTutorial.steps.length - 1) {
-                currentStep++;
-                renderTutorialStep();
-            } else {
-                finishTutorial();
-            }
-        });
+        if (currentStep < currentTutorial.steps.length - 1) {
+            currentStep++;
+            renderTutorialStep();
+        } else {
+            finishTutorial();
+        }
+    });
 
-    document.getElementById("sgrTutorialExit")
-        .addEventListener("click", () => {
-            currentTutorial = null;
-            showOptions();
-            addMessage("Has salido del tutorial. Puedes iniciar otro cuando quieras.");
-        });
+    $("sgrTutorialExit").addEventListener("click", function () {
+        currentTutorial = null;
+        currentStep = 0;
+        showOptions();
+        addMessage("Has salido del tutorial. Puedes iniciar otro cuando quieras.");
+    });
 
-    form.addEventListener("submit", (event) => {
+    form.addEventListener("submit", function (event) {
         event.preventDefault();
 
         const question = input.value.trim();

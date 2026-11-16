@@ -15,7 +15,7 @@
     <link rel="stylesheet" href="{% static 'css/sgr-redesign.css' %}?v=20261114-1">
 
     {% if user.is_authenticated %}
-    <link rel="stylesheet" href="{% static 'css/sgr-tutorial-chat.css' %}?v=1">
+    <link rel="stylesheet" href="{% static 'css/sgr-tutorial-chat.css' %}?v=20261116-2">
     {% endif %}
 
     <style>
@@ -634,7 +634,7 @@
 <script src="{% static 'js/sgr-websocket.js' %}?v=20261111-4"></script>
 
 {% if user.is_authenticated %}
-<script src="{% static 'js/sgr-tutorial-chat.js' %}?v=1" defer></script>
+<script src="{% static 'js/sgr-tutorial-chat.js' %}?v=20261116-2" defer></script>
 {% endif %}
 
 {% block extra_js %}{% endblock %}

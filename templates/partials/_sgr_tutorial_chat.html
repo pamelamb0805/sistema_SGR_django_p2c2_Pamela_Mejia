@@ -6,27 +6,26 @@
      data-module="{{ request.resolver_match.app_name|default:'' }}"
      data-url-name="{{ request.resolver_match.url_name|default:'' }}">
 
-    <!-- Botón flotante -->
     <button type="button"
             id="sgrChatToggle"
             class="sgr-chat-toggle"
             aria-label="Abrir asistente tutorial"
             aria-expanded="false"
             aria-controls="sgrChatWindow">
-        <i class="bi bi-chat-dots-fill"></i>
+        <i class="bi bi-chat-dots-fill" aria-hidden="true"></i>
         <span class="sgr-chat-toggle-dot"></span>
     </button>
 
-    <!-- Ventana -->
     <section id="sgrChatWindow"
              class="sgr-chat-window"
              aria-label="Asistente tutorial del SGR"
+             aria-modal="false"
              hidden>
 
         <header class="sgr-chat-header">
             <div class="d-flex align-items-center gap-2">
                 <div class="sgr-chat-avatar">
-                    <i class="bi bi-mortarboard-fill"></i>
+                    <i class="bi bi-mortarboard-fill" aria-hidden="true"></i>
                 </div>
 
                 <div>
@@ -42,7 +41,7 @@
                     id="sgrChatClose"
                     class="sgr-chat-close"
                     aria-label="Cerrar asistente">
-                <i class="bi bi-x-lg"></i>
+                <i class="bi bi-x-lg" aria-hidden="true"></i>
             </button>
         </header>
 
@@ -50,19 +49,20 @@
 
             <div id="sgrChatMessages"
                  class="sgr-chat-messages"
-                 aria-live="polite">
+                 aria-live="polite"
+                 aria-relevant="additions">
 
                 <div class="sgr-chat-message sgr-chat-bot">
                     <div class="sgr-chat-message-avatar">
-                        <i class="bi bi-mortarboard-fill"></i>
+                        <i class="bi bi-mortarboard-fill" aria-hidden="true"></i>
                     </div>
 
                     <div class="sgr-chat-bubble">
                         <strong>¡Hola! Bienvenido/a al SGR.</strong>
                         <p class="mb-0 mt-1">
                             Soy tu asistente de orientación. Puedo explicarte
-                            cómo utilizar los módulos del sistema o guiarte
-                            paso a paso para realizar una tarea.
+                            cómo utilizar los módulos del sistema, responder
+                            preguntas frecuentes y guiarte paso a paso.
                         </p>
                     </div>
                 </div>
@@ -75,22 +75,25 @@
                 </p>
 
                 <button type="button" data-chat-action="tutorial">
-                    <i class="bi bi-signpost-split"></i>
+                    <i class="bi bi-signpost-split" aria-hidden="true"></i>
                     Tutorial paso a paso
                 </button>
 
                 <button type="button" data-chat-action="question">
-                    <i class="bi bi-question-circle"></i>
+                    <i class="bi bi-question-circle" aria-hidden="true"></i>
                     Tengo una pregunta
                 </button>
 
                 <button type="button" data-chat-action="context">
-                    <i class="bi bi-window"></i>
+                    <i class="bi bi-window" aria-hidden="true"></i>
                     Ayuda de esta pantalla
                 </button>
             </div>
 
-            <div id="sgrChatTutorial" class="sgr-chat-tutorial" hidden>
+            <div id="sgrChatTutorial"
+                 class="sgr-chat-tutorial"
+                 hidden>
+
                 <div class="sgr-chat-tutorial-heading">
                     <span id="sgrTutorialTitle">Tutorial</span>
                     <span id="sgrTutorialProgress"></span>
@@ -106,13 +109,15 @@
                     <button type="button"
                             id="sgrTutorialPrevious"
                             class="sgr-chat-secondary">
-                        <i class="bi bi-arrow-left"></i> Anterior
+                        <i class="bi bi-arrow-left" aria-hidden="true"></i>
+                        Anterior
                     </button>
 
                     <button type="button"
                             id="sgrTutorialNext"
                             class="sgr-chat-primary">
-                        Siguiente <i class="bi bi-arrow-right"></i>
+                        Siguiente
+                        <i class="bi bi-arrow-right" aria-hidden="true"></i>
                     </button>
                 </div>
 
@@ -123,7 +128,9 @@
                 </button>
             </div>
 
-            <div id="sgrChatQuestionArea" class="sgr-chat-question-area">
+            <div id="sgrChatQuestionArea"
+                 class="sgr-chat-question-area">
+
                 <form id="sgrChatForm">
                     <input type="text"
                            id="sgrChatInput"
@@ -133,54 +140,86 @@
                            aria-label="Escribe tu pregunta">
 
                     <button type="submit" aria-label="Enviar pregunta">
-                        <i class="bi bi-send-fill"></i>
+                        <i class="bi bi-send-fill" aria-hidden="true"></i>
                     </button>
                 </form>
-                <small>Asistente informativo del Sistema de Gestión de Resultados.</small>
+
+                <small>
+                    Asistente informativo del Sistema de Gestión de Resultados.
+                </small>
             </div>
 
         </div>
     </section>
 
-    <!-- Enlaces disponibles según permisos del usuario -->
+    <!-- Enlaces internos disponibles según los permisos del usuario -->
     <div id="sgrChatLinks" hidden>
 
         <a id="chatDashboard" href="{% url 'dashboard' %}"></a>
 
-        <a id="chatActividades" href="{% url 'activities:actividad_list' %}"></a>
+        <a id="chatActividades"
+           href="{% url 'activities:actividad_list' %}"></a>
 
         {% if sgr_puede_registrar %}
-        <a id="chatNuevaActividad" href="{% url 'activities:actividad_create' %}"></a>
-        <a id="chatNuevoCompromiso" href="{% url 'agenda:compromiso_create' %}"></a>
+            <a id="chatNuevaActividad"
+               href="{% url 'activities:actividad_create' %}"></a>
+
+            <a id="chatNuevoCompromiso"
+               href="{% url 'agenda:compromiso_create' %}"></a>
         {% endif %}
 
         {% if sgr_puede_validar %}
-        <a id="chatValidaciones" href="{% url 'activities:validacion_bandeja' %}"></a>
+            <a id="chatValidaciones"
+               href="{% url 'activities:validacion_bandeja' %}"></a>
         {% endif %}
 
-        <a id="chatAgenda" href="{% url 'agenda:compromiso_list' %}"></a>
-        <a id="chatResumenAgenda" href="{% url 'agenda:resumen' %}"></a>
+        <a id="chatAgenda"
+           href="{% url 'agenda:compromiso_list' %}"></a>
+
+        <a id="chatResumenAgenda"
+           href="{% url 'agenda:resumen' %}"></a>
 
         {% if sgr_puede_registrar or sgr_es_transversal %}
-        <a id="chatAtencionSocial" href="{% url 'social:caso_list' %}"></a>
-        <a id="chatEstadisticasSociales" href="{% url 'social:estadisticas' %}"></a>
+            <a id="chatAtencionSocial"
+               href="{% url 'social:caso_list' %}"></a>
+
+            <a id="chatNuevoCaso"
+               href="{% url 'social:caso_create' %}"></a>
+
+            <a id="chatEstadisticasSociales"
+               href="{% url 'social:estadisticas' %}"></a>
         {% endif %}
 
         {% if sgr_funcionario %}
-        <a id="chatDesempeno" href="{% url 'measurement:mi_desempeno' %}"></a>
+            <a id="chatDesempeno"
+               href="{% url 'measurement:mi_desempeno' %}"></a>
         {% endif %}
 
         {% if sgr_puede_supervisar %}
-        <a id="chatMetas" href="{% url 'measurement:meta_list' %}"></a>
-        <a id="chatPeriodos" href="{% url 'measurement:periodo_list' %}"></a>
-        <a id="chatSemaforo" href="{% url 'measurement:semaforo' %}"></a>
-        <a id="chatFuncionarios" href="{% url 'organizations:funcionario_list' %}"></a>
-        <a id="chatDelegaciones" href="{% url 'organizations:delegacion_list' %}"></a>
-        <a id="chatRoles" href="{% url 'organizations:rol_list' %}"></a>
-        <a id="chatCatalogos" href="{% url 'catalogs:catalogo_list' %}"></a>
+            <a id="chatMetas"
+               href="{% url 'measurement:meta_list' %}"></a>
+
+            <a id="chatPeriodos"
+               href="{% url 'measurement:periodo_list' %}"></a>
+
+            <a id="chatSemaforo"
+               href="{% url 'measurement:semaforo' %}"></a>
+
+            <a id="chatFuncionarios"
+               href="{% url 'organizations:funcionario_list' %}"></a>
+
+            <a id="chatDelegaciones"
+               href="{% url 'organizations:delegacion_list' %}"></a>
+
+            <a id="chatCargos"
+               href="{% url 'organizations:cargo_list' %}"></a>
+
+            <a id="chatRoles"
+               href="{% url 'organizations:rol_list' %}"></a>
+
+            <a id="chatCatalogos"
+               href="{% url 'catalogs:catalogo_list' %}"></a>
         {% endif %}
 
     </div>
 </div>
-
-<script src="{% static 'js/sgr-tutorial-chat.js' %}?v=20261116-1" defer></script>
