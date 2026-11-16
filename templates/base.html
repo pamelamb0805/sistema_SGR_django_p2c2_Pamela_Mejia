@@ -28,14 +28,6 @@
             border-radius: 12px;
         }
 
-        .sgr-notification-menu.show {
-            display: block !important;
-            position: absolute;
-            inset: 0 0 auto auto;
-            margin: 0;
-            transform: translateY(42px);
-        }
-
         .sgr-notification-header {
             display: flex;
             align-items: center;
@@ -206,7 +198,6 @@
             id="sgrNotificationDropdown"
             class="btn sgr-notification-bell"
             type="button"
-            data-bs-toggle="dropdown"
             data-bs-auto-close="outside"
             aria-expanded="false"
             aria-controls="sgrNotificationMenu"
@@ -227,8 +218,7 @@
         <div
             id="sgrNotificationMenu"
             class="dropdown-menu dropdown-menu-end shadow sgr-notification-menu"
-            aria-labelledby="sgrNotificationDropdown"
-            data-bs-popper="static">
+            aria-labelledby="sgrNotificationDropdown">
 
             <div class="sgr-notification-header">
                 <div>
@@ -635,6 +625,29 @@
 {% include "partials/_messages.html" %}
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const boton = document.getElementById("sgrNotificationDropdown");
+
+    if (!boton || !window.bootstrap) {
+        console.error("No se encontró el botón o Bootstrap no está cargado.");
+        return;
+    }
+
+    boton.addEventListener("click", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const menu = bootstrap.Dropdown.getOrCreateInstance(boton, {
+            autoClose: "outside"
+        });
+
+        menu.toggle();
+    });
+});
+</script>
+
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.10.8/dist/sweetalert2.all.min.js"></script>
 <script src="{% static 'js/alerts.js' %}"></script>
 <script src="{% static 'js/sgr-websocket.js' %}?v=20261111-4"></script>
