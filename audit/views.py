@@ -6,7 +6,7 @@ Solo Administrador y Coordinador consultan la auditoría; nadie puede modificarl
 (las vistas son de solo lectura).
 """
 from django.http import HttpResponse
-from django.shortcuts import get_object_or_404
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.generic import DetailView, ListView, View
 
@@ -321,6 +321,7 @@ class NotificacionHistorialView(LoginRequiredMixin, ListView):
     Incluye notificaciones leídas y pendientes.
     No modifica ni elimina registros.
     """
+
     model = Notificacion
     template_name = "audit/notificaciones.html"
     context_object_name = "notificaciones"
@@ -344,119 +345,126 @@ class NotificacionHistorialView(LoginRequiredMixin, ListView):
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
 
-        contexto["total_notificaciones"] = (
-            self.get_queryset().count()
-        )
+        queryset = self.get_queryset()
 
-        contexto["total_pendientes"] = (
-            self.get_queryset().filter(leida=False).count()
-        )
+        contexto["total_notificaciones"] = queryset.count()
+        contexto["total_pendientes"] = queryset.filter(
+            leida=False
+        ).count()
 
         return contexto
 
-        
-    @login_required
-    def comentarios_registro(request, app_label, model_name, pk):
-        """
-        Muestra y permite responder la conversación de un registro.
 
-        El servidor comprueba el acceso al registro y su delegación
-        antes de mostrar o guardar cualquier comentario.
-        """
+@login_required
+def comentarios_registro(request, app_label, model_name, pk):
+    """
+    Muestra y permite responder la conversación de un registro.
 
-        try:
-            registro, delegacion_id = obtener_registro_comentable(
-                request.user,
-                app_label,
-                model_name,
-                pk,
-            )
-        except PermissionDenied as exc:
-            messages.error(request, str(exc))
-            return redirect("dashboard")
+    Comprueba la autenticación, el rol y el ámbito territorial
+    antes de mostrar o guardar comentarios.
+    """
 
-        conversacion = obtener_conversacion(
-            registro,
-            delegacion_id,
+    try:
+        registro, delegacion_id = obtener_registro_comentable(
+            request.user,
+            app_label,
+            model_name,
+            pk,
         )
 
+    except PermissionDenied as exc:
+        messages.error(request, str(exc))
+        return redirect("dashboard")
+
+    conversacion = obtener_conversacion(
+        registro,
+        delegacion_id,
+    )
+
+    if request.method == "POST":
+        form = ComentarioRegistroForm(request.POST)
+
+        if form.is_valid():
+            respuesta_a = None
+            respuesta_id = form.cleaned_data.get("respuesta_a")
+
+            if respuesta_id:
+                respuesta_a = conversacion.filter(
+                    pk=respuesta_id
+                ).first()
+
+                if respuesta_a is None:
+                    form.add_error(
+                        "respuesta_a",
+                        "La respuesta seleccionada no pertenece "
+                        "a esta conversación.",
+                    )
+
+            if not form.errors:
+                try:
+                    crear_comentario(
+                        registro=registro,
+                        delegacion_id=delegacion_id,
+                        usuario=request.user,
+                        mensaje=form.cleaned_data["mensaje"],
+                        respuesta_a=respuesta_a,
+                    )
+
+                    messages.success(
+                        request,
+                        "Comentario publicado correctamente.",
+                    )
+
+                    return redirect(
+                        "audit:comentarios_registro",
+                        app_label=app_label,
+                        model_name=model_name,
+                        pk=pk,
+                    )
+
+                except Exception:
+                    messages.error(
+                        request,
+                        "No fue posible publicar el comentario. "
+                        "Intente nuevamente.",
+                    )
+
+    else:
         respuesta_inicial = request.GET.get("responder", "")
+
+        if respuesta_inicial.isdigit():
+            respuesta_inicial = int(respuesta_inicial)
+
+            if not conversacion.filter(
+                pk=respuesta_inicial
+            ).exists():
+                respuesta_inicial = ""
+        else:
+            respuesta_inicial = ""
 
         form = ComentarioRegistroForm(
             initial={
-                "respuesta_a": (
-                    respuesta_inicial
-                    if str(respuesta_inicial).isdigit()
-                    else ""
-                )
+                "respuesta_a": respuesta_inicial,
             }
         )
 
-        if request.method == "POST":
-            form = ComentarioRegistroForm(request.POST)
+    tipo = ContentType.objects.get_for_model(
+        registro,
+        for_concrete_model=False,
+    )
 
-            if form.is_valid():
-                respuesta_a = None
-                respuesta_id = form.cleaned_data.get("respuesta_a")
+    contexto = {
+        "titulo": f"Conversación · {registro}",
+        "registro": registro,
+        "comentarios": conversacion,
+        "form": form,
+        "tipo_registro": tipo.model,
+        "app_label": app_label,
+        "model_name": model_name,
+    }
 
-                if respuesta_id:
-                    respuesta_a = conversacion.filter(
-                        pk=respuesta_id
-                    ).first()
-
-                    if respuesta_a is None:
-                        form.add_error(
-                            "respuesta_a",
-                            "La respuesta seleccionada no pertenece "
-                            "a esta conversación.",
-                        )
-
-                if not form.errors:
-                    try:
-                        crear_comentario(
-                            registro=registro,
-                            delegacion_id=delegacion_id,
-                            usuario=request.user,
-                            mensaje=form.cleaned_data["mensaje"],
-                            respuesta_a=respuesta_a,
-                        )
-
-                        messages.success(
-                            request,
-                            "Comentario publicado correctamente.",
-                        )
-
-                        return redirect(
-                            "audit:comentarios_registro",
-                            app_label=app_label,
-                            model_name=model_name,
-                            pk=pk,
-                        )
-
-                    except Exception:
-                        messages.error(
-                            request,
-                            "No fue posible publicar el comentario. "
-                            "Intente nuevamente.",
-                        )
-
-        tipo = ContentType.objects.get_for_model(
-            registro,
-            for_concrete_model=False,
-        )
-
-        contexto = {
-            "titulo": f"Conversación · {registro}",
-            "registro": registro,
-            "comentarios": conversacion,
-            "form": form,
-            "tipo_registro": tipo.model,
-            "app_label": app_label,
-            "model_name": model_name,
-        }
-
-        return render(
-            request,
-            "audit/comentarios_registro.html",
-            contexto,
-        )
+    return render(
+        request,
+        "audit/comentarios_registro.html",
+        contexto,
+    )

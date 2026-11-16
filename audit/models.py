@@ -14,6 +14,7 @@ from django.utils import timezone
 
 from organizations.models import Funcionario
 from django.conf import settings
+from django.contrib.contenttypes.fields import GenericForeignKey
 
 
 EVENTO_INTENTO_ALTERACION = "INTENTO_ALTERACION_AUDITORIA"
