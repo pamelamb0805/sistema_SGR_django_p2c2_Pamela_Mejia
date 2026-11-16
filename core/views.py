@@ -42,6 +42,8 @@ from django.db import transaction
 
 from organizations.models import PasswordResetCode
 from core.activity_metrics import construir_resumen_actividad_reciente
+from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_POST
 
 class SGRLoginView(LoginView):
     template_name = "registration/login.html"
@@ -396,7 +398,7 @@ def construir_alertas_operativas(user, periodo=None, hoy=None):
                     nivel="danger",
                     prioridad=5,
                 )
-
+    
     # Primero se muestran las alertas de mayor prioridad.
     alertas.sort(
         key=lambda alerta: (
@@ -406,7 +408,56 @@ def construir_alertas_operativas(user, periodo=None, hoy=None):
         )
     )
 
-    return alertas[:50]
+    # RF-037: persistencia individual por usuario.
+    from audit.models import AlertaOperativa
+
+    for datos_alerta in alertas[:50]:
+        fecha_alerta = datos_alerta["fecha"]
+
+        if hasattr(fecha_alerta, "date"):
+            fecha_alerta = fecha_alerta.date()
+
+        # La clave identifica el origen concreto de la alerta.
+        identidad = "|".join([
+            str(datos_alerta["tipo"]),
+            str(datos_alerta["titulo"]),
+            str(datos_alerta["responsable"]),
+            str(datos_alerta["url"]),
+            str(datos_alerta["motivo"]),
+        ])
+
+        clave = hashlib.sha256(
+            identidad.encode("utf-8")
+        ).hexdigest()
+
+        AlertaOperativa.objects.update_or_create(
+            usuario=user,
+            clave=clave,
+            defaults={
+                "tipo": datos_alerta["tipo"],
+                "titulo": datos_alerta["titulo"],
+                "motivo": datos_alerta["motivo"],
+                "responsable": datos_alerta["responsable"],
+                "fecha": fecha_alerta,
+                "url": datos_alerta["url"] or "",
+                "nivel": datos_alerta["nivel"],
+                "prioridad": datos_alerta["prioridad"],
+            },
+        )
+
+    # Las alertas pendientes siguen visibles aunque se recargue
+    # el dashboard o se cierre y vuelva a iniciar sesión.
+    return list(
+        AlertaOperativa.objects.filter(
+            usuario=user,
+            estado=AlertaOperativa.ESTADO_PENDIENTE,
+        ).order_by(
+            "prioridad",
+            "fecha",
+            "id_alerta",
+        )[:50]
+    )
+
 
 
 @login_required
@@ -506,7 +557,7 @@ def dashboard(request):
         if funcionarios_visibles is not None
         else []
     )
-    
+
     # METAS DEL PERÍODO
     if (
         Meta is not None
@@ -1674,3 +1725,37 @@ def perfil_editar(request):
             "form": form,
         },
     )
+
+
+@login_required
+@require_POST
+def marcar_alerta_atendida(request, pk):
+    """
+    Marca como atendida una alerta del usuario autenticado.
+    Un usuario no puede modificar alertas de otro usuario.
+    """
+    from audit.models import AlertaOperativa
+
+    alerta = get_object_or_404(
+        AlertaOperativa,
+        pk=pk,
+        usuario=request.user,
+    )
+
+    if alerta.estado == AlertaOperativa.ESTADO_PENDIENTE:
+        alerta.estado = AlertaOperativa.ESTADO_ATENDIDA
+        alerta.fecha_atencion = timezone.now()
+        alerta.atendida_por = request.user
+
+        alerta.save(update_fields=[
+            "estado",
+            "fecha_atencion",
+            "atendida_por",
+        ])
+
+        messages.success(
+            request,
+            "La alerta fue marcada como atendida.",
+        )
+
+    return redirect("dashboard")

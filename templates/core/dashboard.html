@@ -487,6 +487,7 @@
     </div>
     {% endif %}
 
+    
     <!-- ALERTAS OPERATIVAS RF-037 -->
 
     {% if d.alertas_operativas %}
@@ -499,7 +500,7 @@
             </h3>
 
             <span class="badge text-bg-danger">
-                {{ d.alertas_operativas|length }} alertas
+                {{ d.alertas_operativas|length }} pendientes
             </span>
         </div>
 
@@ -529,17 +530,48 @@
 
                         <i class="bi bi-calendar3 me-1"></i>
                         Fecha: {{ alerta.fecha|date:"d/m/Y" }}
+
+                        <span class="mx-2">·</span>
+
+                        <span class="badge text-bg-warning">
+                            {{ alerta.estado }}
+                        </span>
                     </div>
 
                 </div>
 
-                {% if alerta.url %}
-                <a href="{{ alerta.url }}"
-                   class="btn btn-sm btn-outline-dark sgr-alert-action">
-                    Revisar
-                    <i class="bi bi-arrow-right ms-1"></i>
-                </a>
-                {% endif %}
+                <div class="d-flex flex-column gap-1 sgr-alert-action">
+
+                    {% if alerta.url %}
+                    <a href="{{ alerta.url }}"
+                    class="btn btn-sm btn-outline-dark">
+                        Revisar
+                        <i class="bi bi-arrow-right ms-1"></i>
+                    </a>
+                    {% endif %}
+
+                    <form method="post"
+                        action="{% url 'marcar_alerta_atendida' alerta.pk %}">
+                        {% csrf_token %}
+
+                        <button type="submit"
+                                class="btn btn-sm btn-success w-100">
+                            <i class="bi bi-check-circle me-1"></i>
+                            Marcar atendida
+                        </button>
+                    </form>
+
+                </div>
+
+            </div>
+
+            {% endfor %}
+
+        </div>
+
+    </section>
+    {% endif %}
+
 
             </div>
 
