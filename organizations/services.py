@@ -302,8 +302,7 @@ class CRUDCargo:
             ),
         }
 
-
-   @staticmethod
+    @staticmethod
     def _registrar_version_item(
         item,
         actor=None,
@@ -311,12 +310,11 @@ class CRUDCargo:
     ):
         """
         Registra una nueva versión del ítem medible.
-
-        Conserva la configuración anterior cuando se trata de un ítem
-        antiguo que todavía no tenía historial.
-        Evita crear versiones duplicadas si no hubo cambios.
+        Conserva los datos anteriores de ítems que todavía no tenían
+        historial y evita versiones duplicadas.
         """
         from .models import ItemMedibleVersion
+        from measurement.models import Meta as MetaModel
 
         with transaction.atomic():
             item = (
@@ -334,31 +332,20 @@ class CRUDCargo:
             )
 
             ultima = versiones.first()
-            ahora = timezone.now()
-            datos_actuales = CRUDCargo._datos_version_item(item)
-
             vigentes = list(
                 versiones.filter(vigente_hasta__isnull=True)
             )
 
-            # No crear una versión si no hubo cambios.
+            ahora = timezone.now()
+            datos_actuales = CRUDCargo._datos_version_item(item)
+
             if (
                 len(vigentes) == 1
                 and vigentes[0].datos == datos_actuales
             ):
                 return vigentes[0]
 
-            numero_nuevo = (
-                ultima.numero_version + 1
-                if ultima
-                else 1
-            )
-
-            # Si el ítem existía antes del versionamiento,
-            # conservar su fotografía anterior como versión inicial.
             if ultima is None and datos_anteriores is not None:
-                from measurement.models import Meta as MetaModel
-
                 fecha_inicio = (
                     MetaModel.objects
                     .filter(item_id=item.pk)
@@ -379,10 +366,7 @@ class CRUDCargo:
                 )
 
                 inicio_anterior = timezone.make_aware(
-                    datetime.combine(
-                        fecha_inicio,
-                        time.min,
-                    )
+                    datetime.combine(fecha_inicio, time.min)
                 )
 
                 ItemMedibleVersion.objects.create(
@@ -395,14 +379,18 @@ class CRUDCargo:
                 )
 
                 numero_nuevo = 2
-
             else:
-                # Cerrar la versión que estaba vigente.
                 for version in vigentes:
                     version.vigente_hasta = ahora
                     version.save(
                         update_fields=["vigente_hasta"]
                     )
+
+                numero_nuevo = (
+                    ultima.numero_version + 1
+                    if ultima
+                    else 1
+                )
 
             return ItemMedibleVersion.objects.create(
                 objeto_id=item.pk,
@@ -418,34 +406,7 @@ class CRUDCargo:
             )
 
     @staticmethod
-    def crear_cargo(cargo, actor=None):
-        return _guardar(cargo, actor, "cargo")
-
-    @staticmethod
-    def mostrar_todos_cargos():
-        return Cargo.objects.all()
-
-    @staticmethod
-    def asociar_funcion_al_cargo(item, actor=None):
-        """Registra el ítem y su primera versión histórica."""
-
-        if item.cargo_id is None:
-            raise ReglaNegocioError(
-                "El ítem debe pertenecer a un cargo."
-            )
-
-        with transaction.atomic():
-            item = _guardar(item, actor, "item_medible")
-            CRUDCargo._registrar_version_item(item, actor)
-
-        return item
-
-    @staticmethod
     def modificar_item(item, actor=None):
-        """
-        Modifica un ítem medible conservando su fotografía anterior
-        y registrando una nueva versión.
-        """
         with transaction.atomic():
             original = (
                 ItemMedible.objects
@@ -477,6 +438,37 @@ class CRUDCargo:
             )
 
             return item
+
+    @staticmethod
+    def cambiar_vigencia_item(item, actor=None):
+        with transaction.atomic():
+            original = (
+                ItemMedible.objects
+                .select_for_update()
+                .select_related("cargo")
+                .get(pk=item.pk)
+            )
+
+            datos_anteriores = CRUDCargo._datos_version_item(
+                original
+            )
+
+            original.vigencia = not original.vigencia
+
+            original = _guardar(
+                original,
+                actor,
+                "item_medible",
+            )
+
+            CRUDCargo._registrar_version_item(
+                original,
+                actor,
+                datos_anteriores=datos_anteriores,
+            )
+
+            return original
+
 
     @staticmethod
     def cambiar_vigencia_item(item, actor=None):

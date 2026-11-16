@@ -99,7 +99,6 @@ class CRUDPeriodo:
             "version_formula_dias": 1,
         }
 
-
     @staticmethod
     def _registrar_version(
         meta,
@@ -108,30 +107,25 @@ class CRUDPeriodo:
         fecha_inicio_anterior=None,
     ):
         """
-        Registra el historial inmutable de una meta.
+        Registra el versionamiento histórico de una meta.
 
-        - Una meta nueva comienza en versión 1.
-        - Una meta modificada cierra la versión anterior.
-        - Una meta antigua sin historial conserva su configuración
-        anterior como versión 1.
-        - Cada versión conserva autor, fecha y vigencia.
+        Si la meta ya existía sin historial, conserva primero
+        su fotografía anterior y después registra la nueva.
         """
         with transaction.atomic():
-            meta = (
+            meta_bloqueada = (
                 Meta.objects
                 .select_for_update()
-                .select_related("item")
                 .get(pk=meta.pk)
             )
 
             ahora = timezone.now()
-
-            datos_actuales = CRUDMeta._datos_version(meta)
+            datos_actuales = CRUDMeta._datos_version(meta_bloqueada)
 
             versiones = (
                 MetaVersion.objects
                 .select_for_update()
-                .filter(objeto_id=meta.pk)
+                .filter(objeto_id=meta_bloqueada.pk)
                 .order_by("-numero_version")
             )
 
@@ -141,7 +135,6 @@ class CRUDPeriodo:
                 versiones.filter(vigente_hasta__isnull=True)
             )
 
-            # Evitar versiones repetidas si no hubo cambios.
             if (
                 len(vigentes) == 1
                 and vigentes[0].datos == datos_actuales
@@ -151,7 +144,7 @@ class CRUDPeriodo:
             if ultima is None and datos_anteriores is not None:
                 fecha_anterior = (
                     fecha_inicio_anterior
-                    or meta.fecha_version
+                    or meta_bloqueada.fecha_version
                     or timezone.localdate()
                 )
 
@@ -163,8 +156,8 @@ class CRUDPeriodo:
                 )
 
                 MetaVersion.objects.create(
-                    meta=meta,
-                    objeto_id=meta.pk,
+                    meta=meta_bloqueada,
+                    objeto_id=meta_bloqueada.pk,
                     numero_version=1,
                     vigente_desde=inicio_anterior,
                     vigente_hasta=ahora,
@@ -173,7 +166,6 @@ class CRUDPeriodo:
                 )
 
                 numero_nuevo = 2
-
             else:
                 for version in vigentes:
                     version.vigente_hasta = ahora
@@ -188,8 +180,8 @@ class CRUDPeriodo:
                 )
 
             return MetaVersion.objects.create(
-                meta=meta,
-                objeto_id=meta.pk,
+                meta=meta_bloqueada,
+                objeto_id=meta_bloqueada.pk,
                 numero_version=numero_nuevo,
                 vigente_desde=ahora,
                 vigente_hasta=None,
@@ -200,6 +192,7 @@ class CRUDPeriodo:
                     else None
                 ),
             )
+
     @staticmethod
     def actualizar_reglas_periodo(periodo, datos, actor=None):
         """Registra una nueva versión de reglas y recalcula el período abierto."""
@@ -938,9 +931,7 @@ class CRUDMeta:
     def modificar_meta(meta, actor=None):
         """
         Modifica una meta sin alterar su identidad histórica.
-
-        Conserva funcionario, ítem y período originales.
-        Registra los parámetros anteriores y crea una nueva versión.
+        Conserva los datos anteriores y registra una nueva versión.
         """
         with transaction.atomic():
             original = (
@@ -974,12 +965,7 @@ class CRUDMeta:
                     "Para otro período debe crearse una nueva meta."
                 )
 
-            # Capturar los datos y la fecha originales ANTES
-            # de que _preparar actualice fecha_version.
-            datos_anteriores = CRUDMeta._datos_version(
-                original
-            )
-
+            datos_anteriores = CRUDMeta._datos_version(original)
             fecha_inicio_anterior = original.fecha_version
 
             CRUDMeta._preparar(meta)
@@ -1007,6 +993,7 @@ class CRUDMeta:
             )
 
             return meta
+
     # ---------------------------------------------------------
     # ELIMINAR META
     # ---------------------------------------------------------
