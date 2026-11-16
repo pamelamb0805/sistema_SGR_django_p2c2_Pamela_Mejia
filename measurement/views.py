@@ -704,17 +704,23 @@ class MetaUpdateView(MetaFormMixin, UpdateView):
 
 
 class MetaDeleteView(AccionPostView):
-    permisos_permitidos = ('metas.editar',)
-    roles_permitidos = ROLES_MEDICION
+    permisos_permitidos = ("metas.eliminar",)
+    roles_permitidos = ()
     redirect_name = "measurement:meta_list"
 
     def get_objeto(self, pk):
-        return get_object_or_404(MetaModel, pk=pk)
+        return get_object_or_404(
+            MetaModel,
+            pk=pk,
+        )
 
     def accion(self, request, objeto):
-        CRUDMeta.eliminar_meta(objeto, request.user)
-        return "Meta eliminada."
+        CRUDMeta.eliminar_meta(
+            objeto,
+            request.user,
+        )
 
+        return "Meta eliminada."
 # ---------------------------------------------------------------------------
 # Historial de versiones de metas (RF-038)
 # ---------------------------------------------------------------------------

@@ -332,7 +332,8 @@ class CargoDeleteView(AccionPostView):
 
 
 class ItemCreateView(EscrituraMixin, View):
-    permisos_permitidos = ('cargos.editar',)
+    permisos_permitidos = ("items.editar",)
+    roles_permitidos = ()
     http_method_names = ["post"]
 
     def post(self, request, pk):
@@ -377,10 +378,9 @@ class ItemCreateView(EscrituraMixin, View):
         )
 
 
-
 class ItemToggleView(AccionPostView):
-    permisos_permitidos = ('cargos.editar',)
-    roles_permitidos = ROLES_CONFIGURACION
+    permisos_permitidos = ("items.editar",)
+    roles_permitidos = ()
     redirect_name = "organizations:cargo_list"
 
     def get_objeto(self, pk):
@@ -411,9 +411,8 @@ class ItemToggleView(AccionPostView):
             "organizations:cargo_detail",
             args=[objeto.cargo_id],
         )
-
 class ItemHistorialView(LecturaMixin, DetailView):
-    permisos_permitidos = ('cargos.ver',)
+    permisos_permitidos = ("items.ver",)
     model = ItemMedible
     template_name = "organization/item_historial.html"
     context_object_name = "item"
@@ -435,7 +434,6 @@ class ItemHistorialView(LecturaMixin, DetailView):
         )
 
         return contexto
-    
 # ---------------------------------------------------------------------------
 # Roles
 # ---------------------------------------------------------------------------

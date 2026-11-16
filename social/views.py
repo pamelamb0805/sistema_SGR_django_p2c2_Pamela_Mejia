@@ -413,22 +413,39 @@ class CasoUpdateView(EscrituraSocialMixin, ModoMixin, GuardarMixin, UpdateView):
 
 
 class CasoEstadoView(AccionPostView):
-    permisos_permitidos = ('atenciones.editar',)
-    roles_permitidos = ROLES_SOCIAL
+    permisos_permitidos = ("atenciones.estado",)
+    roles_permitidos = ()
 
     def get_objeto(self, pk):
-        return get_object_or_404(casos_visibles(self.request.user), pk=pk)
+        return get_object_or_404(
+            casos_visibles(self.request.user),
+            pk=pk,
+        )
 
     def accion(self, request, objeto):
         form = EstadoCasoForm(request.POST)
+
         if not form.is_valid():
-            raise ReglaNegocioError("Seleccione un estado válido.")
-        CRUDUsuarioSocial.cambiar_estado_caso(objeto, form.cleaned_data["estado_caso"], request.user)
-        return f"Caso actualizado a «{form.cleaned_data['estado_caso']}»."
+            raise ReglaNegocioError(
+                "Seleccione un estado válido."
+            )
+
+        CRUDUsuarioSocial.cambiar_estado_caso(
+            objeto,
+            form.cleaned_data["estado_caso"],
+            request.user,
+        )
+
+        return (
+            f"Caso actualizado a "
+            f"«{form.cleaned_data['estado_caso']}»."
+        )
 
     def get_redirect(self, objeto):
-        return reverse("social:caso_detail", args=[objeto.pk])
-
+        return reverse(
+            "social:caso_detail",
+            args=[objeto.pk],
+        )
 
 # ---------------------------------------------------------------------------
 # Gestiones
