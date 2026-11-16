@@ -873,26 +873,53 @@ class Seguridad:
 
         return usuario
 
+
     @staticmethod
     def cambiar_contrasenia(usuario, password, actor=None):
+        """
+        Cambia la contraseña y registra la operación dentro
+        de una misma transacción.
+
+        Nunca almacena la contraseña ni su hash en la auditoría.
+        """
         try:
-            validate_password(password, user=usuario)
+            validate_password(
+                password,
+                user=usuario,
+            )
         except ValidationError as exc:
-            raise ReglaNegocioError(" ".join(exc.messages))
+            raise ReglaNegocioError(
+                " ".join(exc.messages)
+            )
 
-        usuario.set_password(password)
-        usuario.save(update_fields=["password"])
+        with transaction.atomic():
+            usuario = (
+                Usuario.objects
+                .select_for_update()
+                .get(pk=usuario.pk)
+            )
 
-        auditar(
-            actor,
-            "CAMBIO_CONTRASENIA",
-            "usuario_acceso",
-            usuario.pk,
-            None,
-            None,
-        )
+            usuario.set_password(password)
+
+            usuario.save(
+                update_fields=["password"]
+            )
+
+            auditar(
+                actor,
+                "CAMBIO_CONTRASENIA",
+                "usuario_acceso",
+                usuario.pk,
+                {
+                    "password": "VALOR_PROTEGIDO",
+                },
+                {
+                    "password": "CONTRASENA_ACTUALIZADA",
+                },
+            )
 
         return usuario
+
 
     @staticmethod
     def guardar_usuario(form, actor=None):

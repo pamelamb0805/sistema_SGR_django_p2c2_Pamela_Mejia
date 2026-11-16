@@ -62,11 +62,52 @@ class Auditoria(models.Model):
         return f"{self.fecha:%d/%m/%Y %H:%M} · {self.evento} · {self.entidad_afectada} {self.id_entidad_afectada}"
 
     @staticmethod
-    def _registrar_intento(accion, instancia):
-        """Deja constancia del intento de alteración (HU-30)."""
+    def _registrar_intento(
+        accion,
+        instancia=None,
+        usuario=None,
+        id_entidad=None,
+    ):
+        """
+        Registra un intento de modificación o eliminación
+        del historial de auditoría.
+
+        Cuando se conoce al usuario que realiza el intento,
+        conserva su funcionario asociado y su identificador.
+        """
+        funcionario = None
+        nombre_usuario = "Usuario no identificado"
+
+        if usuario is not None:
+            nombre_usuario = (
+                usuario.get_username()
+                if hasattr(usuario, "get_username")
+                else str(usuario)
+            )
+
+            funcionario = getattr(
+                usuario,
+                "funcionario",
+                None,
+            )
+
+        identificador = (
+            getattr(instancia, "pk", None)
+            or id_entidad
+            or 0
+        )
+
         Auditoria.objects.create(
-            evento=EVENTO_INTENTO_ALTERACION, entidad_afectada="auditoria",
-            id_entidad_afectada=getattr(instancia, "pk", None) or 0, valor_nuevo=accion)
+            evento=EVENTO_INTENTO_ALTERACION,
+            entidad_afectada="auditoria",
+            id_entidad_afectada=identificador,
+            valor_nuevo=(
+                f"Acción: {accion}; "
+                f"Usuario: {nombre_usuario}"
+            ),
+            funcionario=funcionario,
+        )
+
 
     def save(self, *args, **kwargs):
         if not self._state.adding:

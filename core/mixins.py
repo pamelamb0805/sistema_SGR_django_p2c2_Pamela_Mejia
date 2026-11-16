@@ -280,6 +280,7 @@ def filtrar_por_ambito(queryset, user, campo="delegacion_id"):
 # ---------------------------------------------------------------------------
 
 
+
 def auditar(
     usuario,
     evento,
@@ -289,92 +290,154 @@ def auditar(
     valor_nuevo=None,
 ):
     """
-    Registra auditoría y crea notificaciones persistentes.
+    Registra operaciones críticas de forma obligatoria.
 
-    Las operaciones CREAR, MODIFICAR y ELIMINAR ya generan
-    notificaciones desde core.services, por lo que aquí no se duplican.
+    Si no es posible guardar el evento de auditoría, propaga
+    el error para que la transacción de la operación principal
+    pueda revertirse.
+
+    Las notificaciones son complementarias: su fallo no debe
+    invalidar un evento de auditoría que ya fue registrado.
     """
-    try:
-        from audit.services import (
-            registrar_evento,
-            crear_notificaciones,
-        )
+    from audit.services import (
+        registrar_evento,
+        crear_notificaciones,
+    )
 
-        auditoria = registrar_evento(
-            usuario=usuario,
-            evento=evento,
-            entidad=entidad,
-            id_entidad=id_entidad,
-            valor_anterior=valor_anterior,
-            valor_nuevo=valor_nuevo,
-        )
+    # El registro de auditoría es obligatorio.
+    # No ocultar excepciones de esta operación.
+    auditoria = registrar_evento(
+        usuario=usuario,
+        evento=evento,
+        entidad=entidad,
+        id_entidad=id_entidad,
+        valor_anterior=valor_anterior,
+        valor_nuevo=valor_nuevo,
+    )
 
-        # Las operaciones CRUD ya notifican desde core.services.
-        if evento not in ("CREAR", "MODIFICAR", "ELIMINAR"):
+    # Las operaciones CRUD normales ya crean notificaciones
+    # desde core.services.
+    if evento not in ("CREAR", "MODIFICAR", "ELIMINAR"):
+        if evento == "LOGIN" and entidad == "usuario":
+            delegacion_notificacion = None
+        else:
+            delegacion_notificacion = get_delegacion_id(usuario)
 
-            # Los inicios de sesión se notifican a todos los
-            # Administradores, sin limitar por delegación.
-            if evento == "LOGIN" and entidad == "usuario":
-                delegacion_notificacion = None
-            else:
-                delegacion_notificacion = get_delegacion_id(usuario)
-
+        try:
             crear_notificaciones(
                 auditoria,
                 delegacion_id=delegacion_notificacion,
             )
+        except Exception:
+            logger.exception(
+                "La auditoría quedó registrada, pero no se "
+                "pudieron crear las notificaciones del evento %s.",
+                evento,
+            )
 
-    except ImportError:
-        logger.debug(
-            "App audit aún no disponible; evento %s no registrado.",
-            evento,
-        )
-        return
-
-    except Exception:
-        logger.exception(
-            "No se pudo registrar el evento de auditoría %s.",
-            evento,
-        )
-        return
-
-    # Las operaciones CRUD normales ya publican su evento
-    # desde core.services.
+    # Los CRUD normales ya publican su evento desde core.services.
     if evento in ("CREAR", "MODIFICAR", "ELIMINAR"):
-        return
+        return auditoria
 
     entidades = {
-        "delegacion": ("organizations", "Delegacion", "organizations"),
-        "cargo": ("organizations", "Cargo", "organizations"),
-        "item_medible": ("organizations", "ItemMedible", "organizations"),
-        "rol": ("organizations", "Rol", "organizations"),
-        "funcionario": ("organizations", "Funcionario", "organizations"),
-        "usuario": ("organizations", "Usuario", "organizations"),
-        "catalogo": ("catalogs", "Catalogo", "catalogs"),
-        "periodo": ("measurement", "Periodo", "measurement"),
-        "meta": ("measurement", "Meta", "measurement"),
-        "ajuste": ("measurement", "Ajuste", "measurement"),
-        "actividad": ("activities", "Actividad", "activities"),
-        "evidencia": ("activities", "Evidencia", "activities"),
-        "validacion": ("activities", "Validacion", "activities"),
-        "compromiso": ("agenda", "Compromiso", "agenda"),
-        "usuario_social": ("social", "UsuarioSocial", "social"),
-        "atencion_social": ("social", "AtencionSocial", "social"),
+        "delegacion": (
+            "organizations",
+            "Delegacion",
+            "organizations",
+        ),
+        "cargo": (
+            "organizations",
+            "Cargo",
+            "organizations",
+        ),
+        "item_medible": (
+            "organizations",
+            "ItemMedible",
+            "organizations",
+        ),
+        "rol": (
+            "organizations",
+            "Rol",
+            "organizations",
+        ),
+        "funcionario": (
+            "organizations",
+            "Funcionario",
+            "organizations",
+        ),
+        "usuario": (
+            "organizations",
+            "Usuario",
+            "organizations",
+        ),
+        "catalogo": (
+            "catalogs",
+            "Catalogo",
+            "catalogs",
+        ),
+        "periodo": (
+            "measurement",
+            "Periodo",
+            "measurement",
+        ),
+        "meta": (
+            "measurement",
+            "Meta",
+            "measurement",
+        ),
+        "ajuste": (
+            "measurement",
+            "Ajuste",
+            "measurement",
+        ),
+        "actividad": (
+            "activities",
+            "Actividad",
+            "activities",
+        ),
+        "evidencia": (
+            "activities",
+            "Evidencia",
+            "activities",
+        ),
+        "validacion": (
+            "activities",
+            "Validacion",
+            "activities",
+        ),
+        "compromiso": (
+            "agenda",
+            "Compromiso",
+            "agenda",
+        ),
+        "usuario_social": (
+            "social",
+            "UsuarioSocial",
+            "social",
+        ),
+        "atencion_social": (
+            "social",
+            "AtencionSocial",
+            "social",
+        ),
     }
 
     configuracion = entidades.get(str(entidad).lower())
 
     if not configuracion or not id_entidad:
-        return
+        return auditoria
 
     app_label, modelo, modulo = configuracion
 
     def publicar():
         try:
-            modelo_objeto = apps.get_model(app_label, modelo)
+            modelo_objeto = apps.get_model(
+                app_label,
+                modelo,
+            )
 
             objeto = modelo_objeto.objects.filter(
-                pk=id_entidad
+                pk=id_entidad,
             ).first()
 
             if objeto is None:
@@ -396,6 +459,8 @@ def auditar(
             )
 
     transaction.on_commit(publicar)
+
+    return auditoria
 
 
 def registrar_auditoria(request, evento, entidad="", id_entidad=0, valor_anterior=None, valor_nuevo=None):
