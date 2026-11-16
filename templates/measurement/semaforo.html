@@ -1,5 +1,6 @@
 
 {% extends "base.html" %}
+{% load ui_extras %}
 
 {% block title %}Semáforo de delegación · SGR{% endblock %}
 
@@ -7,17 +8,34 @@
   {{ titulo|default:"Semáforo de delegación" }}
 {% endblock %}
 
+{% block page_actions %}
+  {% if periodo %}
+    <a href="{% url 'measurement:semaforo_exportar_excel' %}?periodo={{ periodo.pk }}{% if delegacion_sel %}&delegacion={{ delegacion_sel }}{% endif %}"
+       class="btn btn-outline-success">
+      <i class="bi bi-file-earmark-excel me-1"></i>
+      Exportar Excel
+    </a>
+  {% endif %}
+{% endblock %}
+
 {% block content %}
 
 {% if periodo %}
+
+  <!-- Filtros -->
   <div class="card shadow-sm mb-3">
     <div class="card-body">
       <form method="get" class="row g-3 align-items-end">
+
         <div class="col-md-5">
-          <label class="form-label" for="periodo">Período de medición</label>
+          <label class="form-label" for="periodo">
+            Período de medición
+          </label>
+
           <select class="form-select" name="periodo" id="periodo">
             {% for p in periodos %}
-              <option value="{{ p.pk }}" {% if periodo.pk == p.pk %}selected{% endif %}>
+              <option value="{{ p.pk }}"
+                      {% if periodo.pk == p.pk %}selected{% endif %}>
                 {{ p }}
               </option>
             {% endfor %}
@@ -26,11 +44,18 @@
 
         {% if delegaciones %}
           <div class="col-md-5">
-            <label class="form-label" for="delegacion">Delegación</label>
-            <select class="form-select" name="delegacion" id="delegacion">
+            <label class="form-label" for="delegacion">
+              Delegación
+            </label>
+
+            <select class="form-select"
+                    name="delegacion"
+                    id="delegacion">
               <option value="">Todas las delegaciones</option>
+
               {% for d in delegaciones %}
-                <option value="{{ d.pk }}" {% if delegacion_sel == d.pk|stringformat:"s" %}selected{% endif %}>
+                <option value="{{ d.pk }}"
+                        {% if delegacion_sel == d.pk|stringformat:"s" %}selected{% endif %}>
                   {{ d.nombre }}
                 </option>
               {% endfor %}
@@ -40,46 +65,79 @@
 
         <div class="col-md-2">
           <button class="btn btn-primary w-100" type="submit">
-            <i class="bi bi-funnel me-1"></i>Filtrar
+            <i class="bi bi-funnel me-1"></i>
+            Filtrar
           </button>
         </div>
+
       </form>
     </div>
   </div>
 
   {% if resumen %}
+
+    <!-- Resumen global -->
     <div class="row g-3 mb-4">
-      <div class="col-sm-6 col-xl-3">
+
+      <div class="col-sm-6 col-xl">
         <div class="card shadow-sm h-100">
           <div class="card-body">
-            <div class="text-body-secondary small">Funcionarios evaluados</div>
-            <div class="fs-2 fw-semibold">{{ resumen.total_funcionarios }}</div>
+            <div class="text-body-secondary small">
+              Funcionarios evaluados
+            </div>
+            <div class="fs-2 fw-semibold">
+              {{ resumen.total_funcionarios }}
+            </div>
           </div>
         </div>
       </div>
 
-      <div class="col-sm-6 col-xl-3">
+      <div class="col-sm-6 col-xl">
         <div class="card shadow-sm h-100">
           <div class="card-body">
-            <div class="text-body-secondary small">Promedio ponderado</div>
-            <div class="fs-2 fw-semibold">{{ resumen.promedio|floatformat:2 }} %</div>
+            <div class="text-body-secondary small">
+              Promedio ponderado
+            </div>
+            <div class="fs-2 fw-semibold">
+              {{ resumen.promedio|floatformat:2 }} %
+            </div>
           </div>
         </div>
       </div>
 
-      <div class="col-sm-6 col-xl-3">
+      <div class="col-sm-6 col-xl">
         <div class="card shadow-sm h-100">
           <div class="card-body">
-            <div class="text-body-secondary small">Meta esperada al día</div>
-            <div class="fs-2 fw-semibold">{{ resumen.meta_esperada|floatformat:2 }} %</div>
+            <div class="text-body-secondary small">
+              Meta esperada al día
+            </div>
+            <div class="fs-2 fw-semibold">
+              {{ resumen.meta_esperada|floatformat:2 }} %
+            </div>
           </div>
         </div>
       </div>
 
-      <div class="col-sm-6 col-xl-3">
+      <div class="col-sm-6 col-xl">
         <div class="card shadow-sm h-100">
           <div class="card-body">
-            <div class="text-body-secondary small">Resultado general</div>
+            <div class="text-body-secondary small">
+              Resultado global
+            </div>
+            <div class="fs-2 fw-semibold">
+              {{ resumen.resultado_global|floatformat:2 }} %
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-sm-6 col-xl">
+        <div class="card shadow-sm h-100">
+          <div class="card-body">
+            <div class="text-body-secondary small">
+              Semáforo global
+            </div>
+
             {% if resumen.semaforo == "Verde" %}
               <span class="badge text-bg-success fs-6">Verde</span>
             {% elif resumen.semaforo == "Ámbar" %}
@@ -87,131 +145,511 @@
             {% elif resumen.semaforo == "Rojo" %}
               <span class="badge text-bg-danger fs-6">Rojo</span>
             {% else %}
-              <span class="badge text-bg-secondary fs-6">Sin datos</span>
+              <span class="badge text-bg-secondary fs-6">
+                Sin datos
+              </span>
             {% endif %}
           </div>
         </div>
       </div>
+
     </div>
 
+    <!-- Actividad reciente de la delegación -->
     <div class="card shadow-sm mb-4">
       <div class="card-header">
-        <strong>Distribución del semáforo</strong>
+        <strong>
+          <i class="bi bi-clock-history me-1"></i>
+          Actividad reciente de la delegación
+        </strong>
       </div>
+
       <div class="card-body">
-        <div class="row g-3 text-center">
-          <div class="col-md-4">
-            <div class="border rounded p-3">
-              <div class="text-success fw-semibold">Verde</div>
-              <div class="fs-3">{{ resumen.conteo.Verde|default:0 }}</div>
-              <small class="text-body-secondary">En cumplimiento</small>
+        <div class="row g-3">
+
+          <div class="col-sm-6 col-lg-6">
+            <div class="border rounded p-3 h-100">
+              <div class="text-body-secondary small">
+                Registros válidos del período
+              </div>
+              <div class="fs-3 fw-semibold">
+                {{ resumen.total_registros_validos|default:0 }}
+              </div>
             </div>
           </div>
-          <div class="col-md-4">
-            <div class="border rounded p-3">
-              <div class="text-warning fw-semibold">Ámbar</div>
-              <div class="fs-3">{{ resumen.conteo.Ámbar|default:0 }}</div>
-              <small class="text-body-secondary">En alerta</small>
+
+          <div class="col-sm-6 col-lg-6">
+            <div class="border rounded p-3 h-100">
+              <div class="text-body-secondary small">
+                Días transcurridos del período
+              </div>
+              <div class="fs-3 fw-semibold">
+                {{ resumen.dias_periodo_transcurridos|default:0 }}
+              </div>
             </div>
           </div>
-          <div class="col-md-4">
-            <div class="border rounded p-3">
-              <div class="text-danger fw-semibold">Rojo</div>
-              <div class="fs-3">{{ resumen.conteo.Rojo|default:0 }}</div>
-              <small class="text-body-secondary">Bajo cumplimiento</small>
-            </div>
-          </div>
+
         </div>
       </div>
     </div>
 
+    <!-- Distribución del semáforo -->
     <div class="card shadow-sm mb-4">
       <div class="card-header">
-        <strong>Desempeño por funcionario</strong>
+        <strong>
+          <i class="bi bi-traffic-light me-1"></i>
+          Distribución del semáforo
+        </strong>
       </div>
+
+      <div class="card-body">
+        <div class="row g-3 text-center">
+
+          <div class="col-md-4">
+            <div class="border rounded p-3 h-100">
+              <div class="text-success fw-semibold">Verde</div>
+              <div class="fs-3">
+                {{ resumen.conteo.Verde|default:0 }}
+              </div>
+              <small class="text-body-secondary">
+                En cumplimiento
+              </small>
+            </div>
+          </div>
+
+          <div class="col-md-4">
+            <div class="border rounded p-3 h-100">
+              <div class="text-warning fw-semibold">Ámbar</div>
+              <div class="fs-3">
+                {{ resumen.conteo.Ámbar|default:0 }}
+              </div>
+              <small class="text-body-secondary">
+                En alerta
+              </small>
+            </div>
+          </div>
+
+          <div class="col-md-4">
+            <div class="border rounded p-3 h-100">
+              <div class="text-danger fw-semibold">Rojo</div>
+              <div class="fs-3">
+                {{ resumen.conteo.Rojo|default:0 }}
+              </div>
+              <small class="text-body-secondary">
+                Bajo cumplimiento
+              </small>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- Resultados por funcionario -->
+    <div class="card shadow-sm mb-4">
+
+      <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <strong>
+          <i class="bi bi-people me-1"></i>
+          Desempeño y actividad reciente por funcionario
+        </strong>
+
+        <span class="badge text-bg-secondary">
+          {{ resumen.total_funcionarios }} responsables
+        </span>
+      </div>
+
       <div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
+
           <thead>
             <tr>
               <th>Funcionario</th>
               <th>Delegación</th>
               <th>Cargo</th>
+              <th>Avance ponderado</th>
+              <th>Meta esperada</th>
               <th>Resultado</th>
               <th>Semáforo</th>
+              <th>Último ingreso</th>
+              <th>Días sin ingreso</th>
+              <th>Registros válidos</th>
+              <th>Promedio diario</th>
               <th>Configuración</th>
+              <th>Detalle</th>
               <th></th>
             </tr>
           </thead>
+
           <tbody>
             {% for fila in resumen.filas %}
+
               <tr>
-                <td>{{ fila.funcionario.nombre }}</td>
-                <td>{{ fila.funcionario.delegacion }}</td>
-                <td>{{ fila.funcionario.cargo }}</td>
-                <td>{{ fila.resultado_total|floatformat:2 }} %</td>
+                <td>
+                  <strong>{{ fila.funcionario.nombre }}</strong>
+                </td>
+
+                <td>
+                  {{ fila.funcionario.delegacion }}
+                </td>
+
+                <td>
+                  {{ fila.funcionario.cargo }}
+                </td>
+
+                <td>
+                  <strong>
+                    {{ fila.total_ponderado|floatformat:2 }} %
+                  </strong>
+                </td>
+
+                <td>
+                  {{ fila.meta_esperada|floatformat:2 }} %
+                </td>
+
+                <td>
+                  <strong>
+                    {{ fila.resultado_total|floatformat:2 }} %
+                  </strong>
+
+                  {% if fila.ajustes %}
+                    <div class="small text-body-secondary">
+                      Ajustes: {{ fila.ajustes|floatformat:2 }}
+                    </div>
+                  {% endif %}
+                </td>
+
                 <td>
                   {% if fila.semaforo == "Verde" %}
                     <span class="badge text-bg-success">Verde</span>
                   {% elif fila.semaforo == "Ámbar" %}
                     <span class="badge text-bg-warning">Ámbar</span>
+                  {% elif fila.semaforo == "Rojo" %}
+                    <span class="badge text-bg-danger">Rojo</span>
                   {% else %}
-                    <span class="badge text-bg-danger">{{ fila.semaforo|default:"Sin datos" }}</span>
+                    <span class="badge text-bg-secondary">
+                      {{ fila.semaforo|default:"Sin datos" }}
+                    </span>
                   {% endif %}
                 </td>
+
+                <!-- RF-030: último ingreso -->
+                <td>
+                  {% if fila.ultimo_ingreso %}
+                    {{ fila.ultimo_ingreso|date:"d/m/Y" }}
+                  {% else %}
+                    <span class="text-body-secondary">
+                      Sin registros
+                    </span>
+                  {% endif %}
+                </td>
+
+                <!-- RF-030: días sin ingreso -->
+                <td>
+                  {% if fila.dias_sin_ingreso != None %}
+                    {% if fila.dias_sin_ingreso > 7 %}
+                      <span class="badge text-bg-danger">
+                        {{ fila.dias_sin_ingreso }} días
+                      </span>
+                    {% elif fila.dias_sin_ingreso > 3 %}
+                      <span class="badge text-bg-warning">
+                        {{ fila.dias_sin_ingreso }} días
+                      </span>
+                    {% else %}
+                      <span class="badge text-bg-success">
+                        {{ fila.dias_sin_ingreso }} días
+                      </span>
+                    {% endif %}
+                  {% else %}
+                    <span class="badge text-bg-secondary">
+                      Sin registros
+                    </span>
+                  {% endif %}
+                </td>
+
+                <!-- RF-030: cantidad de registros -->
+                <td>
+                  <strong>
+                    {{ fila.cantidad_registros|default:0 }}
+                  </strong>
+                </td>
+
+                <!-- RF-030: promedio diario -->
+                <td>
+                  {{ fila.promedio_diario|default:0|floatformat:2 }}
+                </td>
+
                 <td>
                   {% if fila.completa %}
-                    <span class="badge text-bg-success">100 %</span>
+                    <span class="badge text-bg-success">
+                      100 %
+                    </span>
                   {% else %}
-                    <span class="badge text-bg-warning">{{ fila.suma_ponderadores|floatformat:2 }} %</span>
+                    <span class="badge text-bg-warning">
+                      {{ fila.suma_ponderadores|floatformat:2 }} %
+                    </span>
                   {% endif %}
                 </td>
+
+                <td>
+                  <button class="btn btn-sm btn-outline-secondary"
+                          type="button"
+                          data-bs-toggle="collapse"
+                          data-bs-target="#detalle-funcionario-{{ fila.funcionario.pk }}"
+                          aria-expanded="false"
+                          aria-controls="detalle-funcionario-{{ fila.funcionario.pk }}">
+                    <i class="bi bi-chevron-down me-1"></i>
+                    Ver ítems
+                  </button>
+                </td>
+
                 <td>
                   <a class="btn btn-sm btn-outline-primary"
                      href="{% url 'measurement:desempeno_funcionario' fila.funcionario.pk %}?periodo={{ periodo.pk }}">
-                    Ver detalle
+                    Ver tablero
                   </a>
                 </td>
               </tr>
+
+              <!-- Detalle desplegable por funcionario -->
+              <tr>
+                <td colspan="14" class="bg-body-tertiary p-3">
+
+                  <div class="collapse"
+                       id="detalle-funcionario-{{ fila.funcionario.pk }}">
+
+                    <div class="mb-2">
+                      <strong>
+                        Avance por ítem: {{ fila.funcionario.nombre }}
+                      </strong>
+                    </div>
+
+                    <div class="table-responsive">
+                      <table class="table table-sm table-bordered bg-body mb-0">
+
+                        <thead>
+                          <tr>
+                            <th>Ítem medible</th>
+                            <th>Avance</th>
+                            <th>Meta</th>
+                            <th>Cumplimiento</th>
+                            <th>Ponderación</th>
+                            <th>Resultado ponderado</th>
+                            <th>Semáforo</th>
+                          </tr>
+                        </thead>
+
+                        <tbody>
+                          {% for item_fila in fila.filas %}
+                            <tr>
+                              <td>
+                                <strong>
+                                  {{ item_fila.item.nombre_item }}
+                                </strong>
+                                <div class="small text-body-secondary">
+                                  {{ item_fila.item.codigo }}
+                                </div>
+                              </td>
+
+                              <td>
+                                {{ item_fila.avance|floatformat:2 }}
+                                {{ item_fila.datos_historicos.unidad }}
+                              </td>
+
+                              <td>
+                                {{ item_fila.datos_historicos.valor_objetivo }}
+                                {{ item_fila.datos_historicos.unidad }}
+                              </td>
+
+                              <td>
+                                {{ item_fila.cumplimiento|floatformat:2 }} %
+                              </td>
+
+                              <td>
+                                {{ item_fila.ponderador_historico|floatformat:2 }} %
+                              </td>
+
+                              <td>
+                                {{ item_fila.ponderado|floatformat:2 }} %
+                              </td>
+
+                              <td>
+                                {% if item_fila.semaforo == "Verde" %}
+                                  <span class="badge text-bg-success">
+                                    Verde
+                                  </span>
+                                {% elif item_fila.semaforo == "Ámbar" %}
+                                  <span class="badge text-bg-warning">
+                                    Ámbar
+                                  </span>
+                                {% elif item_fila.semaforo == "Rojo" %}
+                                  <span class="badge text-bg-danger">
+                                    Rojo
+                                  </span>
+                                {% else %}
+                                  <span class="badge text-bg-secondary">
+                                    {{ item_fila.semaforo|default:"Sin datos" }}
+                                  </span>
+                                {% endif %}
+                              </td>
+                            </tr>
+
+                          {% empty %}
+                            <tr>
+                              <td colspan="7"
+                                  class="text-center text-body-secondary py-3">
+                                Este funcionario no tiene metas configuradas
+                                para el período.
+                              </td>
+                            </tr>
+                          {% endfor %}
+                        </tbody>
+
+                        <tfoot>
+                          <tr class="table-light">
+                            <th colspan="5" class="text-end">
+                              Total ponderado
+                            </th>
+                            <th>
+                              {{ fila.total_ponderado|floatformat:2 }} %
+                            </th>
+                            <th></th>
+                          </tr>
+                        </tfoot>
+
+                      </table>
+                    </div>
+
+                  </div>
+
+                </td>
+              </tr>
+
             {% empty %}
               <tr>
-                <td colspan="7" class="text-center text-body-secondary py-4">
+                <td colspan="14"
+                    class="text-center text-body-secondary py-4">
                   No hay funcionarios activos con información para este período.
                 </td>
               </tr>
             {% endfor %}
           </tbody>
+
         </table>
       </div>
     </div>
 
+    <!-- Funcionarios bajo el umbral -->
     {% if resumen.bajo_umbral %}
-      <div class="card border-warning mb-4">
+      <div class="card shadow-sm border-warning mb-4">
+
         <div class="card-header text-warning-emphasis">
-          <strong><i class="bi bi-exclamation-triangle me-1"></i>Funcionarios bajo el umbral colectivo</strong>
+          <strong>
+            <i class="bi bi-exclamation-triangle me-1"></i>
+            Funcionarios bajo el umbral colectivo
+          </strong>
         </div>
+
         <div class="card-body">
-          <ul class="mb-0">
-            {% for fila in resumen.bajo_umbral %}
-              <li>
-                {{ fila.funcionario.nombre }}:
-                {{ fila.resultado_total|floatformat:2 }} %
-              </li>
-            {% endfor %}
-          </ul>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+
+              <thead>
+                <tr>
+                  <th>Funcionario</th>
+                  <th>Resultado</th>
+                  <th>Meta esperada</th>
+                  <th>Último ingreso</th>
+                  <th>Días sin ingreso</th>
+                  <th>Registros válidos</th>
+                  <th>Semáforo</th>
+                  <th></th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {% for fila in resumen.bajo_umbral %}
+                  <tr>
+                    <td>{{ fila.funcionario.nombre }}</td>
+
+                    <td>
+                      {{ fila.resultado_total|floatformat:2 }} %
+                    </td>
+
+                    <td>
+                      {{ fila.meta_esperada|floatformat:2 }} %
+                    </td>
+
+                    <td>
+                      {% if fila.ultimo_ingreso %}
+                        {{ fila.ultimo_ingreso|date:"d/m/Y" }}
+                      {% else %}
+                        Sin registros
+                      {% endif %}
+                    </td>
+
+                    <td>
+                      {% if fila.dias_sin_ingreso != None %}
+                        {{ fila.dias_sin_ingreso }}
+                      {% else %}
+                        Sin registros
+                      {% endif %}
+                    </td>
+
+                    <td>
+                      {{ fila.cantidad_registros|default:0 }}
+                    </td>
+
+                    <td>
+                      <span class="badge text-bg-danger">
+                        {{ fila.semaforo }}
+                      </span>
+                    </td>
+
+                    <td>
+                      <a class="btn btn-sm btn-outline-primary"
+                         href="{% url 'measurement:desempeno_funcionario' fila.funcionario.pk %}?periodo={{ periodo.pk }}">
+                        Consultar
+                      </a>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+
+            </table>
+          </div>
         </div>
+
       </div>
     {% endif %}
 
-  {% else %}
     <div class="alert alert-info">
-      No hay información disponible para calcular el semáforo.
+      <i class="bi bi-info-circle me-1"></i>
+      El resultado global corresponde al promedio de los resultados
+      ponderados de los funcionarios incluidos en el ámbito y filtros
+      seleccionados. Los indicadores de actividad reciente consideran
+      las actividades validadas del período. El detalle desplegable
+      muestra el avance, la meta y el cumplimiento de cada ítem.
     </div>
+
+  {% else %}
+
+    <div class="alert alert-info">
+      No hay información disponible para calcular el semáforo
+      en el período seleccionado.
+    </div>
+
   {% endif %}
 
 {% else %}
+
   <div class="alert alert-warning">
-    No hay períodos de medición registrados. Debes crear un período antes de consultar el semáforo.
+    No hay períodos de medición registrados.
+    Debes crear un período antes de consultar el semáforo.
   </div>
+
 {% endif %}
+
+{% include "partials/_pagination.html" %}
 
 {% endblock %}

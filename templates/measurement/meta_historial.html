@@ -1,0 +1,162 @@
+
+{% extends "base.html" %}
+
+{% block title %}Historial de versiones · SGR{% endblock %}
+
+{% block page_title %}
+  Historial de versiones de la meta
+{% endblock %}
+
+{% block page_actions %}
+  <a href="{% url 'measurement:meta_list' %}"
+     class="btn btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Volver a metas
+  </a>
+{% endblock %}
+
+{% block content %}
+
+<div class="card shadow-sm mb-3">
+  <div class="card-header">
+    <strong>Identificación de la meta</strong>
+  </div>
+
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-md-6">
+        <div class="text-body-secondary small">Funcionario</div>
+        <strong>{{ meta.funcionario.nombre }}</strong>
+      </div>
+
+      <div class="col-md-6">
+        <div class="text-body-secondary small">Delegación</div>
+        <strong>{{ meta.funcionario.delegacion }}</strong>
+      </div>
+
+      <div class="col-md-6">
+        <div class="text-body-secondary small">Ítem actual asociado</div>
+        <strong>{{ meta.item.nombre_item }}</strong>
+        <div class="small text-body-secondary">
+          Código: {{ meta.item.codigo }}
+        </div>
+        <small class="text-body-secondary">
+          Referencia actual del catálogo; las versiones históricas
+          se muestran en la tabla inferior.
+        </small>
+      </div>
+
+      <div class="col-md-6">
+        <div class="text-body-secondary small">Período</div>
+        <strong>{{ meta.periodo }}</strong>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <strong>
+      <i class="bi bi-clock-history me-1"></i>
+      Registro histórico de parámetros e ítem
+    </strong>
+    <span class="badge text-bg-secondary">
+      {{ total_versiones }} versiones
+    </span>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Versión</th>
+          <th>Ítem registrado en esa versión</th>
+          <th>Tipo</th>
+          <th>Objetivo</th>
+          <th>Unidad</th>
+          <th>Ponderación</th>
+          <th>Umbral mínimo</th>
+          <th>Máximo computable</th>
+          <th>Vigencia desde</th>
+          <th>Vigencia hasta</th>
+          <th>Registrado por</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {% for version in versiones %}
+          <tr>
+            <td>
+              <span class="badge text-bg-primary">
+                V{{ version.numero_version }}
+              </span>
+            </td>
+
+            <td>
+              <strong>
+                {{ version.datos.item_nombre|default:"Ítem sin fotografía histórica" }}
+              </strong>
+              <div class="small text-body-secondary">
+                Código: {{ version.datos.item_codigo|default:"No registrado" }}
+              </div>
+              {% if version.datos.item_descripcion %}
+                <div class="small text-body-secondary">
+                  {{ version.datos.item_descripcion }}
+                </div>
+              {% endif %}
+            </td>
+
+            <td>
+              {{ version.datos.item_tipo|default:"—" }}
+            </td>
+
+            <td>{{ version.datos.valor_objetivo }}</td>
+            <td>{{ version.datos.unidad }}</td>
+            <td>{{ version.datos.ponderador }} %</td>
+            <td>{{ version.datos.umbral_minimo }} %</td>
+            <td>{{ version.datos.maximo_computable }} %</td>
+
+            <td>
+              {{ version.vigente_desde|date:"d/m/Y H:i:s" }}
+            </td>
+
+            <td>
+              {% if version.vigente_hasta %}
+                {{ version.vigente_hasta|date:"d/m/Y H:i:s" }}
+              {% else %}
+                <span class="badge text-bg-success">
+                  Versión vigente
+                </span>
+              {% endif %}
+            </td>
+
+            <td>
+              {% if version.creado_por %}
+                {{ version.creado_por }}
+              {% else %}
+                Sistema
+              {% endif %}
+            </td>
+          </tr>
+
+        {% empty %}
+          <tr>
+            <td colspan="11"
+                class="text-center text-body-secondary py-4">
+              <i class="bi bi-clock-history fs-3 d-block mb-2"></i>
+              No existen versiones históricas registradas para esta meta.
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="alert alert-info mt-3">
+  <i class="bi bi-info-circle me-1"></i>
+  Cada versión conserva los parámetros y los datos del ítem registrados
+  al crear o modificar la meta. Los cambios posteriores no deben
+  sobrescribir las fotografías históricas anteriores.
+</div>
+
+{% endblock %}

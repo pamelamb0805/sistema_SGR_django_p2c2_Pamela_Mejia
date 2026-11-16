@@ -1,0 +1,765 @@
+
+{% extends "base.html" %}
+
+{% block title %}{{ titulo|default:"Panel de desempeño" }} · SGR{% endblock %}
+
+{% block page_title %}
+  {{ titulo|default:"Panel de desempeño" }}
+{% endblock %}
+
+{% block page_actions %}
+  {% if modo == "funcionario" %}
+    <a href="{% url 'measurement:semaforo' %}{% if periodo %}?periodo={{ periodo.pk }}{% endif %}"
+       class="btn btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Volver al semáforo
+    </a>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+
+<div class="card shadow-sm mb-3">
+  <div class="card-body">
+    <div class="row g-3 align-items-center">
+      <div class="col-lg-7">
+        <div class="text-body-secondary small">Funcionario evaluado</div>
+        <h5 class="mb-1">{{ funcionario.nombre }}</h5>
+        <div class="text-body-secondary">
+          {{ funcionario.cargo }} · {{ funcionario.delegacion }}
+        </div>
+      </div>
+
+      <div class="col-lg-5">
+        <form method="get" class="d-flex flex-wrap gap-2 align-items-end">
+          <div class="flex-grow-1">
+            <label for="periodo" class="form-label">Período de medición</label>
+            <select class="form-select" name="periodo" id="periodo">
+              {% for p in periodos %}
+                <option value="{{ p.pk }}"
+                  {% if periodo and periodo.pk == p.pk %}selected{% endif %}>
+                  {{ p }}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-funnel me-1"></i>Consultar
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if periodo and resumen %}
+
+  <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+    <div>
+      <h5 class="mb-1">Resumen del período</h5>
+      <span class="text-body-secondary">{{ periodo }}</span>
+    </div>
+
+    {% if periodo.abierto %}
+      <span class="badge text-bg-success">Período abierto</span>
+    {% else %}
+      <span class="badge text-bg-secondary">Período cerrado</span>
+    {% endif %}
+  </div>
+
+  <!-- Indicadores generales -->
+  <div class="row g-3 mb-4">
+
+    <div class="col-sm-6 col-xl-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-body-secondary small">Resultado ponderado</div>
+          <div class="fs-2 fw-semibold">
+            {{ resumen.total_ponderado|floatformat:2 }} %
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-sm-6 col-xl-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-body-secondary small">Resultado total</div>
+          <div class="fs-2 fw-semibold">
+            {{ resumen.resultado_total|floatformat:2 }} %
+          </div>
+          <small class="text-body-secondary">
+            Incluye incentivos y penalizaciones
+          </small>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-sm-6 col-xl-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-body-secondary small">Meta esperada al día</div>
+          <div class="fs-2 fw-semibold">
+            {{ resumen.meta_esperada|floatformat:2 }} %
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-sm-6 col-xl-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-body-secondary small">Estado de cumplimiento</div>
+
+          {% if resumen.semaforo == "Verde" %}
+            <span class="badge text-bg-success fs-6">Verde</span>
+          {% elif resumen.semaforo == "Ámbar" %}
+            <span class="badge text-bg-warning fs-6">Ámbar</span>
+          {% elif resumen.semaforo == "Rojo" %}
+            <span class="badge text-bg-danger fs-6">Rojo</span>
+          {% else %}
+            <span class="badge text-bg-secondary fs-6">
+              {{ resumen.semaforo|default:"Sin datos" }}
+            </span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Configuración y ajustes -->
+  <div class="row g-3 mb-4">
+
+    <div class="col-md-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-body-secondary small">Ponderaciones configuradas</div>
+          <div class="fs-3 fw-semibold">
+            {{ resumen.suma_ponderadores|floatformat:2 }} %
+          </div>
+
+          {% if resumen.completa %}
+            <span class="badge text-bg-success">Configuración completa</span>
+          {% else %}
+            <span class="badge text-bg-warning">Configuración pendiente</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-body-secondary small">Ajustes del período</div>
+          <div class="fs-3 fw-semibold">
+            {{ resumen.ajustes|floatformat:2 }}
+          </div>
+          <small class="text-body-secondary">
+            Valor positivo: incentivo. Valor negativo: penalización.
+          </small>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-body-secondary small">Evaluación colectiva</div>
+
+          {% if resumen.bajo_umbral %}
+            <span class="badge text-bg-danger fs-6">Bajo el umbral</span>
+          {% else %}
+            <span class="badge text-bg-success fs-6">Dentro del umbral</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- RF-008: Resumen general de evidencias -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-header">
+      <strong>
+        <i class="bi bi-file-earmark-check me-1"></i>
+        Estado de evidencias del período
+      </strong>
+    </div>
+
+    <div class="card-body">
+      <div class="row g-3 text-center">
+
+        <div class="col-6 col-md">
+          <div class="border rounded p-3 h-100">
+            <div class="text-body-secondary small">Total</div>
+            <div class="fs-3 fw-semibold">
+              {{ evidencias_resumen.total }}
+            </div>
+          </div>
+        </div>
+
+        <div class="col-6 col-md">
+          <div class="border rounded p-3 h-100">
+            <div class="text-body-secondary small">Pendientes</div>
+            <div class="fs-3 fw-semibold text-warning">
+              {{ evidencias_resumen.Pendiente }}
+            </div>
+          </div>
+        </div>
+
+        <div class="col-6 col-md">
+          <div class="border rounded p-3 h-100">
+            <div class="text-body-secondary small">Aprobadas</div>
+            <div class="fs-3 fw-semibold text-success">
+              {{ evidencias_resumen.Aprobada }}
+            </div>
+          </div>
+        </div>
+
+        <div class="col-6 col-md">
+          <div class="border rounded p-3 h-100">
+            <div class="text-body-secondary small">Rechazadas</div>
+            <div class="fs-3 fw-semibold text-danger">
+              {{ evidencias_resumen.Rechazada }}
+            </div>
+          </div>
+        </div>
+
+        <div class="col-6 col-md">
+          <div class="border rounded p-3 h-100">
+            <div class="text-body-secondary small">Con corrección</div>
+            <div class="fs-3 fw-semibold text-info">
+              {{ evidencias_resumen.Corrección }}
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- RF-008: Evidencias desglosadas por ítem -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-header">
+      <strong>
+        <i class="bi bi-list-check me-1"></i>
+        Evidencias por ítem medible
+      </strong>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Ítem</th>
+            <th>Total</th>
+            <th>Pendientes</th>
+            <th>Aprobadas</th>
+            <th>Rechazadas</th>
+            <th>Corrección</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {% for fila in resumen.filas %}
+            <tr>
+              <td>
+                <strong>{{ fila.item.nombre_item }}</strong>
+                <div class="small text-body-secondary">
+                  {{ fila.item.codigo }}
+                </div>
+              </td>
+
+              <td>{{ fila.evidencias.total }}</td>
+
+              <td>
+                <span class="badge text-bg-warning">
+                  {{ fila.evidencias.Pendiente }}
+                </span>
+              </td>
+
+              <td>
+                <span class="badge text-bg-success">
+                  {{ fila.evidencias.Aprobada }}
+                </span>
+              </td>
+
+              <td>
+                <span class="badge text-bg-danger">
+                  {{ fila.evidencias.Rechazada }}
+                </span>
+              </td>
+
+              <td>
+                <span class="badge text-bg-info">
+                  {{ fila.evidencias.Corrección }}
+                </span>
+              </td>
+            </tr>
+
+          {% empty %}
+            <tr>
+              <td colspan="6"
+                  class="text-center text-body-secondary py-4">
+                No existen ítems configurados para este período.
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- RF-028: Resumen de compromisos -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <strong>
+        <i class="bi bi-calendar-check me-1"></i>
+        Compromisos del período
+      </strong>
+      <span class="badge text-bg-secondary">
+        {{ compromisos_resumen.total }} compromisos
+      </span>
+    </div>
+
+    <div class="card-body">
+      <div class="row g-3 text-center mb-4">
+
+        <div class="col-6 col-md-3">
+          <div class="border rounded p-3 h-100">
+            <div class="text-body-secondary small">Ingresados</div>
+            <div class="fs-3 fw-semibold">
+              {{ compromisos_resumen.Ingresado }}
+            </div>
+          </div>
+        </div>
+
+        <div class="col-6 col-md-3">
+          <div class="border rounded p-3 h-100">
+            <div class="text-body-secondary small">Pendientes</div>
+            <div class="fs-3 fw-semibold text-warning">
+              {{ compromisos_resumen.Pendiente }}
+            </div>
+          </div>
+        </div>
+
+        <div class="col-6 col-md-3">
+          <div class="border rounded p-3 h-100">
+            <div class="text-body-secondary small">En proceso</div>
+            <div class="fs-3 fw-semibold text-primary">
+              {{ compromisos_resumen.En_proceso }}
+            </div>
+          </div>
+        </div>
+
+        <div class="col-6 col-md-3">
+          <div class="border rounded p-3 h-100">
+            <div class="text-body-secondary small">Realizados</div>
+            <div class="fs-3 fw-semibold text-success">
+              {{ compromisos_resumen.Realizado }}
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Origen</th>
+              <th>Solicitante</th>
+              <th>Ítem medible</th>
+              <th>Fecha comprometida</th>
+              <th>Estado</th>
+              <th>Observación</th>
+              <th>Detalle</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {% for compromiso in compromisos %}
+              <tr>
+                <td>#{{ compromiso.id_compromiso }}</td>
+                <td>{{ compromiso.origen }}</td>
+                <td>{{ compromiso.solicitante }}</td>
+
+                <td>
+                  {% if compromiso.item_medible %}
+                    {{ compromiso.item_medible.nombre_item }}
+                  {% else %}
+                    <span class="text-body-secondary">
+                      Sin ítem asociado
+                    </span>
+                  {% endif %}
+                </td>
+
+                <td>
+                  {{ compromiso.fecha_comprometida|date:"d/m/Y" }}
+                </td>
+
+                <td>
+                  {% if compromiso.estado == "Realizado" %}
+                    <span class="badge text-bg-success">Realizado</span>
+                  {% elif compromiso.estado == "En proceso" %}
+                    <span class="badge text-bg-primary">En proceso</span>
+                  {% elif compromiso.estado == "Pendiente" %}
+                    <span class="badge text-bg-warning">Pendiente</span>
+                  {% else %}
+                    <span class="badge text-bg-secondary">
+                      {{ compromiso.estado }}
+                    </span>
+                  {% endif %}
+                </td>
+
+                <td>
+                  {{ compromiso.observacion|default:"—"|truncatechars:100 }}
+                </td>
+
+                <td>
+                  <a href="{% url 'agenda:compromiso_detail' compromiso.pk %}"
+                     class="btn btn-sm btn-outline-primary">
+                    Ver
+                  </a>
+                </td>
+              </tr>
+
+            {% empty %}
+              <tr>
+                <td colspan="8"
+                    class="text-center text-body-secondary py-4">
+                  No existen compromisos asociados a este funcionario
+                  en el período seleccionado.
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Metas e indicadores por ítem -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+      <strong>
+        <i class="bi bi-bullseye me-1"></i>
+        Metas e indicadores por ítem
+      </strong>
+      <span class="badge text-bg-secondary">
+        {{ resumen.filas|length }} ítems
+      </span>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Ítem medible</th>
+            <th>Avance</th>
+            <th>Objetivo</th>
+            <th>Cumplimiento</th>
+            <th>Ponderación</th>
+            <th>Resultado ponderado</th>
+            <th>Semáforo</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {% for fila in resumen.filas %}
+            <tr>
+              <td>
+                <strong>{{ fila.item.nombre_item }}</strong>
+                <div class="small text-body-secondary">
+                  {{ fila.item.codigo }}
+                </div>
+                {% if fila.item.descripcion %}
+                  <div class="small text-body-secondary">
+                    {{ fila.item.descripcion }}
+                  </div>
+                {% endif %}
+              </td>
+
+              <td>
+                {{ fila.avance|floatformat:2 }}
+                {{ fila.datos_historicos.unidad }}
+              </td>
+
+              <td>
+                {{ fila.datos_historicos.valor_objetivo }}
+                {{ fila.datos_historicos.unidad }}
+              </td>
+
+              <td>
+                <strong>{{ fila.cumplimiento|floatformat:2 }} %</strong>
+                <div class="progress mt-1" style="height: 7px;">
+                  <div class="progress-bar
+                    {% if fila.cumple %}bg-success
+                    {% elif fila.bajo_umbral %}bg-danger
+                    {% else %}bg-info{% endif %}"
+                    role="progressbar"
+                    style="width: {% if fila.cumplimiento > 100 %}100{% else %}{{ fila.cumplimiento }}{% endif %}%"
+                    aria-valuenow="{{ fila.cumplimiento }}"
+                    aria-valuemin="0"
+                    aria-valuemax="100">
+                  </div>
+                </div>
+              </td>
+
+              <td>
+                {{ fila.ponderador_historico|floatformat:2 }} %
+              </td>
+
+              <td>
+                <strong>{{ fila.ponderado|floatformat:2 }} %</strong>
+              </td>
+
+              <td>
+                {% if fila.semaforo == "Verde" %}
+                  <span class="badge text-bg-success">Verde</span>
+                {% elif fila.semaforo == "Ámbar" %}
+                  <span class="badge text-bg-warning">Ámbar</span>
+                {% elif fila.semaforo == "Rojo" %}
+                  <span class="badge text-bg-danger">Rojo</span>
+                {% else %}
+                  <span class="badge text-bg-secondary">
+                    {{ fila.semaforo|default:"Sin datos" }}
+                  </span>
+                {% endif %}
+
+                {% if fila.bajo_umbral %}
+                  <div class="small text-danger mt-1">
+                    Bajo umbral mínimo
+                  </div>
+                {% endif %}
+              </td>
+            </tr>
+
+          {% empty %}
+            <tr>
+              <td colspan="7"
+                  class="text-center text-body-secondary py-4">
+                <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+                No existen metas configuradas para este funcionario
+                en el período seleccionado.
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+
+        {% if resumen.filas %}
+          <tfoot>
+            <tr class="table-light">
+              <th colspan="4" class="text-end">Totales</th>
+              <th>{{ resumen.suma_ponderadores|floatformat:2 }} %</th>
+              <th>{{ resumen.total_ponderado|floatformat:2 }} %</th>
+              <th></th>
+            </tr>
+          </tfoot>
+        {% endif %}
+      </table>
+    </div>
+  </div>
+
+  <!-- RF-028: Trazabilidad del origen de cada indicador -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-header">
+      <strong>
+        <i class="bi bi-diagram-3 me-1"></i>
+        Origen y detalle de los indicadores
+      </strong>
+    </div>
+
+    <div class="card-body">
+      {% for fila in resumen.filas %}
+        <div class="border rounded p-3 mb-3">
+
+          <div class="d-flex flex-wrap justify-content-between gap-2 mb-3">
+            <div>
+              <strong>{{ fila.item.nombre_item }}</strong>
+              <div class="small text-body-secondary">
+                {{ fila.item.codigo }}
+              </div>
+            </div>
+
+            <span class="badge text-bg-primary">
+              {{ fila.avance|floatformat:2 }} unidades de avance
+            </span>
+          </div>
+
+          <h6 class="mb-2">Actividades que originan el indicador</h6>
+
+          <div class="table-responsive mb-3">
+            <table class="table table-sm table-hover align-middle">
+              <thead>
+                <tr>
+                  <th>Código</th>
+                  <th>Fecha</th>
+                  <th>Actividad registrada</th>
+                  <th>Estado</th>
+                  <th>Evidencias</th>
+                  <th>Detalle</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {% for actividad in fila.actividades_origen %}
+                  <tr>
+                    <td>{{ actividad.codigo }}</td>
+                    <td>{{ actividad.fecha|date:"d/m/Y" }}</td>
+                    <td>{{ actividad.accion|truncatechars:100 }}</td>
+                    <td>
+                      {% if actividad.estado == "Validada" %}
+                        <span class="badge text-bg-success">Validada</span>
+                      {% elif actividad.estado == "Rechazada" %}
+                        <span class="badge text-bg-danger">Rechazada</span>
+                      {% elif actividad.estado == "En revisión" %}
+                        <span class="badge text-bg-warning">En revisión</span>
+                      {% elif actividad.estado == "Anulada" %}
+                        <span class="badge text-bg-secondary">Anulada</span>
+                      {% else %}
+                        <span class="badge text-bg-info">
+                          {{ actividad.estado }}
+                        </span>
+                      {% endif %}
+                    </td>
+
+                    <td>
+                      {% for evidencia in actividad.evidencias.all %}
+                        <div class="small">
+                          {{ evidencia.codigo_evidencia }}
+                          · {{ evidencia.estado_revision }}
+                        </div>
+                      {% empty %}
+                        <span class="text-body-secondary small">
+                          Sin evidencias
+                        </span>
+                      {% endfor %}
+                    </td>
+
+                    <td>
+                      <a href="{% url 'activities:actividad_detail' actividad.pk %}"
+                         class="btn btn-sm btn-outline-primary">
+                        Ver actividad
+                      </a>
+                    </td>
+                  </tr>
+
+                {% empty %}
+                  <tr>
+                    <td colspan="6"
+                        class="text-center text-body-secondary py-3">
+                      No hay actividades registradas para este ítem
+                      en el período.
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="d-flex flex-wrap gap-2 mb-2">
+            <span class="badge text-bg-success">
+              Actividades que aportan al avance:
+              {{ fila.actividades_validas }}
+            </span>
+            <span class="badge text-bg-secondary">
+              Compromisos asociados:
+              {{ fila.compromisos_resumen.total }}
+            </span>
+          </div>
+
+          <h6 class="mb-2 mt-3">Compromisos asociados al indicador</h6>
+
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>Compromiso</th>
+                  <th>Origen</th>
+                  <th>Fecha comprometida</th>
+                  <th>Estado</th>
+                  <th>Detalle</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {% for compromiso in fila.compromisos %}
+                  <tr>
+                    <td>#{{ compromiso.id_compromiso }}</td>
+                    <td>{{ compromiso.origen }}</td>
+                    <td>
+                      {{ compromiso.fecha_comprometida|date:"d/m/Y" }}
+                    </td>
+                    <td>
+                      {% if compromiso.estado == "Realizado" %}
+                        <span class="badge text-bg-success">Realizado</span>
+                      {% elif compromiso.estado == "En proceso" %}
+                        <span class="badge text-bg-primary">En proceso</span>
+                      {% elif compromiso.estado == "Pendiente" %}
+                        <span class="badge text-bg-warning">Pendiente</span>
+                      {% else %}
+                        <span class="badge text-bg-secondary">
+                          {{ compromiso.estado }}
+                        </span>
+                      {% endif %}
+                    </td>
+                    <td>
+                      <a href="{% url 'agenda:compromiso_detail' compromiso.pk %}"
+                         class="btn btn-sm btn-outline-primary">
+                        Ver compromiso
+                      </a>
+                    </td>
+                  </tr>
+
+                {% empty %}
+                  <tr>
+                    <td colspan="5"
+                        class="text-center text-body-secondary py-3">
+                      No hay compromisos asociados a este ítem.
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+        </div>
+      {% empty %}
+        <p class="text-body-secondary mb-0">
+          No existen indicadores para mostrar.
+        </p>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="alert alert-info">
+    <i class="bi bi-info-circle me-1"></i>
+    <strong>Cómo interpretar el resultado:</strong>
+    el cumplimiento compara el avance registrado con el objetivo de cada ítem.
+    El resultado ponderado aplica la ponderación y el máximo computable
+    configurados para la meta. Los ajustes se muestran por separado y se
+    incorporan al resultado total. Las actividades y compromisos asociados
+    permiten consultar el origen de los registros que forman el tablero.
+  </div>
+
+{% elif periodo %}
+
+  <div class="alert alert-info">
+    <i class="bi bi-info-circle me-1"></i>
+    No hay información de desempeño disponible para este funcionario
+    en el período seleccionado.
+  </div>
+
+{% else %}
+
+  <div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle me-1"></i>
+    No hay períodos de medición registrados. Debes crear un período
+    antes de consultar el desempeño.
+  </div>
+
+{% endif %}
+
+{% endblock %}

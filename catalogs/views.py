@@ -9,17 +9,16 @@ from django.db.models import Q
 from django.http import JsonResponse, HttpResponse
 from openpyxl import Workbook
 from django.shortcuts import get_object_or_404
-from django.views.generic import CreateView, ListView, UpdateView
-
+from django.views.generic import CreateView, DetailView, ListView, UpdateView
 from core.mixins import (
     ROLES_CONFIGURACION, ROLES_SUPERVISION, AccionPostView, GuardarMixin, ModoMixin, RolRequeridoMixin,
 )
 
 from .forms import CatalogoForm
-from .models import Catalogo
+from .models import Catalogo, CatalogoVersion
 from .services import CRUDCatalogo
 from core.mixins import ModalFormPageMixin
-
+from core.pagination import PageSizeMixin   
 
 class LecturaMixin(RolRequeridoMixin):
     roles_permitidos = ROLES_SUPERVISION
@@ -33,34 +32,48 @@ def _areas():
     return list(Catalogo.objects.order_by("area").values_list("area", flat=True).distinct())
 
 
-class CatalogoListView(LecturaMixin, ModoMixin, ListView):
+class CatalogoListView(PageSizeMixin, LecturaMixin, ModoMixin, ListView):
     model = Catalogo
     template_name = "catalogs/catalogo_.html"
     context_object_name = "elementos"
     paginate_by = 15
+    page_size_session_key = "catalogo_page_size"
     titulo = "Catálogos de actividades y servicios"
 
     def get_queryset(self):
         qs = super().get_queryset()
         g = self.request.GET
+
         if g.get("q", "").strip():
             term = g["q"].strip()
-            qs = qs.filter(Q(nombre__icontains=term) | Q(codigo__icontains=term) | Q(descripcion__icontains=term))
+            qs = qs.filter(
+                Q(nombre__icontains=term)
+                | Q(codigo__icontains=term)
+                | Q(descripcion__icontains=term)
+            )
+
         for campo in ("tipo_catalogo", "area", "estado"):
             if g.get(campo):
                 qs = qs.filter(**{campo: g[campo]})
+
         return qs
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
         g = self.request.GET
+
         contexto.update(
             total_resultados=self.get_queryset().count(),
-            q=g.get("q", ""), tipo_sel=g.get("tipo_catalogo", ""), area_sel=g.get("area", ""),
-            estado_sel=g.get("estado", ""), tipos=Catalogo.TIPOS, estados=Catalogo.ESTADOS, areas=_areas(),
+            q=g.get("q", ""),
+            tipo_sel=g.get("tipo_catalogo", ""),
+            area_sel=g.get("area", ""),
+            estado_sel=g.get("estado", ""),
+            tipos=Catalogo.TIPOS,
+            estados=Catalogo.ESTADOS,
+            areas=_areas(),
         )
-        return contexto
 
+        return contexto
 
 class CatalogoFormMixin(EscrituraMixin, ModalFormPageMixin, ModoMixin, GuardarMixin):
     model = Catalogo
@@ -104,8 +117,29 @@ class CatalogoToggleView(AccionPostView):
             return f"«{objeto.nombre}» desactivado: no se ofrecerá en registros nuevos."
         CRUDCatalogo.activar_elemento_catalogo(objeto, request.user)
         return f"«{objeto.nombre}» activado."
+class CatalogoHistorialView(LecturaMixin, DetailView):
+    model = Catalogo
+    template_name = "catalogs/catalogo_historial.html"
+    context_object_name = "elemento"
 
+    def get_context_data(self, **kwargs):
+        contexto = super().get_context_data(**kwargs)
 
+        versiones = (
+            CatalogoVersion.objects
+            .filter(objeto_id=self.object.pk)
+            .select_related("creado_por")
+            .order_by("-numero_version")
+        )
+
+        contexto["versiones"] = versiones
+        contexto["total_versiones"] = versiones.count()
+        contexto["titulo"] = (
+            f"Historial del catálogo: {self.object.nombre}"
+        )
+
+        return contexto
+    
 @login_required
 def catalogo_por_area(request):
     """JSON con los elementos activos aplicables a un área: /catalogs/api/por-area/?area=Social&tipo=Actividad"""

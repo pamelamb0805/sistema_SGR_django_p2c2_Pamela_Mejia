@@ -1,14 +1,21 @@
+
 {% extends "base.html" %}
 
 {% block title %}Delegaciones · SGR{% endblock %}
 {% block page_title %}{{ titulo|default:"Delegaciones" }}{% endblock %}
 
 {% block page_actions %}
-  {% if puede_editar %}
-    <a class="btn btn-primary"
-       href="{% url 'organizations:delegacion_create' %}">
-      <i class="bi bi-plus-lg me-1"></i>Nueva delegación
+  {% if modo == "lista" or not modo %}
+    <a class="btn btn-outline-success"
+       href="{% url 'organizations:delegacion_exportar_excel' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}">
+      <i class="bi bi-file-earmark-excel me-1"></i>Exportar Excel
     </a>
+    {% if puede_editar %}
+      <a class="btn btn-primary"
+         href="{% url 'organizations:delegacion_create' %}">
+        <i class="bi bi-plus-lg me-1"></i>Nueva delegación
+      </a>
+    {% endif %}
   {% endif %}
 {% endblock %}
 

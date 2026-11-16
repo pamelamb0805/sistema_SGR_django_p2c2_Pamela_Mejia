@@ -27,6 +27,12 @@ from .services import (
     gestiones_visibles, maximo_gestiones, puede_escribir, puede_reabrir,
 )
 from django.http import Http404, JsonResponse
+from core.pagination import PageSizeMixin
+
+from django.http import Http404, JsonResponse, HttpResponse
+from openpyxl import Workbook
+from core.reporting import incorporar_metadatos_informe
+from core.reporting import informe_excel
 
 class SocialMixin(RolRequeridoMixin):
     roles_permitidos = ROLES_SOCIAL
@@ -36,10 +42,6 @@ class EscrituraSocialMixin(RolRequeridoMixin):
     roles_permitidos = ROLES_OPERATIVOS
 
 def cargar_subatenciones(request):
-    """
-    Devuelve las subatenciones activas que corresponden
-    al Tipo de Atención seleccionado.
-    """
     if not request.user.is_authenticated:
         return JsonResponse(
             {"error": "Debe iniciar sesión."},
@@ -52,62 +54,263 @@ def cargar_subatenciones(request):
             status=403,
         )
 
-    tipo_id = request.GET.get("tipo_atencion")
+    tipo_id = request.GET.get("tipo_atencion", "").strip()
     area = request.GET.get("area") or None
 
-    if not tipo_id:
+    if not tipo_id.isdigit():
         return JsonResponse({"subatenciones": []})
 
     from catalogs.models import Catalogo
 
-    subatenciones = Catalogo.objects.disponibles(
-        area=area,
-        tipo=Catalogo.TIPO_SUBATENCION,
-    ).filter(
-        tipo_atencion_padre_id=tipo_id,
-    ).order_by("nombre")
+    tipo = Catalogo.objects.filter(
+        pk=tipo_id,
+        tipo_catalogo=Catalogo.TIPO_ATENCION,
+        estado=Catalogo.ESTADO_ACTIVO,
+    ).first()
 
-    datos = [
-        {
-            "id": sub.pk,
-            "nombre": sub.nombre,
-        }
-        for sub in subatenciones
-    ]
+    if tipo is None:
+        return JsonResponse({"subatenciones": []})
 
-    return JsonResponse({"subatenciones": datos})
+    subatenciones = (
+        Catalogo.objects.disponibles(
+            area=area,
+            tipo=Catalogo.TIPO_SUBATENCION,
+        )
+        .filter(tipo_atencion_padre=tipo)
+        .order_by("nombre")
+    )
+
+    return JsonResponse({
+        "subatenciones": [
+            {
+                "id": subatencion.pk,
+                "nombre": subatencion.nombre,
+            }
+            for subatencion in subatenciones
+        ]
+    })
 # ---------------------------------------------------------------------------
 # Casos
 # ---------------------------------------------------------------------------
-class CasoListView(SocialMixin, ModoMixin, ListView):
+class CasoListView(PageSizeMixin, SocialMixin, ModoMixin, ListView):
     template_name = "social/caso_.html"
     context_object_name = "casos"
     paginate_by = 15
+    page_size_session_key = "caso_page_size"
     titulo = "Casos de atención social"
     roles_edicion = ROLES_OPERATIVOS
 
     def get_queryset(self):
-        qs = casos_visibles(self.request.user).annotate(total_gestiones=Count("gestiones")) \
+        qs = (
+            casos_visibles(self.request.user)
+            .annotate(total_gestiones=Count("gestiones"))
             .order_by("-fecha_primer_registro", "nombre")
+        )
+
         g = self.request.GET
+
         if g.get("q", "").strip():
             qs = qs.filter(nombre__icontains=g["q"].strip())
+
         if g.get("territorio", "").strip():
-            qs = qs.filter(territorio__icontains=g["territorio"].strip())
-        for campo, filtro in (("estado_caso", "estado_caso"), ("delegacion", "delegacion_id"),
-                              ("fecha_desde", "fecha_primer_registro__gte"),
-                              ("fecha_hasta", "fecha_primer_registro__lte")):
+            qs = qs.filter(
+                territorio__icontains=g["territorio"].strip()
+            )
+
+        for campo, filtro in (
+            ("estado_caso", "estado_caso"),
+            ("delegacion", "delegacion_id"),
+            ("fecha_desde", "fecha_primer_registro__gte"),
+            ("fecha_hasta", "fecha_primer_registro__lte"),
+        ):
             if g.get(campo):
                 qs = qs.filter(**{filtro: g[campo]})
+
         return qs
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
+
         contexto.update(
-            filtros=self.request.GET, estados=UsuarioSocial.ESTADOS, maximo=maximo_gestiones(),
-            delegaciones=Delegacion.objects.all() if es_transversal(self.request.user) else [])
+            filtros=self.request.GET,
+            estados=UsuarioSocial.ESTADOS,
+            maximo=maximo_gestiones(),
+            delegaciones=(
+                Delegacion.objects.all()
+                if es_transversal(self.request.user)
+                else []
+            ),
+        )
+
         return contexto
 
+
+@informe_excel("Informe de atención social")
+def exportar_casos_excel(request):
+    """Exporta casos y gestiones respetando filtros, permisos e historia."""
+
+    if not request.user.is_authenticated:
+        return redirect("login")
+
+    if not tiene_rol(request.user, *ROLES_SOCIAL):
+        return denegar_acceso(request)
+
+    casos = (
+        casos_visibles(request.user)
+        .annotate(total_gestiones=Count("gestiones"))
+        .select_related("delegacion")
+        .order_by("-fecha_primer_registro", "nombre")
+    )
+
+    filtros = request.GET
+
+    q = filtros.get("q", "").strip()
+    if q:
+        casos = casos.filter(nombre__icontains=q)
+
+    territorio = filtros.get("territorio", "").strip()
+    if territorio:
+        casos = casos.filter(
+            territorio__icontains=territorio
+        )
+
+    for campo, filtro in (
+        ("estado_caso", "estado_caso"),
+        ("delegacion", "delegacion_id"),
+        ("fecha_desde", "fecha_primer_registro__gte"),
+        ("fecha_hasta", "fecha_primer_registro__lte"),
+    ):
+        valor = filtros.get(campo, "").strip()
+
+        if valor:
+            casos = casos.filter(**{filtro: valor})
+
+    libro = Workbook()
+
+    hoja_casos = libro.active
+    hoja_casos.title = "Casos"
+
+    hoja_casos.append([
+        "N.º de caso",
+        "Persona atendida",
+        "Territorio",
+        "Delegación histórica",
+        "Fecha de primer registro",
+        "Estado del caso",
+        "Total de gestiones",
+    ])
+
+    for caso in casos:
+        delegacion_historica = caso.delegacion_historica or {}
+
+        hoja_casos.append([
+            caso.pk,
+            caso.nombre,
+            caso.territorio,
+            delegacion_historica.get(
+                "nombre",
+                caso.delegacion.nombre,
+            ),
+            caso.fecha_primer_registro,
+            caso.estado_caso,
+            caso.total_gestiones,
+        ])
+
+    hoja_gestiones = libro.create_sheet("Gestiones")
+
+    hoja_gestiones.append([
+        "N.º de caso",
+        "Persona atendida",
+        "N.º de gestión",
+        "Tipo de atención",
+        "Subatención",
+        "Descripción",
+        "Fecha de atención",
+        "Fecha de registro",
+        "Funcionario responsable",
+        "Delegación histórica",
+        "Estado",
+        "Resultado",
+    ])
+
+    gestiones = (
+        gestiones_visibles(request.user)
+        .filter(usuario_id__in=casos.values("pk"))
+        .select_related(
+            "usuario",
+            "tipo_atencion",
+            "subatencion",
+            "funcionario",
+            "delegacion",
+        )
+        .order_by("usuario_id", "numero_gestion")
+    )
+
+    for gestion in gestiones:
+        delegacion_historica = (
+            gestion.delegacion_historica or {}
+        )
+
+        hoja_gestiones.append([
+            gestion.usuario_id,
+            gestion.usuario.nombre,
+            gestion.numero_gestion,
+            (
+                gestion.tipo_atencion_nombre
+                or gestion.tipo_atencion.nombre
+            ),
+            (
+                gestion.subatencion_nombre
+                or gestion.subatencion.nombre
+            ),
+            gestion.descripcion,
+            gestion.fecha,
+            (
+                gestion.fecha_registro.replace(tzinfo=None)
+                if gestion.fecha_registro
+                else None
+            ),
+            gestion.funcionario.nombre,
+            delegacion_historica.get(
+                "nombre",
+                gestion.delegacion.nombre,
+            ),
+            gestion.estado,
+            gestion.resultado,
+        ])
+
+    for hoja in libro.worksheets:
+        hoja.freeze_panes = "A2"
+        hoja.auto_filter.ref = hoja.dimensions
+
+        for columna in hoja.columns:
+            ancho = max(
+                len(str(celda.value or ""))
+                for celda in columna
+            )
+
+            hoja.column_dimensions[
+                columna[0].column_letter
+            ].width = min(ancho + 3, 45)
+
+        for celda in hoja[1]:
+            celda.font = celda.font.copy(bold=True)
+
+    respuesta = HttpResponse(
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        )
+    )
+
+    respuesta["Content-Disposition"] = (
+        'attachment; filename="atencion_social.xlsx"'
+    )
+    respuesta["Cache-Control"] = "private, no-store"
+
+    libro.save(respuesta)
+
+    return respuesta
 
 class CasoDetailView(SocialMixin, ModoMixin, DetailView):
     """Secuencia completa de gestiones desde un único caso (CA-04)."""
@@ -385,3 +588,230 @@ def estadisticas(request):
         "estadisticas": estadisticas_atenciones(qs), "hoy": timezone.localdate(),
         "delegaciones": Delegacion.objects.all() if es_transversal(request.user) else [],
     })
+
+@informe_excel("Estadísticas de atención social")
+def exportar_estadisticas_excel(request):
+    """Exporta estadísticas sociales respetando filtros y permisos."""
+
+    if not request.user.is_authenticated:
+        return redirect("login")
+
+    if not tiene_rol(request.user, *ROLES_SOCIAL):
+        return denegar_acceso(request)
+
+    filtros = request.GET
+    gestiones = gestiones_visibles(request.user)
+
+    # Aplicar exactamente los filtros del informe.
+    for campo, filtro in (
+        ("fecha_desde", "fecha__gte"),
+        ("fecha_hasta", "fecha__lte"),
+        ("delegacion", "usuario__delegacion_id"),
+    ):
+        valor = filtros.get(campo, "").strip()
+
+        if valor and (
+            campo != "delegacion" or es_transversal(request.user)
+        ):
+            gestiones = gestiones.filter(**{filtro: valor})
+
+    # Las estadísticas consideran únicamente gestiones realizadas.
+    realizadas = (
+        gestiones.filter(
+            estado=AtencionSocial.ESTADO_REALIZADA
+        )
+        .select_related(
+            "usuario",
+            "tipo_atencion",
+            "subatencion",
+            "funcionario",
+            "delegacion",
+        )
+        .order_by("fecha", "usuario_id", "numero_gestion")
+    )
+
+    resumen = estadisticas_atenciones(gestiones)
+
+    libro = Workbook()
+
+    # --------------------------------------------------
+    # HOJA 1: RESUMEN GENERAL
+    # --------------------------------------------------
+    hoja = libro.active
+    hoja.title = "Resumen"
+
+    hoja.append(["ESTADÍSTICAS DE ATENCIÓN SOCIAL"])
+    hoja.append(["Indicador", "Total"])
+    hoja.append([
+        "Gestiones realizadas",
+        resumen["total_gestiones"],
+    ])
+    hoja.append([
+        "Personas atendidas",
+        resumen["total_personas"],
+    ])
+
+    hoja.append([])
+    hoja.append(["Filtros aplicados", "Valor"])
+    hoja.append([
+        "Fecha desde",
+        filtros.get("fecha_desde") or "Todas",
+    ])
+    hoja.append([
+        "Fecha hasta",
+        filtros.get("fecha_hasta") or "Todas",
+    ])
+
+    delegacion_id = filtros.get("delegacion", "").strip()
+
+    if delegacion_id and es_transversal(request.user):
+        nombre_delegacion = (
+            Delegacion.objects.filter(pk=delegacion_id)
+            .values_list("nombre", flat=True)
+            .first()
+        )
+        hoja.append([
+            "Delegación",
+            nombre_delegacion or "No encontrada",
+        ])
+    else:
+        hoja.append([
+            "Delegación",
+            "Todas las delegaciones autorizadas",
+        ])
+
+    # --------------------------------------------------
+    # HOJA 2: POR TIPO DE ATENCIÓN
+    # --------------------------------------------------
+    hoja = libro.create_sheet("Por tipo")
+    hoja.append(["Tipo de atención", "Total"])
+
+    for fila in resumen["por_tipo"]:
+        hoja.append([
+            fila["tipo_atencion__nombre"] or "Sin especificar",
+            fila["total"],
+        ])
+
+    # --------------------------------------------------
+    # HOJA 3: POR SUBATENCIÓN
+    # --------------------------------------------------
+    hoja = libro.create_sheet("Por subatención")
+    hoja.append(["Subatención", "Total"])
+
+    for fila in resumen["por_subatencion"]:
+        hoja.append([
+            fila["subatencion__nombre"] or "Sin especificar",
+            fila["total"],
+        ])
+
+    # --------------------------------------------------
+    # HOJA 4: POR DELEGACIÓN
+    # --------------------------------------------------
+    hoja = libro.create_sheet("Por delegación")
+    hoja.append(["Delegación", "Total"])
+
+    for fila in resumen["por_delegacion"]:
+        hoja.append([
+            fila["delegacion__nombre"] or "Sin especificar",
+            fila["total"],
+        ])
+
+    # --------------------------------------------------
+    # HOJA 5: POR MES
+    # --------------------------------------------------
+    hoja = libro.create_sheet("Por mes")
+    hoja.append(["Mes", "Total"])
+
+    for fila in resumen["por_mes"]:
+        mes = fila["mes"]
+
+        hoja.append([
+            mes or "",
+            fila["total"],
+        ])
+
+    # --------------------------------------------------
+    # HOJA 6: DETALLE DE GESTIONES
+    # --------------------------------------------------
+    hoja = libro.create_sheet("Detalle")
+
+    hoja.append([
+        "N.º de caso",
+        "Persona atendida",
+        "Territorio",
+        "N.º de gestión",
+        "Tipo de atención",
+        "Subatención",
+        "Descripción",
+        "Fecha de atención",
+        "Fecha de registro",
+        "Funcionario responsable",
+        "Delegación",
+        "Resultado",
+    ])
+
+    for gestion in realizadas:
+        fecha_registro = gestion.fecha_registro
+
+        if fecha_registro and timezone.is_aware(fecha_registro):
+            fecha_registro = timezone.localtime(
+                fecha_registro
+            ).replace(tzinfo=None)
+
+        hoja.append([
+            gestion.usuario_id,
+            gestion.usuario.nombre,
+            gestion.usuario.territorio,
+            gestion.numero_gestion,
+
+            gestion.tipo_atencion_nombre
+            or gestion.tipo_atencion.nombre,
+
+            gestion.subatencion_nombre
+            or gestion.subatencion.nombre,
+
+            gestion.descripcion,
+            gestion.fecha,
+            fecha_registro,
+            str(gestion.funcionario),
+            gestion.delegacion.nombre,
+            gestion.resultado,
+        ])
+
+    # --------------------------------------------------
+    # FORMATO DE LAS HOJAS
+    # --------------------------------------------------
+    for hoja in libro.worksheets:
+        hoja.freeze_panes = "A2"
+
+        if hoja.title != "Resumen":
+            hoja.auto_filter.ref = hoja.dimensions
+
+        for columna in hoja.columns:
+            ancho = max(
+                (
+                    len(str(celda.value or ""))
+                    for celda in columna
+                ),
+                default=10,
+            )
+
+            hoja.column_dimensions[
+                columna[0].column_letter
+            ].width = min(max(ancho + 3, 12), 50)
+
+    respuesta = HttpResponse(
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        )
+    )
+
+    respuesta["Content-Disposition"] = (
+        'attachment; filename="estadisticas_sociales.xlsx"'
+    )
+    respuesta["Cache-Control"] = "private, no-store"
+
+    libro.save(respuesta)
+
+    return respuesta

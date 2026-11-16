@@ -13,6 +13,9 @@ from django.db import models
 from django.utils import timezone
 
 from organizations.models import Funcionario
+from django.conf import settings
+from django.contrib.contenttypes.fields import GenericForeignKey
+
 
 EVENTO_INTENTO_ALTERACION = "INTENTO_ALTERACION_AUDITORIA"
 
@@ -59,11 +62,52 @@ class Auditoria(models.Model):
         return f"{self.fecha:%d/%m/%Y %H:%M} · {self.evento} · {self.entidad_afectada} {self.id_entidad_afectada}"
 
     @staticmethod
-    def _registrar_intento(accion, instancia):
-        """Deja constancia del intento de alteración (HU-30)."""
+    def _registrar_intento(
+        accion,
+        instancia=None,
+        usuario=None,
+        id_entidad=None,
+    ):
+        """
+        Registra un intento de modificación o eliminación
+        del historial de auditoría.
+
+        Cuando se conoce al usuario que realiza el intento,
+        conserva su funcionario asociado y su identificador.
+        """
+        funcionario = None
+        nombre_usuario = "Usuario no identificado"
+
+        if usuario is not None:
+            nombre_usuario = (
+                usuario.get_username()
+                if hasattr(usuario, "get_username")
+                else str(usuario)
+            )
+
+            funcionario = getattr(
+                usuario,
+                "funcionario",
+                None,
+            )
+
+        identificador = (
+            getattr(instancia, "pk", None)
+            or id_entidad
+            or 0
+        )
+
         Auditoria.objects.create(
-            evento=EVENTO_INTENTO_ALTERACION, entidad_afectada="auditoria",
-            id_entidad_afectada=getattr(instancia, "pk", None) or 0, valor_nuevo=accion)
+            evento=EVENTO_INTENTO_ALTERACION,
+            entidad_afectada="auditoria",
+            id_entidad_afectada=identificador,
+            valor_nuevo=(
+                f"Acción: {accion}; "
+                f"Usuario: {nombre_usuario}"
+            ),
+            funcionario=funcionario,
+        )
+
 
     def save(self, *args, **kwargs):
         if not self._state.adding:
@@ -74,3 +118,208 @@ class Auditoria(models.Model):
     def delete(self, *args, **kwargs):
         self._registrar_intento("eliminar", self)
         raise ValidationError("Los eventos de auditoría no pueden eliminarse.")
+
+class Notificacion(models.Model):
+    """
+    Notificación persistente asociada a un evento de auditoría.
+
+    Cada usuario tiene su propio estado de lectura.
+    La notificación no desaparece al cerrar sesión ni recargar la página.
+    """
+
+    id_notificacion = models.AutoField(primary_key=True)
+
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="notificaciones",
+        verbose_name="Usuario destinatario",
+    )
+
+    auditoria = models.ForeignKey(
+        Auditoria,
+        on_delete=models.PROTECT,
+        related_name="notificaciones",
+        verbose_name="Evento de auditoría",
+    )
+
+    delegacion = models.ForeignKey(
+        "organizations.Delegacion",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="notificaciones",
+        verbose_name="Delegación relacionada",
+    )
+
+    leida = models.BooleanField(
+        default=False,
+        db_index=True,
+        verbose_name="Leída",
+    )
+
+    fecha_creacion = models.DateTimeField(
+        auto_now_add=True,
+        db_index=True,
+        verbose_name="Fecha de creación",
+    )
+
+    fecha_lectura = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Fecha de lectura",
+    )
+
+    class Meta:
+        db_table = "notificacion_usuario"
+
+        ordering = [
+            "-fecha_creacion",
+            "-id_notificacion",
+        ]
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=["usuario", "auditoria"],
+                name="uq_notificacion_usuario_auditoria",
+            ),
+        ]
+
+        indexes = [
+            models.Index(
+                fields=["usuario", "leida", "fecha_creacion"],
+                name="ix_notif_usuario_leida",
+            ),
+        ]
+
+        verbose_name = "notificación"
+        verbose_name_plural = "notificaciones"
+
+    def __str__(self):
+        estado = "Leída" if self.leida else "Pendiente"
+
+        return (
+            f"{self.usuario} · "
+            f"Auditoría #{self.auditoria_id} · "
+            f"{estado}"
+        )
+
+
+class ComentarioRegistro(models.Model):
+    """
+    Conversación asociada a un registro del SGR.
+
+    Conserva autor, funcionario, delegación, fecha y referencia
+    al objeto mediante ContentType.
+    Los mensajes no pueden modificarse ni eliminarse.
+    """
+
+    id_comentario = models.AutoField(primary_key=True)
+
+    content_type = models.ForeignKey(
+        "contenttypes.ContentType",
+        on_delete=models.PROTECT,
+        related_name="comentarios_sgr",
+    )
+
+    object_id = models.PositiveIntegerField(db_index=True)
+
+    content_object = GenericForeignKey(
+        "content_type",
+        "object_id",
+    )
+
+    autor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="comentarios_sgr",
+    )
+
+    funcionario = models.ForeignKey(
+        Funcionario,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="comentarios_sgr",
+    )
+
+    delegacion = models.ForeignKey(
+        "organizations.Delegacion",
+        on_delete=models.PROTECT,
+        related_name="comentarios_sgr",
+    )
+
+    respuesta_a = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="respuestas",
+    )
+
+    mensaje = models.TextField()
+
+    fecha_creacion = models.DateTimeField(
+        default=timezone.now,
+        editable=False,
+        db_index=True,
+    )
+
+    class Meta:
+        db_table = "comentario_registro"
+        ordering = ["fecha_creacion", "id_comentario"]
+        indexes = [
+            models.Index(
+                fields=["content_type", "object_id", "fecha_creacion"],
+                name="ix_comentario_registro",
+            ),
+            models.Index(
+                fields=["delegacion", "fecha_creacion"],
+                name="ix_comentario_delegacion",
+            ),
+        ]
+        verbose_name = "comentario de registro"
+        verbose_name_plural = "comentarios de registros"
+
+    def __str__(self):
+        return (
+            f"Comentario #{self.pk} · "
+            f"{self.autor} · {self.fecha_creacion:%d/%m/%Y %H:%M}"
+        )
+
+    def clean(self):
+        self.mensaje = (self.mensaje or "").strip()
+
+        if not self.mensaje:
+            raise ValidationError({
+                "mensaje": "El comentario no puede estar vacío."
+            })
+
+        if self.respuesta_a_id:
+            padre = self.respuesta_a
+
+            if (
+                padre.content_type_id != self.content_type_id
+                or padre.object_id != self.object_id
+                or padre.delegacion_id != self.delegacion_id
+            ):
+                raise ValidationError({
+                    "respuesta_a": (
+                        "La respuesta debe pertenecer a la misma "
+                        "conversación y registro."
+                    )
+                })
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError(
+                "Los comentarios publicados no pueden modificarse."
+            )
+
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError(
+            "Los comentarios publicados no pueden eliminarse."
+        )

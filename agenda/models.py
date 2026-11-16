@@ -99,6 +99,56 @@ class Compromiso(models.Model):
         return timezone.localtime(max(cierres)).date() if cierres else None
 
     @property
+    def fecha_registro_historica(self):
+        """
+        Recupera la fecha original de creación del compromiso desde
+        el primer evento de auditoría. Como respaldo utiliza la primera
+        transición registrada.
+        """
+        from audit.models import Auditoria
+
+        evento = (
+            Auditoria.objects
+            .filter(
+                entidad_afectada="compromiso",
+                id_entidad_afectada=self.pk,
+            )
+            .order_by("fecha", "id_auditoria")
+            .first()
+        )
+
+        if evento:
+            return evento.fecha
+
+        primera_transicion = (
+            self.historial
+            .order_by("fecha", "id_cambio")
+            .first()
+        )
+
+        if primera_transicion:
+            return primera_transicion.fecha
+
+        return self.fecha_comprometida
+
+
+    @property
+    def delegacion_historica(self):
+        """
+        Devuelve los datos de la delegación que tenía el compromiso
+        cuando fue creado.
+        """
+        if not self.delegacion_id:
+            return None
+
+        return (
+            self.delegacion.obtener_version_historica(
+                self.fecha_registro_historica
+            )
+            or self.delegacion.obtener_datos_actuales()
+        )
+    
+    @property
     def plazo(self):
         """Situación respecto del plazo (RF-019)."""
         hoy = timezone.localdate()

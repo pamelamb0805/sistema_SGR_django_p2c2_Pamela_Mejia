@@ -13,20 +13,72 @@ urlpatterns = [
     path("periodos/<int:pk>/cerrar/", views.PeriodoCerrarView.as_view(), name="periodo_cerrar"),
     path("periodos/<int:pk>/reabrir/", views.PeriodoReabrirView.as_view(), name="periodo_reabrir"),
     path("periodos/<int:pk>/recalcular/", views.PeriodoRecalcularView.as_view(), name="periodo_recalcular"),
-
+    path(
+    "periodos/<int:pk>/reglas/",
+    views.configurar_reglas_periodo,
+    name="periodo_reglas",
+    ),
+    path(
+    "periodos/<int:pk>/reglas/historial/",
+    views.historial_reglas_periodo,
+    name="periodo_reglas_historial",
+    ),
     # Metas
+    path(
+    "metas/funcionario/<int:funcionario_id>/items-vigentes/",
+    views.items_vigentes_funcionario,
+    name="items_vigentes_funcionario",
+    ),
     path("metas/", views.MetaListView.as_view(), name="meta_list"),
     path("metas/nueva/", views.MetaCreateView.as_view(), name="meta_create"),
     path("metas/<int:pk>/editar/", views.MetaUpdateView.as_view(), name="meta_update"),
     path("metas/<int:pk>/eliminar/", views.MetaDeleteView.as_view(), name="meta_delete"),
 
+    path(
+    "metas/<int:pk>/historial/",
+    views.meta_historial,
+    name="meta_historial",
+    ),
     # Ajustes
     path("ajustes/", views.AjusteListView.as_view(), name="ajuste_list"),
     path("ajustes/nuevo/", views.AjusteCreateView.as_view(), name="ajuste_create"),
     path("ajustes/<int:pk>/eliminar/", views.AjusteDeleteView.as_view(), name="ajuste_delete"),
+    path("ajustes/<int:pk>/editar/", views.AjusteUpdateView.as_view(), name="ajuste_update"),
 
     # Desempeño y semáforo
     path("mi-desempeno/", views.mi_desempeno, name="mi_desempeno"),
     path("desempeno/<int:pk>/", views.desempeno_funcionario, name="desempeno_funcionario"),
     path("semaforo/", views.semaforo, name="semaforo"),
+
+    path(
+    "metas/exportar-excel/",
+    views.exportar_metas_excel,
+    name="meta_exportar_excel",
+    ),  
+
+
+    path(
+        "periodos/exportar-excel/",
+        views.exportar_periodos_excel,
+        name="periodo_exportar_excel",
+    ),
+    path(
+        "ajustes/exportar-excel/",
+        views.exportar_ajustes_excel,
+        name="ajuste_exportar_excel",
+    ),
+    path(
+        "semaforo/exportar-excel/",
+        views.exportar_semaforo_excel,
+        name="semaforo_exportar_excel",
+    ),
+
+
+    path(
+        "vista-global-cargos/",
+        views.vista_global_cargos,
+        name="vista_global_cargos",
+    ),
+
+
 ]

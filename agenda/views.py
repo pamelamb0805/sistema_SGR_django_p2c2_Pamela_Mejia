@@ -28,6 +28,12 @@ from .services import (
     CRUDCompromiso, CRUDHistorialTransiciones, supervisa, compromisos_visibles, puede_gestionar,
 )
 
+from django.http import HttpResponse
+from openpyxl import Workbook
+from django.core.paginator import Paginator
+from core.pagination import PageSizeMixin, PAGE_SIZE_OPTIONS, get_page_size
+from core.reporting import incorporar_metadatos_informe
+from core.reporting import informe_excel
 
 def _filtrar(qs, g):
     """Filtros de la agenda (HU-12, RF-032): responsable, estado, territorio, fechas, período, plazo."""
@@ -55,31 +61,46 @@ class OperativoMixin(RolRequeridoMixin):
     roles_permitidos = ROLES_OPERATIVOS
 
 
-class CompromisoListView(RolRequeridoMixin, ModoMixin, ListView):
+class CompromisoListView(PageSizeMixin, RolRequeridoMixin, ModoMixin, ListView):
     """Agenda colectiva ordenada por fecha comprometida (el agrupado por fecha se hace en la plantilla)."""
     template_name = "agenda/compromiso_.html"
     context_object_name = "compromisos"
     paginate_by = 20
+    page_size_session_key = "compromiso_page_size"
     titulo = "Agenda colectiva"
     roles_edicion = ROLES_OPERATIVOS
 
     def get_queryset(self):
-        qs = compromisos_visibles(self.request.user).prefetch_related("historial")
+        qs = compromisos_visibles(
+            self.request.user
+        ).prefetch_related("historial")
+
         return _filtrar(qs, self.request.GET)
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
         g = self.request.GET
         visibles = compromisos_visibles(self.request.user)
+
         contexto.update(
-            filtros=g, estados=Compromiso.ESTADOS, periodos=Periodo.objects.all(),
-            funcionarios=Funcionario.objects.filter(pk__in=visibles.values("funcionario_id")),
-            delegaciones=Delegacion.objects.all() if es_transversal(self.request.user) else [],
-            plazos=CRUDCompromiso.controlar_plazos(queryset=self.object_list),
+            filtros=g,
+            estados=Compromiso.ESTADOS,
+            periodos=Periodo.objects.all(),
+            funcionarios=Funcionario.objects.filter(
+                pk__in=visibles.values("funcionario_id")
+            ),
+            delegaciones=(
+                Delegacion.objects.all()
+                if es_transversal(self.request.user)
+                else []
+            ),
+            plazos=CRUDCompromiso.controlar_plazos(
+                queryset=self.object_list
+            ),
             hoy=timezone.localdate(),
         )
-        return contexto
 
+        return contexto
 
 class CompromisoDetailView(RolRequeridoMixin, ModoMixin, DetailView):
     template_name = "agenda/compromiso_.html"
@@ -223,6 +244,53 @@ def resumen_colectivo(request):
     """Resumen colectivo y control de plazos (RF-019, RF-021, HU-14, HU-18)."""
     g = request.GET
     visibles = compromisos_visibles(request.user)
+
+    periodo = None
+    if g.get("periodo", "").isdigit():
+        periodo = Periodo.objects.filter(pk=g["periodo"]).first()
+    elif "periodo" not in g:
+        periodo = Periodo.objects.vigente()
+
+    filtros = g.copy()
+    if periodo:
+        filtros["periodo"] = str(periodo.pk)
+
+    qs = _filtrar(visibles.prefetch_related("historial"), filtros)
+
+    resumen = CRUDCompromiso.resumen_colectivo(qs)
+
+    page_size = get_page_size(
+        request,
+        "agenda_resumen_page_size",
+    )
+
+    paginator = Paginator(resumen["filas"], page_size)
+    page_obj = paginator.get_page(request.GET.get("page"))
+
+    resumen["filas"] = page_obj.object_list
+
+    return render(request, "agenda/compromiso_.html", {
+        "modo": "resumen",
+        "titulo": "Resumen de la agenda colectiva",
+        "periodo": periodo,
+        "filtros": g,
+        "periodos": Periodo.objects.all(),
+        "delegaciones": (
+            Delegacion.objects.all()
+            if es_transversal(request.user)
+            else []
+        ),
+        "resumen": resumen,
+        "plazos": CRUDCompromiso.controlar_plazos(queryset=qs),
+        "hoy": timezone.localdate(),
+        "page_obj": page_obj,
+        "page_size": page_size,
+        "page_size_options": PAGE_SIZE_OPTIONS,
+    })
+
+    """Resumen colectivo y control de plazos (RF-019, RF-021, HU-14, HU-18)."""
+    g = request.GET
+    visibles = compromisos_visibles(request.user)
     periodo = None
     if g.get("periodo", "").isdigit():
         periodo = Periodo.objects.filter(pk=g["periodo"]).first()
@@ -239,3 +307,168 @@ def resumen_colectivo(request):
         "resumen": CRUDCompromiso.resumen_colectivo(qs),
         "plazos": CRUDCompromiso.controlar_plazos(queryset=qs), "hoy": timezone.localdate(),
     })
+
+@login_required
+@informe_excel("Informe de compromisos")
+def exportar_compromisos_excel(request):
+    queryset = compromisos_visibles(request.user).prefetch_related(
+        "historial"
+    )
+    queryset = _filtrar(queryset, request.GET)
+
+    libro = Workbook()
+    hoja = libro.active
+    hoja.title = "Compromisos"
+
+    hoja.append([
+        "Identificador",
+        "Fecha comprometida",
+        "Solicitante",
+        "Origen",
+        "Territorio",
+        "Responsable",
+        "Delegación",
+        "Ítem medible",
+        "Período",
+        "Área de apoyo",
+        "Estado",
+        "Plazo",
+        "Observación",
+    ])
+
+    for compromiso in queryset.order_by(
+        "fecha_comprometida", "id_compromiso"
+    ):
+        hoja.append([
+            compromiso.pk,
+            compromiso.fecha_comprometida.strftime("%d/%m/%Y"),
+            compromiso.solicitante,
+            compromiso.origen,
+            compromiso.territorio,
+            compromiso.funcionario.nombre,
+            compromiso.delegacion.nombre,
+            (
+                compromiso.item_medible.nombre_item
+                if compromiso.item_medible else ""
+            ),
+            str(compromiso.periodo or ""),
+            compromiso.area_apoyo,
+            compromiso.estado,
+            compromiso.plazo,
+            compromiso.observacion,
+        ])
+
+    respuesta = HttpResponse(
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        )
+    )
+    respuesta["Content-Disposition"] = (
+        'attachment; filename="compromisos_filtrados.xlsx"'
+    )
+    libro.save(respuesta)
+    return respuesta
+
+
+@login_required
+@informe_excel("Resumen de agenda colectiva")
+def exportar_resumen_colectivo_excel(request):
+    """Exporta el resumen colectivo completo con los filtros aplicados."""
+
+    g = request.GET
+    visibles = compromisos_visibles(request.user)
+
+    periodo = None
+
+    if g.get("periodo", "").isdigit():
+        periodo = Periodo.objects.filter(
+            pk=g["periodo"]
+        ).first()
+    elif "periodo" not in g:
+        periodo = Periodo.objects.vigente()
+
+    filtros = g.copy()
+
+    if periodo:
+        filtros["periodo"] = str(periodo.pk)
+
+    queryset = _filtrar(
+        visibles.prefetch_related("historial"),
+        filtros,
+    )
+
+    resumen = CRUDCompromiso.resumen_colectivo(queryset)
+
+    libro = Workbook()
+    hoja = libro.active
+    hoja.title = "Resumen agenda"
+
+    hoja.append(["Resumen de agenda colectiva"])
+    hoja.append([
+        "Generado",
+        timezone.localtime().strftime("%d/%m/%Y %H:%M"),
+    ])
+    hoja.append([
+        "Período",
+        str(periodo) if periodo else "Todos",
+    ])
+    hoja.append([])
+
+    estados = resumen["estados"]
+
+    hoja.append(
+        ["Funcionario"]
+        + estados
+        + [
+            "Total",
+            "Realizados",
+            "% realizado",
+            "% pendiente",
+        ]
+    )
+
+    for fila in resumen["filas"]:
+        hoja.append(
+            [fila["nombre"]]
+            + [
+                fila["por_estado"].get(estado, 0)
+                for estado in estados
+            ]
+            + [
+                fila["total"],
+                fila["realizados"],
+                float(fila["pct_realizado"]),
+                float(fila["pct_pendiente"]),
+            ]
+        )
+
+    total = resumen["total"]
+
+    hoja.append(
+        ["TOTAL"]
+        + [
+            total["por_estado"].get(estado, 0)
+            for estado in estados
+        ]
+        + [
+            total["total"],
+            total["realizados"],
+            float(total["pct_realizado"]),
+            float(total["pct_pendiente"]),
+        ]
+    )
+
+    respuesta = HttpResponse(
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        )
+    )
+    respuesta["Content-Disposition"] = (
+        'attachment; filename="resumen_agenda.xlsx"'
+    )
+    respuesta["Cache-Control"] = "private, no-store"
+
+    libro.save(respuesta)
+    return respuesta

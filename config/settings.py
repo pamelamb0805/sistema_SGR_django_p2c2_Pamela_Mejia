@@ -30,6 +30,8 @@ ALLOWED_HOSTS = [h.strip() for h in os.getenv("ALLOWED_HOSTS", "127.0.0.1,localh
 # Aplicaciones (carpetas en inglés, según estructura del proyecto)
 # ---------------------------------------------------------------------------
 INSTALLED_APPS = [
+    "daphne",
+    "channels",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -45,6 +47,8 @@ INSTALLED_APPS = [
     "agenda",          # Compromiso, HistorialTransiciones
     "social",          # UsuarioSocial, AtencionSocial
     "audit",           # Auditoria
+    "websocket",
+
 ]
 
 MIDDLEWARE = [
@@ -180,9 +184,19 @@ SGR_SEMAFORO_AMBAR = float(os.getenv("SGR_SEMAFORO_AMBAR", 60))          # % del
 SGR_SUMA_PONDERADORES = float(os.getenv("SGR_SUMA_PONDERADORES", 100))   # RN-001
 SGR_MAX_GESTIONES_SOCIAL = int(os.getenv("SGR_MAX_GESTIONES_SOCIAL", 3)) # RN-012
 SGR_DIAS_ALERTA_VENCIMIENTO = int(os.getenv("SGR_DIAS_ALERTA_VENCIMIENTO", 3))
+SGR_DIAS_SIN_REGISTRO_ALERTA = int(
+    os.getenv("SGR_DIAS_SIN_REGISTRO_ALERTA", 7)
+)
 
 # Evidencias (RNF-017)
 SGR_EVIDENCIA_MAX_MB = int(os.getenv("SGR_EVIDENCIA_MAX_MB", 5))
 SGR_EVIDENCIA_EXTENSIONES = ["jpg", "jpeg", "png", "pdf"]
 FILE_UPLOAD_MAX_MEMORY_SIZE = SGR_EVIDENCIA_MAX_MB * 1024 * 1024
 DATA_UPLOAD_MAX_MEMORY_SIZE = FILE_UPLOAD_MAX_MEMORY_SIZE
+
+#Websocket
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels.layers.InMemoryChannelLayer",
+    }
+}

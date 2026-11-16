@@ -15,12 +15,23 @@ from django.utils import timezone
 
 from catalogs.models import Catalogo
 from core.exceptions import ReglaNegocioError
-from core.mixins import (
-    ROL_DELEGADO, ROLES_OPERATIVOS, ROLES_TRANSVERSALES, auditar, es_transversal, get_funcionario, tiene_rol,
+from core.services import (
+    guardar,
+    snapshot,
+    _notificar_crud,
 )
-from core.services import guardar, snapshot
 
 from .models import AtencionSocial, UsuarioSocial
+from core.mixins import (
+    ROL_DELEGADO,
+    ROLES_OPERATIVOS,
+    ROLES_TRANSVERSALES,
+    auditar,
+    es_transversal,
+    get_funcionario,
+    get_delegaciones_autorizadas_ids,
+    tiene_rol,
+)
 
 # Acceso al módulo: datos personales de usuarios atendidos => solo quienes los necesitan (RNF-009)
 ROLES_SOCIAL = ROLES_OPERATIVOS + ROLES_TRANSVERSALES
@@ -35,15 +46,24 @@ def maximo_gestiones():
 # Visibilidad y permisos
 # ---------------------------------------------------------------------------
 def casos_visibles(user):
+    """
+    Devuelve los casos correspondientes a las delegaciones autorizadas
+    del usuario. Los usuarios transversales pueden consultar todas.
+    """
     qs = UsuarioSocial.objects.select_related("delegacion")
+
     if not tiene_rol(user, *ROLES_SOCIAL):
         return qs.none()
+
     if es_transversal(user):
         return qs
-    f = get_funcionario(user)
-    return qs.filter(delegacion_id=f.delegacion_id) if f else qs.none()
 
+    delegaciones_ids = get_delegaciones_autorizadas_ids(user)
 
+    if not delegaciones_ids:
+        return qs.none()
+
+    return qs.filter(delegacion_id__in=delegaciones_ids)
 
 def gestiones_visibles(user):
     return (
@@ -59,14 +79,17 @@ def gestiones_visibles(user):
         )
     )
 
-
 def puede_escribir(user, caso_delegacion_id):
-    """Registrar y modificar: Funcionario o Delegado de la misma delegación."""
+    """
+    Permite escribir a funcionarios y delegados dentro de sus
+    delegaciones autorizadas.
+    """
     if not tiene_rol(user, *ROLES_OPERATIVOS):
         return False
-    f = get_funcionario(user)
-    return f is not None and f.delegacion_id == caso_delegacion_id
 
+    delegaciones_ids = get_delegaciones_autorizadas_ids(user)
+
+    return caso_delegacion_id in delegaciones_ids
 
 def puede_reabrir(user, caso_delegacion_id):
     if es_transversal(user):
@@ -81,7 +104,7 @@ def _exigir_escritura(user, caso):
 
 
 
-def _validar_catalogo(tipo_atencion, subatencion):
+def _validar_catalogo(tipo_atencion, subatencion, original=None):
     if tipo_atencion is None or subatencion is None:
         raise ReglaNegocioError(
             "Debe seleccionar el Tipo de Atención y la Subatención."
@@ -97,9 +120,32 @@ def _validar_catalogo(tipo_atencion, subatencion):
             "El elemento seleccionado no es una Subatención."
         )
 
-    if not tipo_atencion.activo or not subatencion.activo:
+    # En una edición, solo se tolera conservar elementos inactivos
+    # cuando son exactamente los mismos que tenía el registro.
+    conserva_tipo = (
+        original is not None
+        and original.tipo_atencion_id == tipo_atencion.pk
+    )
+
+    conserva_subatencion = (
+        original is not None
+        and original.subatencion_id == subatencion.pk
+    )
+
+    if not tipo_atencion.activo and not conserva_tipo:
         raise ReglaNegocioError(
-            "No se pueden registrar atenciones con catálogos inactivos."
+            "No se pueden registrar atenciones con un Tipo de "
+            "Atención inactivo."
+        )
+
+    if not subatencion.activo and not conserva_subatencion:
+        raise ReglaNegocioError(
+            "No se pueden registrar atenciones con una Subatención inactiva."
+        )
+
+    if not subatencion.tipo_atencion_padre_id:
+        raise ReglaNegocioError(
+            "La Subatención no tiene un Tipo de Atención asociado."
         )
 
     if subatencion.tipo_atencion_padre_id != tipo_atencion.pk:
@@ -107,7 +153,27 @@ def _validar_catalogo(tipo_atencion, subatencion):
             "La Subatención no corresponde al Tipo de Atención seleccionado."
         )
 
+    padre = subatencion.tipo_atencion_padre
 
+    padre_inactivo_conservado = (
+        conserva_subatencion
+        and conserva_tipo
+        and padre.pk == tipo_atencion.pk
+    )
+
+    if not padre.activo and not padre_inactivo_conservado:
+        raise ReglaNegocioError(
+            "El Tipo de Atención asociado a la Subatención está inactivo."
+        )
+
+    if (
+        padre.area != Catalogo.AREA_GENERAL
+        and padre.area.casefold() != subatencion.area.casefold()
+    ):
+        raise ReglaNegocioError(
+            "El Tipo de Atención y la Subatención no pertenecen "
+            "a la misma área."
+        )
 # ---------------------------------------------------------------------------
 # CRUDAtencionSocial (RF-015, RN-012)
 # ---------------------------------------------------------------------------
@@ -224,6 +290,8 @@ class CRUDAtencionSocial:
             gestion.funcionario = autor
             gestion.delegacion = caso.delegacion
             gestion.usuario = caso
+            gestion.tipo_atencion_nombre = gestion.tipo_atencion.nombre
+            gestion.subatencion_nombre = gestion.subatencion.nombre
 
             gestion.full_clean()
             guardar(gestion, actor, "atencion_social")
@@ -234,8 +302,15 @@ class CRUDAtencionSocial:
     def modificar_gestion(gestion, actor=None):
         with transaction.atomic():
             original = (
-                AtencionSocial.objects.select_for_update()
-                .select_related("usuario", "delegacion", "funcionario")
+                AtencionSocial.objects
+                .select_for_update()
+                .select_related(
+                    "usuario",
+                    "delegacion",
+                    "funcionario",
+                    "tipo_atencion",
+                    "subatencion",
+                )
                 .get(pk=gestion.pk)
             )
 
@@ -267,9 +342,12 @@ class CRUDAtencionSocial:
                     "Cada gestión del caso debe tener un Tipo de Atención diferente."
                 )
 
+            # Permite conservar la clasificación anterior aunque después
+            # se haya desactivado, pero no permite cambiarla por una inactiva.
             _validar_catalogo(
                 gestion.tipo_atencion,
                 gestion.subatencion,
+                original=original,
             )
 
             CRUDAtencionSocial._validar_fecha_y_estado(
@@ -290,17 +368,37 @@ class CRUDAtencionSocial:
                 ),
             )
 
-            # No se permite cambiar estas asignaciones desde el formulario.
+            # Asignaciones protegidas: no se cambian desde el formulario.
             gestion.usuario = caso
             gestion.delegacion = original.delegacion
             gestion.funcionario = original.funcionario
             gestion.fecha_registro = original.fecha_registro
 
+            # Mantiene el nombre histórico si no cambió el catálogo.
+            if gestion.tipo_atencion_id == original.tipo_atencion_id:
+                gestion.tipo_atencion_nombre = (
+                    original.tipo_atencion_nombre
+                    or original.tipo_atencion.nombre
+                )
+            else:
+                gestion.tipo_atencion_nombre = gestion.tipo_atencion.nombre
+
+            if gestion.subatencion_id == original.subatencion_id:
+                gestion.subatencion_nombre = (
+                    original.subatencion_nombre
+                    or original.subatencion.nombre
+                )
+            else:
+                gestion.subatencion_nombre = gestion.subatencion.nombre
+
             gestion.full_clean()
-            guardar(gestion, actor, "atencion_social")
+            guardar(
+                gestion,
+                actor,
+                "atencion_social",
+            )
 
         return gestion
-    
 # ---------------------------------------------------------------------------
 # CRUDUsuarioSocial (RF-015, HU-03)
 # ---------------------------------------------------------------------------
@@ -350,66 +448,173 @@ class CRUDUsuarioSocial:
         return guardar(caso, actor, "usuario_social")
 
     @staticmethod
-    def cambiar_estado_caso(caso, nuevo_estado, actor=None):
+    def cambiar_estado_caso(
+        caso,
+        nuevo_estado,
+        actor=None,
+    ):
+        """
+        Cambia el estado del caso social, conserva la auditoría
+        y publica el cambio para los usuarios autorizados.
+        """
         with transaction.atomic():
-            caso = UsuarioSocial.objects.select_for_update().get(pk=caso.pk)
-            if not (puede_escribir(actor, caso.delegacion_id) or es_transversal(actor)):
-                raise ReglaNegocioError("No tiene permiso para modificar casos de esta delegación.")
+            caso = UsuarioSocial.objects.select_for_update().get(
+                pk=caso.pk
+            )
+
+            if not (
+                puede_escribir(actor, caso.delegacion_id)
+                or es_transversal(actor)
+            ):
+                raise ReglaNegocioError(
+                    "No tiene permiso para modificar casos "
+                    "de esta delegación."
+                )
+
             if nuevo_estado not in dict(UsuarioSocial.ESTADOS):
-                raise ReglaNegocioError("Estado de caso no válido.")
+                raise ReglaNegocioError(
+                    "Estado de caso no válido."
+                )
+
             if nuevo_estado == caso.estado_caso:
-                raise ReglaNegocioError(f"El caso ya está «{caso.estado_caso}».")
-            if caso.cerrado and not puede_reabrir(actor, caso.delegacion_id):
-                raise ReglaNegocioError("Solo el delegado o la coordinación pueden reabrir un caso cerrado.")
+                raise ReglaNegocioError(
+                    f"El caso ya está «{caso.estado_caso}»."
+                )
+
+            if (
+                caso.cerrado
+                and not puede_reabrir(
+                    actor,
+                    caso.delegacion_id,
+                )
+            ):
+                raise ReglaNegocioError(
+                    "Solo el delegado o la coordinación "
+                    "pueden reabrir un caso cerrado."
+                )
+
             anterior = snapshot(caso)
+
             caso.estado_caso = nuevo_estado
             caso.save(update_fields=["estado_caso"])
-            auditar(actor, "CAMBIO_ESTADO_CASO", "usuario_social", caso.pk, anterior,
-                    json.dumps({"estado_caso": nuevo_estado}, ensure_ascii=False))
-        return caso
 
+            auditar(
+                actor,
+                "CAMBIO_ESTADO_CASO",
+                "usuario_social",
+                caso.pk,
+                anterior,
+                json.dumps(
+                    {"estado_caso": nuevo_estado},
+                    ensure_ascii=False,
+                ),
+            )
+
+            _notificar_crud(
+                "usuario_social",
+                "actualizar",
+                actor,
+                caso,
+            )
+
+        return caso
 
 # ---------------------------------------------------------------------------
 # Estadísticas (HU-03: cada atención válida se cuenta una sola vez)
 # ---------------------------------------------------------------------------
 def estadisticas_atenciones(queryset):
-    """Resumen de gestiones realizadas sin duplicar registros."""
+    """
+    Estadísticas utilizando las fotografías históricas
+    de los catálogos registradas en cada gestión.
+    """
     realizadas = queryset.filter(
         estado=AtencionSocial.ESTADO_REALIZADA
+    ).select_related(
+        "tipo_atencion",
+        "subatencion",
+        "delegacion",
     )
 
+    gestiones = list(realizadas)
+
+    por_tipo = {}
+    por_subatencion = {}
+    por_delegacion = {}
+    por_mes = {}
+
+    for gestion in gestiones:
+        tipo = (
+            gestion.tipo_atencion_nombre
+            or gestion.tipo_atencion.nombre
+        )
+
+        subatencion = (
+            gestion.subatencion_nombre
+            or gestion.subatencion.nombre
+        )
+
+        delegacion = gestion.delegacion.nombre
+
+        mes = gestion.fecha.strftime("%m/%Y")
+
+        por_tipo[tipo] = por_tipo.get(tipo, 0) + 1
+        por_subatencion[subatencion] = (
+            por_subatencion.get(subatencion, 0) + 1
+        )
+        por_delegacion[delegacion] = (
+            por_delegacion.get(delegacion, 0) + 1
+        )
+        por_mes[mes] = por_mes.get(mes, 0) + 1
+
     return {
-        "total_gestiones": realizadas.count(),
-        "total_personas": (
-            realizadas.values("usuario_id").distinct().count()
-        ),
-        "por_tipo": list(
-            realizadas.values(
-                "tipo_atencion__nombre"
+        "total_gestiones": len(gestiones),
+
+        "total_personas": len({
+            gestion.usuario_id
+            for gestion in gestiones
+        }),
+
+        "por_tipo": [
+            {
+                "tipo_atencion__nombre": nombre,
+                "total": total,
+            }
+            for nombre, total in sorted(
+                por_tipo.items(),
+                key=lambda x: x[1],
+                reverse=True,
             )
-            .annotate(total=Count("pk"))
-            .order_by("-total")
-        ),
-        "por_subatencion": list(
-            realizadas.values(
-                "subatencion__nombre"
+        ],
+
+        "por_subatencion": [
+            {
+                "subatencion__nombre": nombre,
+                "total": total,
+            }
+            for nombre, total in sorted(
+                por_subatencion.items(),
+                key=lambda x: x[1],
+                reverse=True,
             )
-            .annotate(total=Count("pk"))
-            .order_by("-total")
-        ),
-        "por_delegacion": list(
-            realizadas.values(
-                "delegacion__nombre"
+        ],
+
+        "por_delegacion": [
+            {
+                "delegacion__nombre": nombre,
+                "total": total,
+            }
+            for nombre, total in sorted(
+                por_delegacion.items(),
+                key=lambda x: x[1],
+                reverse=True,
             )
-            .annotate(total=Count("pk"))
-            .order_by("-total")
-        ),
-        "por_mes": list(
-            realizadas.annotate(
-                mes=TruncMonth("fecha")
-            )
-            .values("mes")
-            .annotate(total=Count("pk"))
-            .order_by("mes")
-        ),
+        ],
+
+        "por_mes": [
+            {
+                "mes": mes,
+                "total": total,
+            }
+            for mes, total in sorted(por_mes.items())
+        ],
     }

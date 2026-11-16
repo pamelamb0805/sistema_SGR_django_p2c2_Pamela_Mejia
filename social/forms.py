@@ -16,6 +16,12 @@ def _tipos_atencion(area=None):
 
 
 def _subatenciones(tipo_id=None, area=None, actual=None):
+    """
+    Ofrece únicamente subatenciones activas del tipo seleccionado.
+    En edición conserva temporalmente la opción histórica para que
+    el usuario pueda identificarla, pero el formulario no permitirá
+    guardar una opción inactiva.
+    """
     qs = Catalogo.objects.disponibles(
         area=area,
         tipo=Catalogo.TIPO_SUBATENCION,
@@ -26,10 +32,11 @@ def _subatenciones(tipo_id=None, area=None, actual=None):
     else:
         qs = qs.none()
 
-    # En edición se puede conservar un valor antiguo para mostrarlo,
-    # pero la validación del formulario impedirá guardar uno inactivo.
     if actual:
-        qs = (Catalogo.objects.filter(pk=actual) | qs).distinct()
+        qs = (
+            Catalogo.objects.filter(pk=actual)
+            | qs
+        ).distinct()
 
     return qs.order_by("nombre")
 
@@ -53,7 +60,6 @@ class SeleccionAtencionMixin:
             actual=getattr(instancia, "subatencion_id", None),
         )
 
-        # Identificadores y URL que utilizará JavaScript.
         self.fields["tipo_atencion"].widget.attrs.update({
             "id": "id_tipo_atencion",
         })
@@ -64,14 +70,41 @@ class SeleccionAtencionMixin:
 
     def clean(self):
         datos = super().clean()
+
         tipo = datos.get("tipo_atencion")
         subatencion = datos.get("subatencion")
 
-        if tipo and tipo.tipo_catalogo != Catalogo.TIPO_ATENCION:
-            self.add_error(
-                "tipo_atencion",
-                "Seleccione un Tipo de Atención válido.",
+        original = self.instance if getattr(
+            self,
+            "instance",
+            None,
+        ) is not None and self.instance.pk else None
+
+        conserva_tipo = (
+            original is not None
+            and original.tipo_atencion_id == getattr(tipo, "pk", None)
+        )
+
+        conserva_subatencion = (
+            original is not None
+            and original.subatencion_id == getattr(
+                subatencion,
+                "pk",
+                None,
             )
+        )
+
+        if tipo:
+            if tipo.tipo_catalogo != Catalogo.TIPO_ATENCION:
+                self.add_error(
+                    "tipo_atencion",
+                    "Seleccione un Tipo de Atención válido.",
+                )
+            elif not tipo.activo and not conserva_tipo:
+                self.add_error(
+                    "tipo_atencion",
+                    "El Tipo de Atención seleccionado está inactivo.",
+                )
 
         if subatencion:
             if subatencion.tipo_catalogo != Catalogo.TIPO_SUBATENCION:
@@ -79,25 +112,23 @@ class SeleccionAtencionMixin:
                     "subatencion",
                     "Seleccione una Subatención válida.",
                 )
-            elif not subatencion.activo:
+
+            elif not subatencion.activo and not conserva_subatencion:
                 self.add_error(
                     "subatencion",
                     "La Subatención seleccionada está inactiva.",
                 )
-            elif tipo and subatencion.tipo_atencion_padre_id != tipo.pk:
+
+            elif tipo and (
+                subatencion.tipo_atencion_padre_id != tipo.pk
+            ):
                 self.add_error(
                     "subatencion",
-                    "La Subatención debe pertenecer al Tipo de Atención seleccionado.",
+                    "La Subatención debe pertenecer al Tipo de "
+                    "Atención seleccionado.",
                 )
 
-        if tipo and not tipo.activo:
-            self.add_error(
-                "tipo_atencion",
-                "El Tipo de Atención seleccionado está inactivo.",
-            )
-
         return datos
-
 
 class NuevoCasoForm(
     SeleccionAtencionMixin,

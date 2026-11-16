@@ -1,0 +1,90 @@
+
+{% extends "base.html" %}
+
+{% block title %}{{ titulo }}{% endblock %}
+{% block page_title %}{{ titulo }}{% endblock %}
+
+{% block content %}
+
+<div class="card shadow-sm">
+    <div class="card-header">
+        <h5 class="mb-0">Parámetros de medición</h5>
+    </div>
+
+    <div class="card-body">
+
+        <div class="alert alert-info">
+            <strong>Período:</strong>
+            {{ periodo.fecha_inicio|date:"d/m/Y" }}
+            al
+            {{ periodo.fecha_termino|date:"d/m/Y" }}
+
+            <br>
+
+            <strong>Versión actual:</strong>
+            {{ periodo.version_parametros }}
+
+            <br>
+
+            Los cambios se registrarán como una nueva versión
+            y se aplicarán desde la fecha y hora de su registro.
+            Las versiones anteriores se conservarán.
+        </div>
+
+        {% if version_actual %}
+            <p class="text-muted small">
+                Última versión registrada:
+                {{ version_actual.vigente_desde|date:"d/m/Y H:i" }}
+            </p>
+        {% endif %}
+
+        <form method="post" novalidate>
+            {% csrf_token %}
+
+            {% if form.non_field_errors %}
+                <div class="alert alert-danger">
+                    {{ form.non_field_errors }}
+                </div>
+            {% endif %}
+
+            {% for field in form %}
+                <div class="mb-3">
+                    <label
+                        for="{{ field.id_for_label }}"
+                        class="form-label"
+                    >
+                        {{ field.label }}
+                    </label>
+
+                    {{ field }}
+
+                    {% for error in field.errors %}
+                        <div class="text-danger small">
+                            {{ error }}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endfor %}
+
+            <div class="alert alert-warning">
+                Al guardar, se recalcularán los indicadores del
+                período abierto con la nueva configuración.
+                Los períodos cerrados conservarán sus resultados.
+            </div>
+
+            <button type="submit" class="btn btn-primary">
+                Guardar nueva versión
+            </button>
+
+            <a
+                href="{% url 'measurement:periodo_detail' periodo.pk %}"
+                class="btn btn-outline-secondary"
+            >
+                Cancelar
+            </a>
+        </form>
+
+    </div>
+</div>
+
+{% endblock %}

@@ -66,6 +66,342 @@ def _modelo(app_label, nombre):
         return None
 
 
+def construir_alertas_operativas(user, periodo=None, hoy=None):
+    """
+    Construye alertas operativas respetando los permisos y el ámbito
+    territorial del usuario.
+
+    RF-037:
+    - Compromisos vencidos y próximos a vencer.
+    - Evidencias pendientes de revisión.
+    - Ausencia de registros válidos.
+    - Avance de metas bajo el umbral configurado.
+
+    Cada alerta incluye motivo, responsable, fecha y enlace al elemento.
+    """
+    from datetime import timedelta
+
+    from django.conf import settings
+    from django.db.models import Max
+    from django.urls import reverse
+    from django.utils import timezone
+
+    from activities.models import Actividad, Evidencia
+    from activities.services import evidencias_visibles
+    from agenda.models import Compromiso
+    from agenda.services import compromisos_visibles
+    from measurement.services import CalculoIndicadores
+    from organizations.models import Funcionario
+
+    hoy = hoy or timezone.localdate()
+
+    funcionario_actual = get_funcionario(user)
+    es_supervisor = tiene_rol(user, *ROLES_SUPERVISION)
+
+    dias_vencimiento = getattr(
+        settings,
+        "SGR_DIAS_ALERTA_VENCIMIENTO",
+        3,
+    )
+
+    dias_sin_registro = getattr(
+        settings,
+        "SGR_DIAS_SIN_REGISTRO_ALERTA",
+        7,
+    )
+
+    alertas = []
+
+    def agregar_alerta(
+        tipo,
+        titulo,
+        motivo,
+        responsable,
+        fecha,
+        url,
+        nivel="warning",
+        prioridad=10,
+    ):
+        alertas.append({
+            "tipo": tipo,
+            "titulo": titulo,
+            "motivo": motivo,
+            "responsable": responsable or "Sin responsable",
+            "fecha": fecha or hoy,
+            "url": url,
+            "nivel": nivel,
+            "prioridad": prioridad,
+        })
+
+    # ---------------------------------------------------------
+    # FUNCIONARIOS VISIBLES
+    # ---------------------------------------------------------
+
+    funcionarios = filtrar_por_ambito(
+        Funcionario.objects.filter(
+            estado=Funcionario.ESTADO_ACTIVO,
+        ).select_related(
+            "delegacion",
+            "cargo",
+        ),
+        user,
+        "delegacion_id",
+    )
+
+    if not es_supervisor:
+        if funcionario_actual:
+            funcionarios = funcionarios.filter(
+                pk=funcionario_actual.pk,
+            )
+        else:
+            funcionarios = funcionarios.none()
+
+    funcionarios_lista = list(funcionarios)
+
+    # Enlace al detalle del desempeño.
+    def url_desempeno(funcionario):
+        if es_supervisor:
+            return reverse(
+                "measurement:desempeno_funcionario",
+                args=[funcionario.pk],
+            )
+
+        return reverse("measurement:mi_desempeno")
+
+    # ---------------------------------------------------------
+    # 1. VENCIMIENTOS
+    # ---------------------------------------------------------
+
+    limite = hoy + timedelta(days=dias_vencimiento)
+
+    compromisos = compromisos_visibles(user).exclude(
+        estado=Compromiso.ESTADO_REALIZADO,
+    )
+
+    if not es_supervisor:
+        if funcionario_actual:
+            compromisos = compromisos.filter(
+                funcionario=funcionario_actual,
+            )
+        else:
+            compromisos = compromisos.none()
+
+    vencidos = compromisos.filter(
+        fecha_comprometida__lt=hoy,
+    ).select_related(
+        "funcionario",
+        "delegacion",
+    ).order_by(
+        "fecha_comprometida",
+    )[:15]
+
+    for compromiso in vencidos:
+        agregar_alerta(
+            tipo="vencimiento",
+            titulo="Compromiso vencido",
+            motivo=(
+                f"El compromiso #{compromiso.pk} venció el "
+                f"{compromiso.fecha_comprometida:%d/%m/%Y} "
+                "y todavía no está realizado."
+            ),
+            responsable=compromiso.funcionario.nombre,
+            fecha=compromiso.fecha_comprometida,
+            url=reverse(
+                "agenda:compromiso_detail",
+                args=[compromiso.pk],
+            ),
+            nivel="danger",
+            prioridad=1,
+        )
+
+    por_vencer = compromisos.filter(
+        fecha_comprometida__gte=hoy,
+        fecha_comprometida__lte=limite,
+    ).select_related(
+        "funcionario",
+        "delegacion",
+    ).order_by(
+        "fecha_comprometida",
+    )[:15]
+
+    for compromiso in por_vencer:
+        agregar_alerta(
+            tipo="vencimiento",
+            titulo="Compromiso próximo a vencer",
+            motivo=(
+                f"El compromiso #{compromiso.pk} vence el "
+                f"{compromiso.fecha_comprometida:%d/%m/%Y}."
+            ),
+            responsable=compromiso.funcionario.nombre,
+            fecha=compromiso.fecha_comprometida,
+            url=reverse(
+                "agenda:compromiso_detail",
+                args=[compromiso.pk],
+            ),
+            nivel="warning",
+            prioridad=2,
+        )
+
+    # ---------------------------------------------------------
+    # 2. EVIDENCIAS PENDIENTES
+    # ---------------------------------------------------------
+
+    evidencias_pendientes = (
+        evidencias_visibles(user)
+        .filter(
+            estado_revision=Evidencia.ESTADO_PENDIENTE,
+        )
+        .select_related(
+            "actividad",
+            "actividad__funcionario",
+            "actividad__funcionario__delegacion",
+        )
+        .order_by("fecha_carga")[:20]
+    )
+
+    for evidencia in evidencias_pendientes:
+        actividad = evidencia.actividad
+
+        agregar_alerta(
+            tipo="evidencia",
+            titulo="Evidencia pendiente de revisión",
+            motivo=(
+                f"La evidencia {evidencia.codigo_evidencia} "
+                f"de la actividad {actividad.codigo} "
+                "todavía no tiene una decisión de validación."
+            ),
+            responsable=actividad.funcionario.nombre,
+            fecha=evidencia.fecha_carga,
+            url=reverse(
+                "activities:actividad_detail",
+                args=[actividad.pk],
+            ),
+            nivel="warning",
+            prioridad=3,
+        )
+
+    # ---------------------------------------------------------
+    # 3. AUSENCIA DE REGISTROS VÁLIDOS
+    # ---------------------------------------------------------
+
+    if periodo and funcionarios_lista:
+        ultimos_registros = (
+            Actividad.objects
+            .filter(
+                funcionario_id__in=[
+                    f.pk for f in funcionarios_lista
+                ],
+                periodo=periodo,
+                estado=Actividad.ESTADO_VALIDADA,
+                fecha__lte=hoy,
+            )
+            .values("funcionario_id")
+            .annotate(
+                ultima_fecha=Max("fecha"),
+            )
+        )
+
+        fechas_por_funcionario = {
+            fila["funcionario_id"]: fila["ultima_fecha"]
+            for fila in ultimos_registros
+        }
+
+        for responsable in funcionarios_lista:
+            ultima_fecha = fechas_por_funcionario.get(
+                responsable.pk
+            )
+
+            if ultima_fecha:
+                dias_ausencia = (
+                    hoy - ultima_fecha
+                ).days
+            else:
+                dias_ausencia = (
+                    hoy - periodo.fecha_inicio
+                ).days
+
+            if dias_ausencia < dias_sin_registro:
+                continue
+
+            if ultima_fecha:
+                detalle_fecha = (
+                    f"Último registro válido: "
+                    f"{ultima_fecha:%d/%m/%Y}."
+                )
+            else:
+                detalle_fecha = (
+                    "No existen registros válidos "
+                    "en el período vigente."
+                )
+
+            agregar_alerta(
+                tipo="ausencia",
+                titulo="Ausencia de registros",
+                motivo=(
+                    f"{detalle_fecha} Han transcurrido "
+                    f"{dias_ausencia} días sin actividad válida."
+                ),
+                responsable=responsable.nombre,
+                fecha=hoy,
+                url=url_desempeno(responsable),
+                nivel="warning",
+                prioridad=4,
+            )
+
+    # ---------------------------------------------------------
+    # 4. AVANCE BAJO EL UMBRAL DE LA META
+    # ---------------------------------------------------------
+
+    if periodo:
+        for responsable in funcionarios_lista:
+            resumen = CalculoIndicadores.resumen_funcionario(
+                responsable,
+                periodo,
+                hoy,
+            )
+
+            for fila in resumen.get("filas", []):
+                if not fila.get("bajo_umbral"):
+                    continue
+
+                item = fila.get("item")
+                meta = fila.get("meta")
+
+                nombre_item = (
+                    item.nombre_item
+                    if item is not None
+                    else "Ítem sin nombre"
+                )
+
+                cumplimiento = fila.get("cumplimiento")
+                umbral = fila.get("umbral_historico")
+
+                agregar_alerta(
+                    tipo="bajo_umbral",
+                    titulo="Avance bajo el umbral",
+                    motivo=(
+                        f"{nombre_item}: cumplimiento "
+                        f"{cumplimiento}% frente al umbral "
+                        f"mínimo de {umbral}%."
+                    ),
+                    responsable=responsable.nombre,
+                    fecha=hoy,
+                    url=url_desempeno(responsable),
+                    nivel="danger",
+                    prioridad=5,
+                )
+
+    # Primero se muestran las alertas de mayor prioridad.
+    alertas.sort(
+        key=lambda alerta: (
+            alerta["prioridad"],
+            alerta["fecha"],
+            alerta["responsable"],
+        )
+    )
+
+    return alertas[:50]
+
 
 @login_required
 def dashboard(request):
@@ -543,8 +879,12 @@ def dashboard(request):
                 else "Sistema / técnico"
             )
 
-        datos["ultimas_operaciones"] = operaciones
 
+        datos["alertas_operativas"] = construir_alertas_operativas(
+        user=user,
+        periodo=periodo,
+        hoy=hoy,
+    )
     return render(
         request,
         "core/dashboard.html",

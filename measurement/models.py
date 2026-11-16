@@ -47,13 +47,23 @@ class PeriodoQuerySet(models.QuerySet):
 class Periodo(models.Model):
     ESTADO_ABIERTO = "Abierto"
     ESTADO_CERRADO = "Cerrado"
-    ESTADOS = [(ESTADO_ABIERTO, "Abierto"), (ESTADO_CERRADO, "Cerrado")]
+    ESTADOS = [
+        (ESTADO_ABIERTO, "Abierto"),
+        (ESTADO_CERRADO, "Cerrado"),
+    ]
 
     id_periodo = models.AutoField(primary_key=True)
     fecha_inicio = models.DateField()
     fecha_termino = models.DateField()
-    dias_computables = models.PositiveIntegerField(editable=False, default=0)
-    estado = models.CharField(max_length=10, choices=ESTADOS, default=ESTADO_ABIERTO)
+    dias_computables = models.PositiveIntegerField(
+        editable=False,
+        default=0,
+    )
+    estado = models.CharField(
+        max_length=10,
+        choices=ESTADOS,
+        default=ESTADO_ABIERTO,
+    )
     version_parametros = models.PositiveIntegerField(default=1)
 
     objects = PeriodoQuerySet.as_manager()
@@ -63,7 +73,10 @@ class Periodo(models.Model):
         ordering = ["-fecha_inicio"]
 
     def __str__(self):
-        return f"{self.fecha_inicio:%d/%m/%Y} – {self.fecha_termino:%d/%m/%Y}"
+        return (
+            f"{self.fecha_inicio:%d/%m/%Y} - "
+            f"{self.fecha_termino:%d/%m/%Y} ({self.estado})"
+        )
 
     @property
     def abierto(self):
@@ -72,17 +85,71 @@ class Periodo(models.Model):
     def clean(self):
         if self.fecha_inicio and self.fecha_termino:
             if self.fecha_termino < self.fecha_inicio:
-                raise ValidationError({"fecha_termino": "La fecha de término no puede ser anterior a la de inicio."})
+                raise ValidationError({
+                    "fecha_termino": (
+                        "La fecha de término no puede ser anterior "
+                        "a la fecha de inicio."
+                    )
+                })
+
             superpuestos = Periodo.objects.filter(
-                fecha_inicio__lte=self.fecha_termino, fecha_termino__gte=self.fecha_inicio,
+                fecha_inicio__lte=self.fecha_termino,
+                fecha_termino__gte=self.fecha_inicio,
             ).exclude(pk=self.pk)
+
             if superpuestos.exists():
-                raise ValidationError("El período se superpone con otro período existente.")
+                raise ValidationError(
+                    "El período se superpone con otro período existente."
+                )
 
     def save(self, *args, **kwargs):
-        if self.fecha_inicio and self.fecha_termino and self.fecha_termino >= self.fecha_inicio:
-            self.dias_computables = calc.calcular_dias_computables(self.fecha_inicio, self.fecha_termino)
+        if (
+            self.fecha_inicio
+            and self.fecha_termino
+            and self.fecha_termino >= self.fecha_inicio
+        ):
+            self.dias_computables = calc.calcular_dias_computables(
+                self.fecha_inicio,
+                self.fecha_termino,
+            )
+
         super().save(*args, **kwargs)
+# ---------------------------------------------------------------------------
+# VERSIONES DE REGLAS DE CÁLCULO (RF-038)
+# ---------------------------------------------------------------------------
+class ReglaCalculoVersion(models.Model):
+    periodo = models.ForeignKey(
+        Periodo,
+        on_delete=models.PROTECT,
+        related_name="versiones_reglas",
+    )
+    numero_version = models.PositiveIntegerField()
+    vigente_desde = models.DateTimeField(default=timezone.now)
+    vigente_hasta = models.DateTimeField(null=True, blank=True)
+    datos = models.JSONField(default=dict)
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="versiones_reglas_calculo_creadas",
+    )
+
+    class Meta:
+        db_table = "regla_calculo_version"
+        ordering = ["periodo", "-numero_version"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["periodo", "numero_version"],
+                name="uq_regla_calculo_periodo_version",
+            ),
+        ]
+
+    def __str__(self):
+        return (
+            f"Reglas del período {self.periodo_id} "
+            f"- versión {self.numero_version}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -222,3 +289,45 @@ class Ajuste(models.Model):
         if self.meta_id and self.funcionario_id and self.periodo_id:
             if self.meta.funcionario_id != self.funcionario_id or self.meta.periodo_id != self.periodo_id:
                 raise ValidationError({"meta": "La meta debe corresponder al mismo funcionario y período."})
+
+
+class MetaVersion(models.Model):
+    """
+    Historial inmutable de los parámetros de una meta (RF-038).
+    Conserva los valores anteriores aunque la meta sea modificada o eliminada.
+    """
+
+    meta = models.ForeignKey(
+        Meta,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="versiones",
+    )
+    objeto_id = models.PositiveIntegerField(db_index=True)
+    numero_version = models.PositiveIntegerField()
+    vigente_desde = models.DateTimeField(default=timezone.now)
+    vigente_hasta = models.DateTimeField(null=True, blank=True)
+
+    datos = models.JSONField(default=dict)
+
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="versiones_metas_creadas",
+    )
+
+    class Meta:
+        db_table = "meta_version"
+        ordering = ["objeto_id", "-numero_version"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["objeto_id", "numero_version"],
+                name="uq_meta_version_numero",
+            )
+        ]
+
+    def __str__(self):
+        return f"Meta {self.objeto_id} - versión {self.numero_version}"

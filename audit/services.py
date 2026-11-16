@@ -15,6 +15,8 @@ from django.utils import timezone
 from core.mixins import ROLES_TRANSVERSALES, tiene_rol
 
 from .models import Auditoria
+from .models import Auditoria, Notificacion
+
 
 # Quién puede consultar la auditoría: Administrador y Coordinador (auditoría del sistema).
 ROLES_AUDITORIA = ROLES_TRANSVERSALES
@@ -46,6 +48,100 @@ def registrar_evento(usuario=None, evento="", entidad="", id_entidad=0, valor_an
         valor_anterior=_como_texto(valor_anterior), valor_nuevo=_como_texto(valor_nuevo),
         funcionario=funcionario)
 
+
+def crear_notificaciones(auditoria, delegacion_id=None):
+    """
+    Crea notificaciones persistentes según el rol responsable
+    y el tipo de evento. Respeta el ámbito territorial.
+    """
+    from django.contrib.auth import get_user_model
+    from core.mixins import (
+        es_transversal,
+        get_delegaciones_autorizadas_ids,
+        get_roles,
+    )
+
+    entidad = (auditoria.entidad_afectada or "").lower()
+    evento = (auditoria.evento or "").upper()
+
+    if entidad == "usuario" and evento == "LOGIN":
+        roles_permitidos = {"Administrador"}
+    else:
+        destinatarios = {
+            "delegacion": {"Administrador"},
+            "cargo": {"Administrador"},
+            "item_medible": {"Administrador"},
+            "rol": {"Administrador"},
+            "funcionario": {"Administrador"},
+            "usuario": {"Administrador"},
+            "catalogo": {"Administrador"},
+            "periodo": {"Administrador", "Coordinador"},
+            "meta": {"Administrador", "Coordinador"},
+            "ajuste": {"Administrador", "Coordinador"},
+            "indicador": {"Administrador", "Coordinador"},
+            "actividad": {"Funcionario", "Delegado"},
+            "evidencia": {"Verificador"},
+            "validacion": {"Funcionario"},
+            "compromiso": {"Funcionario", "Delegado"},
+            "usuario_social": {"Funcionario", "Delegado"},
+            "caso": {"Funcionario", "Delegado"},
+            "atencion_social": {"Funcionario", "Delegado"},
+            "gestion": {"Funcionario", "Delegado"},
+        }
+
+        roles_permitidos = destinatarios.get(entidad, set())
+
+    if not roles_permitidos:
+        return 0
+
+    Usuario = get_user_model()
+
+    # is_active es una propiedad Python en nuestro modelo Usuario.
+    # No debe utilizarse como filtro SQL.
+    usuarios = Usuario.objects.filter(
+        activo_acceso=True,
+    ).select_related(
+        "funcionario",
+        "funcionario__delegacion",
+    ).prefetch_related(
+        "funcionario__funcionario_roles__rol",
+        "delegaciones_autorizadas",
+    )
+
+    notificaciones = []
+
+    for usuario in usuarios:
+        if not usuario.is_active:
+            continue
+
+        roles_usuario = get_roles(usuario)
+
+        if not roles_usuario.intersection(roles_permitidos):
+            continue
+
+        if delegacion_id and not es_transversal(usuario):
+            autorizadas = set(
+                get_delegaciones_autorizadas_ids(usuario)
+            )
+
+            if delegacion_id not in autorizadas:
+                continue
+
+        notificaciones.append(
+            Notificacion(
+                usuario=usuario,
+                auditoria=auditoria,
+                delegacion_id=delegacion_id,
+            )
+        )
+
+    if notificaciones:
+        Notificacion.objects.bulk_create(
+            notificaciones,
+            ignore_conflicts=True,
+        )
+
+    return len(notificaciones)
 
 def mostrar_historial_por_entidad(entidad, id_entidad):
     return Auditoria.objects.filter(entidad_afectada=entidad, id_entidad_afectada=id_entidad) \

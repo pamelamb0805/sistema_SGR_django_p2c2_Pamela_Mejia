@@ -147,23 +147,31 @@
 
                 <div class="col-12 d-flex flex-wrap gap-2">
                     <button type="submit" class="btn btn-primary">
-                        <i class="bi bi-search"></i> Aplicar filtros
+                        <i class="bi bi-search me-1"></i>
+                        Aplicar filtros
                     </button>
 
-                    <button type="submit"
-                            class="btn btn-outline-success"
-                            formaction="{% url 'audit:auditoria_exportar' %}">
-                        <i class="bi bi-file-earmark-spreadsheet"></i> Exportar CSV
+                    <button
+                        type="submit"
+                        class="btn btn-outline-success"
+                        formaction="{% url 'audit:auditoria_exportar' %}"
+                    >
+                        <i class="bi bi-file-earmark-excel me-1"></i>
+                        Exportar Excel
                     </button>
 
                     {% if modo == "historial" %}
-                        <a href="{% url 'audit:entidad_historial' entidad id_entidad %}"
-                           class="btn btn-outline-secondary">
+                        <a
+                            href="{% url 'audit:entidad_historial' entidad id_entidad %}"
+                            class="btn btn-outline-secondary"
+                        >
                             Limpiar filtros
                         </a>
                     {% else %}
-                        <a href="{% url 'audit:auditoria_list' %}"
-                           class="btn btn-outline-secondary">
+                        <a
+                            href="{% url 'audit:auditoria_list' %}"
+                            class="btn btn-outline-secondary"
+                        >
                             Limpiar filtros
                         </a>
                     {% endif %}
@@ -175,6 +183,7 @@
     {% if filtros_aplicados %}
         <div class="alert alert-info">
             <strong>Filtros aplicados:</strong>
+
             {% for filtro in filtros_aplicados %}
                 <span class="d-inline-block me-2">{{ filtro }}</span>
             {% endfor %}
@@ -238,8 +247,10 @@
                                     <td>{{ evento.id_entidad_afectada }}</td>
 
                                     <td>
-                                        <a href="{% url 'audit:auditoria_detail' evento.pk %}"
-                                           class="btn btn-sm btn-outline-primary">
+                                        <a
+                                            href="{% url 'audit:auditoria_detail' evento.pk %}"
+                                            class="btn btn-sm btn-outline-primary"
+                                        >
                                             Ver detalle
                                         </a>
                                     </td>

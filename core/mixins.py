@@ -25,6 +25,9 @@ from .exceptions import ReglaNegocioError
 
 from django.core.exceptions import ImproperlyConfigured
 
+from django.apps import apps
+from django.db import transaction
+from django import forms
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +93,50 @@ def tiene_rol(user, *roles):
     if not roles:
         return getattr(user, "is_authenticated", False)
     return bool(get_roles(user) & set(roles))
+
+
+def get_permisos(user):
+    """
+    Obtiene todos los permisos funcionales de los roles asignados
+    al funcionario del usuario autenticado.
+    """
+    if not getattr(user, "is_authenticated", False):
+        return set()
+
+    if getattr(user, "is_superuser", False):
+        return {"*"}
+
+    cache = getattr(user, "_sgr_permisos", None)
+
+    if cache is not None:
+        return cache
+
+    permisos = set()
+    funcionario = get_funcionario(user)
+
+    if funcionario is not None:
+        for rol in funcionario.roles.all():
+            permisos.update(rol.permisos or [])
+
+    user._sgr_permisos = permisos
+
+    return permisos
+
+
+def tiene_permiso(user, *permisos):
+    """
+    Comprueba si el usuario posee al menos uno de los permisos
+    funcionales indicados.
+    """
+    if not permisos:
+        return False
+
+    asignados = get_permisos(user)
+
+    if "*" in asignados:
+        return True
+
+    return bool(asignados.intersection(permisos))
 
 
 def get_rol_principal(user):
@@ -231,27 +278,189 @@ def filtrar_por_ambito(queryset, user, campo="delegacion_id"):
 # ---------------------------------------------------------------------------
 # Auditoría y denegación de acceso
 # ---------------------------------------------------------------------------
-def auditar(usuario, evento, entidad="", id_entidad=0, valor_anterior=None, valor_nuevo=None):
+
+
+
+def auditar(
+    usuario,
+    evento,
+    entidad="",
+    id_entidad=0,
+    valor_anterior=None,
+    valor_nuevo=None,
+):
     """
-    Envoltorio seguro hacia audit.services.registrar_evento (usable desde servicios).
-    Nunca debe romper la operación: si audit aún no existe o falla, se informa en el log.
+    Registra operaciones críticas de forma obligatoria.
+
+    Si no es posible guardar el evento de auditoría, propaga
+    el error para que la transacción de la operación principal
+    pueda revertirse.
+
+    Las notificaciones son complementarias: su fallo no debe
+    invalidar un evento de auditoría que ya fue registrado.
     """
-    try:
-        from audit.services import registrar_evento
-    except ImportError:
-        logger.debug("App audit aún no disponible; evento %s no registrado.", evento)
-        return
-    try:
-        registrar_evento(
-            usuario=usuario,
-            evento=evento,
-            entidad=entidad,
-            id_entidad=id_entidad,
-            valor_anterior=valor_anterior,
-            valor_nuevo=valor_nuevo,
-        )
-    except Exception:  # pragma: no cover
-        logger.exception("No se pudo registrar el evento de auditoría %s", evento)
+    from audit.services import (
+        registrar_evento,
+        crear_notificaciones,
+    )
+
+    # El registro de auditoría es obligatorio.
+    # No ocultar excepciones de esta operación.
+    auditoria = registrar_evento(
+        usuario=usuario,
+        evento=evento,
+        entidad=entidad,
+        id_entidad=id_entidad,
+        valor_anterior=valor_anterior,
+        valor_nuevo=valor_nuevo,
+    )
+
+    # Las operaciones CRUD normales ya crean notificaciones
+    # desde core.services.
+    if evento not in ("CREAR", "MODIFICAR", "ELIMINAR"):
+        if evento == "LOGIN" and entidad == "usuario":
+            delegacion_notificacion = None
+        else:
+            delegacion_notificacion = get_delegacion_id(usuario)
+
+        try:
+            crear_notificaciones(
+                auditoria,
+                delegacion_id=delegacion_notificacion,
+            )
+        except Exception:
+            logger.exception(
+                "La auditoría quedó registrada, pero no se "
+                "pudieron crear las notificaciones del evento %s.",
+                evento,
+            )
+
+    # Los CRUD normales ya publican su evento desde core.services.
+    if evento in ("CREAR", "MODIFICAR", "ELIMINAR"):
+        return auditoria
+
+    entidades = {
+        "delegacion": (
+            "organizations",
+            "Delegacion",
+            "organizations",
+        ),
+        "cargo": (
+            "organizations",
+            "Cargo",
+            "organizations",
+        ),
+        "item_medible": (
+            "organizations",
+            "ItemMedible",
+            "organizations",
+        ),
+        "rol": (
+            "organizations",
+            "Rol",
+            "organizations",
+        ),
+        "funcionario": (
+            "organizations",
+            "Funcionario",
+            "organizations",
+        ),
+        "usuario": (
+            "organizations",
+            "Usuario",
+            "organizations",
+        ),
+        "catalogo": (
+            "catalogs",
+            "Catalogo",
+            "catalogs",
+        ),
+        "periodo": (
+            "measurement",
+            "Periodo",
+            "measurement",
+        ),
+        "meta": (
+            "measurement",
+            "Meta",
+            "measurement",
+        ),
+        "ajuste": (
+            "measurement",
+            "Ajuste",
+            "measurement",
+        ),
+        "actividad": (
+            "activities",
+            "Actividad",
+            "activities",
+        ),
+        "evidencia": (
+            "activities",
+            "Evidencia",
+            "activities",
+        ),
+        "validacion": (
+            "activities",
+            "Validacion",
+            "activities",
+        ),
+        "compromiso": (
+            "agenda",
+            "Compromiso",
+            "agenda",
+        ),
+        "usuario_social": (
+            "social",
+            "UsuarioSocial",
+            "social",
+        ),
+        "atencion_social": (
+            "social",
+            "AtencionSocial",
+            "social",
+        ),
+    }
+
+    configuracion = entidades.get(str(entidad).lower())
+
+    if not configuracion or not id_entidad:
+        return auditoria
+
+    app_label, modelo, modulo = configuracion
+
+    def publicar():
+        try:
+            modelo_objeto = apps.get_model(
+                app_label,
+                modelo,
+            )
+
+            objeto = modelo_objeto.objects.filter(
+                pk=id_entidad,
+            ).first()
+
+            if objeto is None:
+                return
+
+            from websocket.services import publish_crud_event
+
+            publish_crud_event(
+                module=modulo,
+                action=str(evento).lower(),
+                actor=usuario,
+                objeto=objeto,
+            )
+
+        except Exception:
+            logger.exception(
+                "No se pudo publicar el evento especial %s.",
+                evento,
+            )
+
+    transaction.on_commit(publicar)
+
+    return auditoria
 
 
 def registrar_auditoria(request, evento, entidad="", id_entidad=0, valor_anterior=None, valor_nuevo=None):
@@ -274,19 +483,70 @@ def denegar_acceso(request, detalle="No tiene permisos para acceder a esta secci
 # ---------------------------------------------------------------------------
 # Mixins para vistas basadas en clases
 # ---------------------------------------------------------------------------
+
 class RolRequeridoMixin(LoginRequiredMixin):
     """
-    Exige sesión iniciada y al menos uno de los `roles_permitidos`.
-    Si `roles_permitidos` está vacío, basta con estar autenticado.
+    Exige autenticación y uno de estos requisitos:
+    - Alguno de los roles permitidos.
+    - Alguno de los permisos funcionales permitidos.
     """
+
     roles_permitidos = ()
+    permisos_permitidos = ()
 
     def dispatch(self, request, *args, **kwargs):
         if not request.user.is_authenticated:
             return self.handle_no_permission()
-        if not tiene_rol(request.user, *self.roles_permitidos):
+
+        autorizado = False
+
+        if self.roles_permitidos:
+            autorizado = tiene_rol(
+                request.user,
+                *self.roles_permitidos,
+            )
+
+        if (
+            not autorizado
+            and self.permisos_permitidos
+        ):
+            autorizado = tiene_permiso(
+                request.user,
+                *self.permisos_permitidos,
+            )
+
+        if (
+            not self.roles_permitidos
+            and not self.permisos_permitidos
+        ):
+            autorizado = True
+
+        if not autorizado:
             return denegar_acceso(request)
-        return super().dispatch(request, *args, **kwargs)
+
+        return super().dispatch(
+            request,
+            *args,
+            **kwargs,
+        )
+
+    def get_paginate_by(self, queryset):
+        valores_permitidos = (10, 15, 20)
+
+        try:
+            cantidad = int(
+                self.request.GET.get(
+                    "page_size",
+                    self.paginate_by,
+                )
+            )
+        except (TypeError, ValueError):
+            cantidad = self.paginate_by
+
+        if cantidad not in valores_permitidos:
+            cantidad = self.paginate_by
+
+        return cantidad
 
 
 class AmbitoDelegacionMixin:
@@ -305,29 +565,71 @@ class AmbitoDelegacionMixin:
 # ---------------------------------------------------------------------------
 # Bloques reutilizables para vistas CRUD (todas las apps)
 # ---------------------------------------------------------------------------
+
 class ModoMixin:
     """
-    Una plantilla por entidad con la variable `modo`: 'lista', 'form' o 'detalle'.
-    `puede_editar` indica si el usuario puede mostrar botones de escritura.
+    Reutiliza la plantilla de lista, formulario o detalle.
+    También determina si el usuario puede mostrar acciones de edición.
     """
+
     modo = "lista"
     titulo = ""
     roles_edicion = ROLES_CONFIGURACION
+    permisos_edicion = ()
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
+
+        puede_editar = tiene_rol(
+            self.request.user,
+            *self.roles_edicion,
+        )
+
+        if (
+            not puede_editar
+            and self.permisos_edicion
+        ):
+            puede_editar = tiene_permiso(
+                self.request.user,
+                *self.permisos_edicion,
+            )
+
         contexto.update(
             modo=self.modo,
             titulo=self.titulo,
-            puede_editar=tiene_rol(self.request.user, *self.roles_edicion),
+            puede_editar=puede_editar,
         )
+
         return contexto
 
 
 class GuardarMixin:
-    """form_valid delegando en un servicio; los errores de regla de negocio vuelven al formulario."""
+    """
+    Guardado centralizado con control de concurrencia optimista.
+
+    Cada formulario de edición recibe una huella del registro
+    cuando se abre.
+
+    Al guardar:
+    1. Bloquea la fila en la base de datos.
+    2. Calcula nuevamente su huella.
+    3. Compara la huella actual con la enviada por el formulario.
+    4. Si hubo una modificación previa, rechaza el guardado.
+    5. Si no hubo cambios, ejecuta el guardado dentro
+       de la misma transacción.
+    """
+
     success_url_name = ""
     mensaje_exito = "Guardado correctamente."
+
+    campo_version_concurrencia = "_sgr_version"
+
+    mensaje_conflicto_concurrencia = (
+        "Este registro fue modificado por otro usuario después "
+        "de que abriste el formulario. No se guardaron tus cambios "
+        "para evitar sobrescribir información. Actualiza la página, "
+        "revisa los datos actuales y vuelve a realizar tu modificación."
+    )
 
     def guardar(self, form):
         raise NotImplementedError
@@ -335,15 +637,132 @@ class GuardarMixin:
     def get_success_url(self):
         return reverse(self.success_url_name)
 
+    def get_form(self, form_class=None):
+        """
+        Incorpora un campo oculto con la huella del registro
+        cuando se trata de una edición.
+        """
+
+        form = super().get_form(form_class)
+
+        instancia = getattr(
+            self,
+            "object",
+            None,
+        )
+
+        if instancia is None or not instancia.pk:
+            return form
+
+        from core.services import huella_concurrencia
+
+        form.fields[
+            self.campo_version_concurrencia
+        ] = forms.CharField(
+            required=True,
+            widget=forms.HiddenInput(),
+        )
+
+        # Solo se genera la huella inicial al mostrar el formulario.
+        # En un POST se conserva el valor enviado por el navegador.
+        if not form.is_bound:
+            form.initial[
+                self.campo_version_concurrencia
+            ] = huella_concurrencia(instancia)
+
+        return form
+
     def form_valid(self, form):
+        """
+        Ejecuta el guardado verificando que el registro no haya
+        cambiado desde que se abrió el formulario.
+        """
+
+        instancia = getattr(
+            self,
+            "object",
+            None,
+        )
+
+        # -----------------------------------------------------
+        # CREACIÓN: no requiere comparar una versión anterior.
+        # -----------------------------------------------------
+
+        if instancia is None or not instancia.pk:
+            try:
+                self.guardar(form)
+
+            except ReglaNegocioError as exc:
+                form.add_error(None, str(exc))
+                return self.form_invalid(form)
+
+            messages.success(
+                self.request,
+                self.mensaje_exito,
+            )
+
+            return redirect(self.get_success_url())
+
+        # -----------------------------------------------------
+        # EDICIÓN: control de concurrencia.
+        # -----------------------------------------------------
+
+        from core.services import huella_concurrencia
+
+        version_enviada = form.cleaned_data.get(
+            self.campo_version_concurrencia
+        )
+
         try:
-            self.guardar(form)
+            with transaction.atomic():
+
+                # Bloquea el registro hasta finalizar la operación.
+                registro_actual = (
+                    type(instancia)
+                    ._base_manager
+                    .select_for_update()
+                    .get(pk=instancia.pk)
+                )
+
+                version_actual = huella_concurrencia(
+                    registro_actual
+                )
+
+                # Detecta si otro usuario guardó primero.
+                if (
+                    not version_enviada
+                    or version_enviada != version_actual
+                ):
+                    form.add_error(
+                        None,
+                        self.mensaje_conflicto_concurrencia,
+                    )
+
+                    return self.form_invalid(form)
+
+                # La fila permanece bloqueada mientras se ejecuta
+                # el servicio CRUD y se confirma la transacción.
+                self.guardar(form)
+
+        except type(instancia).DoesNotExist:
+            form.add_error(
+                None,
+                "El registro ya no existe. No se puede guardar "
+                "la modificación.",
+            )
+
+            return self.form_invalid(form)
+
         except ReglaNegocioError as exc:
             form.add_error(None, str(exc))
             return self.form_invalid(form)
-        messages.success(self.request, self.mensaje_exito)
-        return redirect(self.get_success_url())
 
+        messages.success(
+            self.request,
+            self.mensaje_exito,
+        )
+
+        return redirect(self.get_success_url())
 
 class AccionPostView(RolRequeridoMixin, View):
     """Acciones que cambian datos (activar, eliminar...): solo POST, con rol exigido."""

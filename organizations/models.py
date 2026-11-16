@@ -12,6 +12,10 @@ from django.db import models
 from django.db.models import Q
 from django.utils import timezone
 import uuid
+from django.conf import settings
+from datetime import datetime, time
+from django.utils.dateparse import parse_datetime
+
 
 def generar_codigo_delegacion():
     return uuid.uuid4().hex[:20].upper()
@@ -26,19 +30,47 @@ def generar_codigo_item():
 class Delegacion(models.Model):
     ESTADO_ACTIVA = "Activa"
     ESTADO_INACTIVA = "Inactiva"
-    ESTADOS = [(ESTADO_ACTIVA, "Activa"), (ESTADO_INACTIVA, "Inactiva")]
+    ESTADOS = [
+        (ESTADO_ACTIVA, "Activa"),
+        (ESTADO_INACTIVA, "Inactiva"),
+    ]
 
     id_delegacion = models.AutoField(primary_key=True)
-    codigo = models.CharField(max_length=20, unique=True, default=generar_codigo_delegacion,
-        error_messages={"unique": "Ya existe una delegación con ese código."})
-    nombre = models.CharField(
-        max_length=100, unique=True,
-        error_messages={"unique": "Ya existe una delegación con ese nombre."},
+
+    codigo = models.CharField(
+        max_length=20,
+        unique=True,
+        default=generar_codigo_delegacion,
+        error_messages={
+            "unique": "Ya existe una delegación con ese código."
+        },
     )
+
+    nombre = models.CharField(
+        max_length=100,
+        unique=True,
+        error_messages={
+            "unique": "Ya existe una delegación con ese nombre."
+        },
+    )
+
     direccion = models.CharField(max_length=200)
     comuna = models.CharField(max_length=100, default="La Serena")
-    estado = models.CharField(max_length=10, choices=ESTADOS, default=ESTADO_ACTIVA)
+
+    estado = models.CharField(
+        max_length=10,
+        choices=ESTADOS,
+        default=ESTADO_ACTIVA,
+    )
+
     ambito = models.CharField(max_length=150)
+
+    # Historial inmutable de las versiones anteriores y actuales.
+    historial_versiones = models.JSONField(
+        default=list,
+        blank=True,
+        editable=False,
+    )
 
     class Meta:
         db_table = "delegacion"
@@ -53,7 +85,65 @@ class Delegacion(models.Model):
     def activa(self):
         return self.estado == self.ESTADO_ACTIVA
 
+    def obtener_datos_actuales(self):
+        return {
+            "id_delegacion": self.pk,
+            "codigo": self.codigo,
+            "nombre": self.nombre,
+            "direccion": self.direccion,
+            "comuna": self.comuna,
+            "ambito": self.ambito,
+            "estado": self.estado,
+        }
 
+
+    def obtener_version_historica(self, fecha):
+        """
+        Devuelve los datos de la delegación vigentes en la fecha indicada.
+        Acepta datetime o date.
+        """
+        if not fecha or not self.historial_versiones:
+            return None
+
+        if isinstance(fecha, datetime):
+            momento = fecha
+            if timezone.is_naive(momento):
+                momento = timezone.make_aware(momento)
+        else:
+            momento = timezone.make_aware(
+                datetime.combine(fecha, time.max)
+            )
+
+        for version in reversed(self.historial_versiones):
+            desde = (
+                parse_datetime(version.get("vigente_desde"))
+                if version.get("vigente_desde")
+                else None
+            )
+            hasta = (
+                parse_datetime(version.get("vigente_hasta"))
+                if version.get("vigente_hasta")
+                else None
+            )
+
+            if desde and timezone.is_naive(desde):
+                desde = timezone.make_aware(desde)
+
+            if hasta and timezone.is_naive(hasta):
+                hasta = timezone.make_aware(hasta)
+
+            cumple_inicio = desde is None or desde <= momento
+            cumple_termino = hasta is None or momento < hasta
+
+            if cumple_inicio and cumple_termino:
+                return version.get("datos")
+
+        primera = self.historial_versiones[0]
+
+        if primera.get("vigente_desde") is None:
+            return primera.get("datos")
+
+        return None
 # ---------------------------------------------------------------------------
 # CARGO
 # ---------------------------------------------------------------------------
@@ -96,26 +186,57 @@ class Cargo(models.Model):
 # ---------------------------------------------------------------------------
 # ITEM_MEDIBLE
 # ---------------------------------------------------------------------------
+
 class ItemMedible(models.Model):
     TIPO_CUANTITATIVO = "Cuantitativo"
-    TIPO_PORCENTUAL = "Porcentual"   # RN-002: debe declarar fórmula específica
-    TIPOS = [(TIPO_CUANTITATIVO, "Cuantitativo"), (TIPO_PORCENTUAL, "Porcentual")]
+    TIPO_PORCENTUAL = "Porcentual"
+
+    TIPOS = [
+        (TIPO_CUANTITATIVO, "Cuantitativo"),
+        (TIPO_PORCENTUAL, "Porcentual"),
+    ]
 
     id_item = models.AutoField(primary_key=True)
-    codigo = models.CharField(max_length=30, unique=True, default=generar_codigo_item)
+    codigo = models.CharField(
+        max_length=30,
+        unique=True,
+        default=generar_codigo_item,
+    )
     nombre_item = models.CharField(max_length=150)
     descripcion = models.TextField(blank=True)
-    tipo = models.CharField(max_length=15, choices=TIPOS, default=TIPO_CUANTITATIVO)
+    tipo = models.CharField(
+        max_length=15,
+        choices=TIPOS,
+        default=TIPO_CUANTITATIVO,
+    )
     vigencia = models.BooleanField(default=True)
+
+    # RF-020: permite decidir si los compromisos realizados
+    # asociados a este ítem alimentan el indicador individual.
+    contabiliza_compromisos = models.BooleanField(
+        default=False,
+        verbose_name="Contabiliza compromisos realizados",
+        help_text=(
+            "Si se activa, los compromisos asociados a este ítem "
+            "se incorporarán al avance cuando estén en estado Realizado."
+        ),
+    )
+
     cargo = models.ForeignKey(
-        Cargo, on_delete=models.CASCADE, db_column="id_cargo", related_name="items",
+        Cargo,
+        on_delete=models.CASCADE,
+        db_column="id_cargo",
+        related_name="items",
     )
 
     class Meta:
         db_table = "item_medible"
         ordering = ["cargo", "nombre_item"]
         constraints = [
-            models.UniqueConstraint(fields=["cargo", "nombre_item"], name="uq_item_cargo_nombre"),
+            models.UniqueConstraint(
+                fields=["cargo", "nombre_item"],
+                name="uq_item_cargo_nombre",
+            ),
         ]
         verbose_name = "ítem medible"
         verbose_name_plural = "ítems medibles"
@@ -286,6 +407,12 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
 
     @property
     def is_active(self):
+        """
+        La cuenta solo puede autenticarse cuando:
+        - El acceso está habilitado.
+        - El funcionario existe y está activo.
+        - La delegación principal está activa.
+        """
         if not self.activo_acceso:
             return False
 
@@ -294,9 +421,55 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
 
         funcionario = getattr(self, "funcionario", None)
 
-        return bool(funcionario and funcionario.activo)
+        if funcionario is None or not funcionario.activo:
+            return False
 
+        delegacion = getattr(funcionario, "delegacion", None)
+
+        return bool(delegacion and delegacion.activa)
     @property
     def is_staff(self):
         """Solo el superusuario técnico entra al /admin de Django."""
         return self.is_superuser
+
+# ---------------------------------------------------------------------------
+# VERSIONAMIENTO DE ÍTEMS MEDIBLES (RF-038)
+# ---------------------------------------------------------------------------
+
+class ItemMedibleVersion(models.Model):
+    """
+    Conserva fotografías históricas de los ítems medibles.
+    Los cambios posteriores no modifican la configuración histórica.
+    """
+
+    objeto_id = models.PositiveIntegerField(db_index=True)
+    numero_version = models.PositiveIntegerField()
+
+    vigente_desde = models.DateTimeField(default=timezone.now)
+    vigente_hasta = models.DateTimeField(null=True, blank=True)
+
+    datos = models.JSONField(default=dict)
+
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="versiones_item_medible_creadas",
+    )
+
+    class Meta:
+        db_table = "item_medible_version"
+        ordering = ["objeto_id", "-numero_version"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["objeto_id", "numero_version"],
+                name="uq_item_medible_version_numero",
+            )
+        ]
+
+    def __str__(self):
+        return (
+            f"Ítem {self.objeto_id} "
+            f"- versión {self.numero_version}"
+        )
