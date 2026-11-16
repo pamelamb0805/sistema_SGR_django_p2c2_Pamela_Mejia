@@ -325,6 +325,7 @@
         });
     }
 
+
     // ---------------------------------------------------------
     // ACTUALIZACIÓN DE TABLAS CRUD
     // ---------------------------------------------------------
@@ -348,8 +349,8 @@
 
         try {
             do {
-                // Cada evento nuevo recibido durante una actualización
-                // solicita otra consulta al servidor.
+                // Si llega otro evento durante la consulta,
+                // se realizará una nueva actualización al terminar.
                 actualizacionPendiente = false;
 
                 const respuesta = await fetch(location.href, {
@@ -392,41 +393,44 @@
                 if (
                     tablasActuales.length !== tablasNuevas.length
                 ) {
-                    continue;
-                }
-
-                tablasActuales.forEach((tabla, indice) => {
-                    tabla.replaceWith(
-                        tablasNuevas[indice].cloneNode(true)
+                    console.warn(
+                        "[SGR] La estructura del listado cambió. " +
+                        "No se reemplazaron las tablas."
                     );
-                });
-
-                const selectores = [
-                    ".pagination",
-                    "[data-sgr-list-count]"
-                ];
-
-                selectores.forEach((selector) => {
-                    const actuales =
-                        contenidoActual.querySelectorAll(selector);
-
-                    const nuevos =
-                        contenidoNuevo.querySelectorAll(selector);
-
-                    if (actuales.length !== nuevos.length) {
-                        return;
-                    }
-
-                    actuales.forEach((elemento, indice) => {
-                        elemento.replaceWith(
-                            nuevos[indice].cloneNode(true)
+                } else {
+                    tablasActuales.forEach((tabla, indice) => {
+                        tabla.replaceWith(
+                            tablasNuevas[indice].cloneNode(true)
                         );
                     });
-                });
 
-                document.dispatchEvent(
-                    new CustomEvent("sgr:crud-refreshed")
-                );
+                    const selectores = [
+                        ".pagination",
+                        "[data-sgr-list-count]"
+                    ];
+
+                    selectores.forEach((selector) => {
+                        const actuales =
+                            contenidoActual.querySelectorAll(selector);
+
+                        const nuevos =
+                            contenidoNuevo.querySelectorAll(selector);
+
+                        if (actuales.length !== nuevos.length) {
+                            return;
+                        }
+
+                        actuales.forEach((elemento, indice) => {
+                            elemento.replaceWith(
+                                nuevos[indice].cloneNode(true)
+                            );
+                        });
+                    });
+
+                    document.dispatchEvent(
+                        new CustomEvent("sgr:crud-refreshed")
+                    );
+                }
 
             } while (actualizacionPendiente);
 
@@ -439,123 +443,13 @@
         } finally {
             actualizando = false;
 
-            // Atiende un evento que haya llegado justo al terminar.
+            // Atiende cualquier evento recibido al finalizar.
             if (actualizacionPendiente) {
                 actualizarListado();
             }
         }
     }
 
-    const contenidoActual = document.querySelector("#contenido");
-
-    if (
-        !contenidoActual ||
-        !contenidoActual.querySelector("table")
-    ) {
-        return;
-    }
-
-    actualizando = true;
-
-    try {
-        do {
-            // Cada evento nuevo recibido durante una actualización
-            // solicita otra consulta al servidor.
-            actualizacionPendiente = false;
-
-            const respuesta = await fetch(location.href, {
-                method: "GET",
-                credentials: "same-origin",
-                headers: {
-                    "X-Requested-With": "XMLHttpRequest"
-                }
-            });
-
-            if (!respuesta.ok) {
-                throw new Error(
-                    `Error HTTP ${respuesta.status}`
-                );
-            }
-
-            const html = await respuesta.text();
-
-            const documento = new DOMParser().parseFromString(
-                html,
-                "text/html"
-            );
-
-            const contenidoNuevo = documento.querySelector(
-                "#contenido"
-            );
-
-            if (!contenidoNuevo) {
-                throw new Error(
-                    "No se encontró el contenido actualizado."
-                );
-            }
-
-            const tablasActuales =
-                contenidoActual.querySelectorAll("table");
-
-            const tablasNuevas =
-                contenidoNuevo.querySelectorAll("table");
-
-            if (
-                tablasActuales.length !== tablasNuevas.length
-            ) {
-                continue;
-            }
-
-            tablasActuales.forEach((tabla, indice) => {
-                tabla.replaceWith(
-                    tablasNuevas[indice].cloneNode(true)
-                );
-            });
-
-            const selectores = [
-                ".pagination",
-                "[data-sgr-list-count]"
-            ];
-
-            selectores.forEach((selector) => {
-                const actuales =
-                    contenidoActual.querySelectorAll(selector);
-
-                const nuevos =
-                    contenidoNuevo.querySelectorAll(selector);
-
-                if (actuales.length !== nuevos.length) {
-                    return;
-                }
-
-                actuales.forEach((elemento, indice) => {
-                    elemento.replaceWith(
-                        nuevos[indice].cloneNode(true)
-                    );
-                });
-            });
-
-            document.dispatchEvent(
-                new CustomEvent("sgr:crud-refreshed")
-            );
-
-        } while (actualizacionPendiente);
-
-    } catch (error) {
-        console.error(
-            "[SGR] No se pudo actualizar el listado.",
-            error
-        );
-
-    } finally {
-        actualizando = false;
-
-        // Atiende un evento que haya llegado justo al terminar.
-        if (actualizacionPendiente) {
-            actualizarListado();
-        }
-    }
-}
 
     // ---------------------------------------------------------
     // CONEXIÓN WEBSOCKET
