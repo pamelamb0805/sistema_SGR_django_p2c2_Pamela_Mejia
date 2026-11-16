@@ -16,7 +16,7 @@ from django.views.generic import CreateView, DetailView, FormView, ListView, Upd
 from core.exceptions import ReglaNegocioError
 from core.mixins import (
     ROLES_OPERATIVOS, AccionPostView, GuardarMixin, ModoMixin, RolRequeridoMixin, denegar_acceso,
-    es_transversal, registrar_auditoria, tiene_rol,
+    es_transversal, registrar_auditoria, tiene_rol,tiene_permiso
 )
 from organizations.models import Delegacion
 

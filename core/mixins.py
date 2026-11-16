@@ -146,25 +146,11 @@ def get_rol_principal(user):
             return rol
     return next(iter(sorted(roles)), None)
 
-def get_alcances(user):
-    """
-    Devuelve los alcances configurados en los roles del funcionario.
-    """
-    funcionario = get_funcionario(user)
-
-    if funcionario is None:
-        return set()
-
-    return set(
-        funcionario.roles.values_list(
-            "alcance_autorizado",
-            flat=True,
-        )
-    )
 
 def get_alcances(user):
     """
-    Obtiene los alcances autorizados de los roles del funcionario.
+    Obtiene los alcances autorizados configurados en los roles
+    asignados al funcionario.
     """
     funcionario = get_funcionario(user)
 
