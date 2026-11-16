@@ -165,6 +165,12 @@
           {% endfor %}
         {% endif %}
 
+        <a class="btn btn-outline-info"
+           href="{% url 'audit:comentarios_registro' 'activities' 'actividad' actividad.pk %}">
+          <i class="bi bi-chat-dots me-1"></i>
+          Conversación
+        </a>
+
         <a class="btn btn-outline-secondary"
            href="{% url 'activities:actividad_list' %}">
           Volver
@@ -267,9 +273,7 @@
         </div>
 
         <div class="col-lg-4">
-          <label class="form-label" for="delegacion">
-            Delegación
-          </label>
+          <label class="form-label" for="delegacion">Delegación</label>
 
           <select class="form-select" id="delegacion" name="delegacion">
             <option value="">Todas las delegaciones</option>
@@ -284,9 +288,7 @@
         </div>
 
         <div class="col-lg-4">
-          <label class="form-label" for="area">
-            Área / ámbito
-          </label>
+          <label class="form-label" for="area">Área / ámbito</label>
 
           <select class="form-select" id="area" name="area">
             <option value="">Todas las áreas</option>
@@ -301,9 +303,7 @@
         </div>
 
         <div class="col-lg-4">
-          <label class="form-label" for="funcionario">
-            Funcionario
-          </label>
+          <label class="form-label" for="funcionario">Funcionario</label>
 
           <select class="form-select" id="funcionario" name="funcionario">
             <option value="">Todos los funcionarios</option>
@@ -318,9 +318,7 @@
         </div>
 
         <div class="col-lg-4">
-          <label class="form-label" for="cargo">
-            Cargo
-          </label>
+          <label class="form-label" for="cargo">Cargo</label>
 
           <select class="form-select" id="cargo" name="cargo">
             <option value="">Todos los cargos</option>
@@ -335,9 +333,7 @@
         </div>
 
         <div class="col-lg-4">
-          <label class="form-label" for="periodo">
-            Período
-          </label>
+          <label class="form-label" for="periodo">Período</label>
 
           <select class="form-select" id="periodo" name="periodo">
             <option value="">Todos los períodos</option>
@@ -352,9 +348,7 @@
         </div>
 
         <div class="col-lg-4">
-          <label class="form-label" for="item">
-            Ítem medible
-          </label>
+          <label class="form-label" for="item">Ítem medible</label>
 
           <select class="form-select" id="item" name="item">
             <option value="">Todos los ítems</option>
@@ -369,9 +363,7 @@
         </div>
 
         <div class="col-lg-4">
-          <label class="form-label" for="estado">
-            Estado
-          </label>
+          <label class="form-label" for="estado">Estado</label>
 
           <select class="form-select" id="estado" name="estado">
             <option value="">Todos los estados</option>
@@ -386,9 +378,7 @@
         </div>
 
         <div class="col-lg-4">
-          <label class="form-label" for="tipo_registro">
-            Tipo de actividad
-          </label>
+          <label class="form-label" for="tipo_registro">Tipo de actividad</label>
 
           <select class="form-select"
                   id="tipo_registro"
@@ -405,9 +395,7 @@
         </div>
 
         <div class="col-md-6">
-          <label class="form-label" for="fecha_desde">
-            Fecha desde
-          </label>
+          <label class="form-label" for="fecha_desde">Fecha desde</label>
 
           <input class="form-control"
                  type="date"
@@ -417,9 +405,7 @@
         </div>
 
         <div class="col-md-6">
-          <label class="form-label" for="fecha_hasta">
-            Fecha hasta
-          </label>
+          <label class="form-label" for="fecha_hasta">Fecha hasta</label>
 
           <input class="form-control"
                  type="date"

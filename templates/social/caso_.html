@@ -429,6 +429,12 @@
                     Nueva gestión
                 </a>
             {% endif %}
+
+            <a class="btn btn-outline-info"
+               href="{% url 'audit:comentarios_registro' 'social' 'usuariosocial' caso.pk %}">
+                <i class="bi bi-chat-dots me-1" aria-hidden="true"></i>
+                Conversación
+            </a>
         </div>
     </div>
 

@@ -43,4 +43,10 @@ urlpatterns = [
     views.NotificacionHistorialView.as_view(),
     name="notificaciones_historial",
     ),
+
+    path(
+    "comentarios/<str:app_label>/<str:model_name>/<int:pk>/",
+    views.comentarios_registro,
+    name="comentarios_registro",
+    ),
 ]

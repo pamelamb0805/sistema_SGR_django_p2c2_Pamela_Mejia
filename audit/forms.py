@@ -35,3 +35,41 @@ class AuditoriaFiltroForm(BootstrapFormMixin, forms.Form):
         if desde and hasta and hasta < desde:
             self.add_error("fecha_hasta", "La fecha final no puede ser anterior a la inicial.")
         return datos
+
+
+class ComentarioRegistroForm(forms.Form):
+    mensaje = forms.CharField(
+        label="Comentario",
+        required=True,
+        max_length=5000,
+        widget=forms.Textarea(
+            attrs={
+                "class": "form-control",
+                "rows": 4,
+                "placeholder": (
+                    "Escriba una observación, consulta "
+                    "o respuesta relacionada con este registro..."
+                ),
+            }
+        ),
+    )
+
+    respuesta_a = forms.IntegerField(
+        required=False,
+        widget=forms.HiddenInput(),
+    )
+
+    def clean_mensaje(self):
+        mensaje = (self.cleaned_data.get("mensaje") or "").strip()
+
+        if not mensaje:
+            raise forms.ValidationError(
+                "Debe escribir un comentario."
+            )
+
+        if len(mensaje) > 5000:
+            raise forms.ValidationError(
+                "El comentario no puede superar los 5000 caracteres."
+            )
+
+        return mensaje

@@ -161,3 +161,123 @@ class Notificacion(models.Model):
             f"Auditoría #{self.auditoria_id} · "
             f"{estado}"
         )
+
+
+class ComentarioRegistro(models.Model):
+    """
+    Conversación asociada a un registro del SGR.
+
+    Conserva autor, funcionario, delegación, fecha y referencia
+    al objeto mediante ContentType.
+    Los mensajes no pueden modificarse ni eliminarse.
+    """
+
+    id_comentario = models.AutoField(primary_key=True)
+
+    content_type = models.ForeignKey(
+        "contenttypes.ContentType",
+        on_delete=models.PROTECT,
+        related_name="comentarios_sgr",
+    )
+
+    object_id = models.PositiveIntegerField(db_index=True)
+
+    content_object = models.GenericForeignKey(
+        "content_type",
+        "object_id",
+    )
+
+    autor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="comentarios_sgr",
+    )
+
+    funcionario = models.ForeignKey(
+        Funcionario,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="comentarios_sgr",
+    )
+
+    delegacion = models.ForeignKey(
+        "organizations.Delegacion",
+        on_delete=models.PROTECT,
+        related_name="comentarios_sgr",
+    )
+
+    respuesta_a = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="respuestas",
+    )
+
+    mensaje = models.TextField()
+
+    fecha_creacion = models.DateTimeField(
+        default=timezone.now,
+        editable=False,
+        db_index=True,
+    )
+
+    class Meta:
+        db_table = "comentario_registro"
+        ordering = ["fecha_creacion", "id_comentario"]
+        indexes = [
+            models.Index(
+                fields=["content_type", "object_id", "fecha_creacion"],
+                name="ix_comentario_registro",
+            ),
+            models.Index(
+                fields=["delegacion", "fecha_creacion"],
+                name="ix_comentario_delegacion",
+            ),
+        ]
+        verbose_name = "comentario de registro"
+        verbose_name_plural = "comentarios de registros"
+
+    def __str__(self):
+        return (
+            f"Comentario #{self.pk} · "
+            f"{self.autor} · {self.fecha_creacion:%d/%m/%Y %H:%M}"
+        )
+
+    def clean(self):
+        self.mensaje = (self.mensaje or "").strip()
+
+        if not self.mensaje:
+            raise ValidationError({
+                "mensaje": "El comentario no puede estar vacío."
+            })
+
+        if self.respuesta_a_id:
+            padre = self.respuesta_a
+
+            if (
+                padre.content_type_id != self.content_type_id
+                or padre.object_id != self.object_id
+                or padre.delegacion_id != self.delegacion_id
+            ):
+                raise ValidationError({
+                    "respuesta_a": (
+                        "La respuesta debe pertenecer a la misma "
+                        "conversación y registro."
+                    )
+                })
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError(
+                "Los comentarios publicados no pueden modificarse."
+            )
+
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError(
+            "Los comentarios publicados no pueden eliminarse."
+        )
