@@ -1,1 +1,121 @@
-{% extends "base.html" %}{% block title %}Validar código · SGR{% endblock %}{% block page_title %}Validar código de recuperación{% endblock %}{% block content %}<div class="row justify-content-center"><div class="col-md-7 col-lg-5"><div class="card shadow-sm"><div class="card-body p-4"><p>Ingrese el código enviado a su correo. El código vence y tiene un límite de intentos.</p><form method="post" novalidate>{% csrf_token %}{% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}{% for field in form %}<div class="mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}</div>{% endfor %}<button class="btn btn-primary w-100">Validar código</button></form><p class="small text-body-secondary mt-3">El reenvío debe respetar el tiempo de espera definido por el sistema.</p></div></div></div></div>{% endblock %}
+
+{% extends "base.html" %}
+
+{% block title %}Validar código · SGR{% endblock %}
+{% block page_title %}Validar código de recuperación{% endblock %}
+
+{% block content %}
+
+<div class="row justify-content-center">
+
+  <div class="col-12 col-md-7 col-lg-5">
+
+    <div class="card shadow-sm">
+
+      <div class="card-body p-4">
+
+        <div class="text-center mb-4">
+
+          <i class="bi bi-shield-lock fs-1 text-primary"
+             aria-hidden="true"></i>
+
+          <h2 class="h4 mt-2">
+            Verificar identidad
+          </h2>
+
+          <p class="text-body-secondary">
+            Ingresa el código enviado a tu correo.
+          </p>
+
+          {% if email_enmascarado %}
+            <p class="fw-semibold">
+              {{ email_enmascarado }}
+            </p>
+          {% endif %}
+
+        </div>
+
+        <form method="post" novalidate>
+
+          {% csrf_token %}
+
+          {% for field in form %}
+
+            <div class="mb-3">
+
+              <label class="form-label"
+                     for="{{ field.id_for_label }}">
+                {{ field.label }}
+              </label>
+
+              {{ field }}
+
+              {% for error in field.errors %}
+                <div class="text-danger small">
+                  {{ error }}
+                </div>
+              {% endfor %}
+
+            </div>
+
+          {% endfor %}
+
+          <button type="submit"
+                  class="btn btn-primary w-100">
+
+            <i class="bi bi-check-circle me-1"
+               aria-hidden="true"></i>
+
+            Validar código
+
+          </button>
+
+        </form>
+
+        <hr class="my-4">
+
+        <p class="small text-body-secondary text-center">
+          ¿No recibiste el código? Puedes solicitar otro respetando el tiempo de espera.
+        </p>
+
+        <form method="post"
+              action="{% url 'recuperar_clave' %}">
+
+          {% csrf_token %}
+
+          <input type="hidden"
+                 name="email"
+                 value="{{ email }}">
+
+          <button type="submit"
+                  class="btn btn-outline-secondary w-100">
+
+            <i class="bi bi-arrow-clockwise me-1"
+               aria-hidden="true"></i>
+
+            Reenviar código
+
+          </button>
+
+        </form>
+
+        <div class="text-center mt-3">
+
+          <a href="{% url 'login' %}"
+             class="text-decoration-none">
+
+            Cancelar y volver al login
+
+          </a>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+
+{% endblock %}

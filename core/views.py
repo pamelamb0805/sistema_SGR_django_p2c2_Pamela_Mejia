@@ -36,6 +36,11 @@ from .mixins import (
     ROL_VERIFICADOR,
     registrar_auditoria,
 )
+import hmac
+
+from django.db import transaction
+
+from organizations.models import PasswordResetCode
 
 class SGRLoginView(LoginView):
     template_name = "registration/login.html"
@@ -895,220 +900,661 @@ def dashboard(request):
         },
     )
 
-# Recuperación con código de un solo uso.
+
+# ============================================================
+# RECUPERACIÓN DE CONTRASEÑA SGR
+# Código de un solo uso, almacenado mediante hash en MySQL.
+# ============================================================
+
 CODIGO_VIGENCIA_SEGUNDOS = 120
 CODIGO_REENVIO_SEGUNDOS = 45
 CODIGO_MAX_INTENTOS = 5
 CODIGO_MAX_REENVIOS = 3
 
+RESET_SESSION_KEY = "recuperacion_sgr"
+
+
+def _hash_codigo_recuperacion(codigo):
+    """
+    Genera un hash del código utilizando SECRET_KEY.
+    El código original nunca se almacena en la base de datos.
+    """
+    contenido = f"{codigo}{settings.SECRET_KEY}"
+
+    return hashlib.sha256(
+        contenido.encode("utf-8")
+    ).hexdigest()
+
+
+def _enmascarar_correo_sgr(email):
+    """Oculta parte del correo para mostrarlo en pantalla."""
+
+    try:
+        usuario, dominio = email.split("@", 1)
+
+        if len(usuario) <= 2:
+            usuario_oculto = usuario[0] + "*"
+        else:
+            usuario_oculto = (
+                usuario[:2]
+                + "*" * (len(usuario) - 2)
+            )
+
+        return f"{usuario_oculto}@{dominio}"
+
+    except (ValueError, IndexError):
+        return email
+
+
+def _invalidar_codigo_sesion(request):
+    """Invalida el código anterior asociado a la sesión."""
+
+    estado = request.session.get(RESET_SESSION_KEY, {})
+    codigo_id = estado.get("codigo_id")
+
+    if codigo_id:
+        PasswordResetCode.objects.filter(
+            pk=codigo_id,
+            is_used=False,
+        ).update(is_used=True)
+
+
 def recuperar_clave(request):
-    if request.method == "POST":
-        form = SolicitarCodigoForm(request.POST)
+    """
+    Paso 1:
+    - Recibe el correo.
+    - Genera un código aleatorio de seis dígitos.
+    - Guarda solamente el hash en la base de datos.
+    - Envía el código por correo.
+    - Invalida códigos anteriores.
+    - Controla los reenvíos.
+    """
 
-        if form.is_valid():
-            email = form.cleaned_data["email"].strip().lower()
-            ahora = int(time.time())
-            anterior = request.session.get("recuperacion_sgr", {})
+    if request.method != "POST":
+        form = SolicitarCodigoForm()
 
-            mismo_correo = anterior.get("email") == email
+        return render(
+            request,
+            "registration/recuperar_clave.html",
+            {"form": form},
+        )
 
-            if mismo_correo:
-                transcurrido = ahora - int(anterior.get("emitido", 0))
+    form = SolicitarCodigoForm(request.POST)
 
-                if transcurrido < CODIGO_REENVIO_SEGUNDOS:
-                    messages.info(
-                        request,
-                        "Si la cuenta existe, recibirás instrucciones. "
-                        "Espera antes de solicitar otro código.",
-                    )
-                    return redirect("recuperar_clave")
+    if not form.is_valid():
+        return render(
+            request,
+            "registration/recuperar_clave.html",
+            {"form": form},
+        )
 
-                reenvios = int(anterior.get("reenviados", 0))
+    email = (
+        form.cleaned_data["email"]
+        .strip()
+        .lower()
+    )
 
-                if reenvios >= CODIGO_MAX_REENVIOS:
-                    request.session.pop("recuperacion_sgr", None)
-                    messages.error(
-                        request,
-                        "Se alcanzó el máximo de reenvíos. "
-                        "Inicia nuevamente el proceso más tarde.",
-                    )
-                    return redirect("recuperar_clave")
+    ahora = int(time.time())
 
-                reenvios += 1
-            else:
-                reenvios = 0
+    anterior = request.session.get(
+        RESET_SESSION_KEY,
+        {},
+    )
 
-            User = get_user_model()
-            user = User.objects.filter(email__iexact=email).first()
+    mismo_correo = (
+        anterior.get("email") == email
+    )
 
-            # No revelar si el correo está registrado.
-            if user and user.is_active and user.email:
-                codigo = f"{secrets.randbelow(1000000):06d}"
+    if mismo_correo:
 
-                request.session["recuperacion_sgr"] = {
-                    "email": email,
-                    "user_id": user.pk,
-                    "hash": hashlib.sha256(
-                        codigo.encode("utf-8")
-                    ).hexdigest(),
-                    "emitido": ahora,
-                    "intentos": 0,
-                    "reenviados": reenvios,
-                    "verificado": False,
-                }
+        transcurrido = (
+            ahora - int(anterior.get("emitido", 0))
+        )
 
-                try:
-                    asunto = "Código de recuperación SGR"
-                    mensaje = (
-                        f"Tu código de recuperación es {codigo}. "
-                        "Vence en 2 minutos. "
-                        "Si no lo solicitaste, ignora este correo."
-                    )
-
-                    send_mail(
-                        asunto,
-                        mensaje,
-                        settings.DEFAULT_FROM_EMAIL,
-                        [email],
-                        fail_silently=False,
-                    )
-
-                except Exception:
-                    request.session.pop("recuperacion_sgr", None)
-                    messages.error(
-                        request,
-                        "No se pudo enviar el correo. "
-                        "Verifica la configuración SMTP e inténtalo nuevamente.",
-                    )
-                    return render(
-                        request,
-                        "registration/recuperar_clave.html",
-                        {"form": form},
-                    )
+        if transcurrido < CODIGO_REENVIO_SEGUNDOS:
 
             messages.info(
                 request,
-                "Si el correo está asociado a una cuenta activa, "
-                "recibirás un código de recuperación.",
+                "Debes esperar antes de solicitar otro código.",
             )
+
             return redirect("validar_codigo")
 
-    else:
-        form = SolicitarCodigoForm()
+        reenvios = int(
+            anterior.get("reenviados", 0)
+        )
 
-    return render(
-        request,
-        "registration/recuperar_clave.html",
-        {"form": form},
+        if reenvios >= CODIGO_MAX_REENVIOS:
+
+            _invalidar_codigo_sesion(request)
+
+            request.session.pop(
+                RESET_SESSION_KEY,
+                None,
+            )
+
+            messages.error(
+                request,
+                "Se alcanzó el máximo de reenvíos. "
+                "Inicia nuevamente el proceso más tarde.",
+            )
+
+            return redirect("recuperar_clave")
+
+        reenvios += 1
+
+    else:
+
+        _invalidar_codigo_sesion(request)
+
+        reenvios = 0
+
+    # Eliminar la autorización anterior antes de generar otra.
+    request.session.pop(
+        RESET_SESSION_KEY,
+        None,
     )
 
+    User = get_user_model()
+
+    usuario = User.objects.filter(
+        email__iexact=email,
+    ).first()
+
+    codigo_id = None
+
+    # No revelar si el correo está registrado.
+    if usuario and usuario.is_active and usuario.email:
+
+        # Invalidar todos los códigos pendientes del usuario.
+        PasswordResetCode.objects.filter(
+            user=usuario,
+            is_used=False,
+        ).update(is_used=True)
+
+        codigo = (
+            f"{secrets.randbelow(900000) + 100000:06d}"
+        )
+
+        registro_codigo = PasswordResetCode.objects.create(
+            user=usuario,
+            code_hash=_hash_codigo_recuperacion(codigo),
+            expires_at=(
+                timezone.now()
+                + timedelta(
+                    seconds=CODIGO_VIGENCIA_SEGUNDOS
+                )
+            ),
+        )
+
+        try:
+
+            enviado = send_mail(
+                subject="Código de recuperación - Sistema SGR",
+
+                message=(
+                    f"Hola {usuario.get_username()},\n\n"
+                    f"Tu código de recuperación es: {codigo}\n\n"
+                    "Este código vence en 2 minutos.\n\n"
+                    "Si no solicitaste este cambio, "
+                    "puedes ignorar este correo.\n\n"
+                    "Sistema de Gestión de Resultados."
+                ),
+
+                from_email=settings.DEFAULT_FROM_EMAIL,
+
+                recipient_list=[
+                    usuario.email,
+                ],
+
+                fail_silently=False,
+            )
+
+            if not enviado:
+                raise RuntimeError(
+                    "El servidor de correo no confirmó el envío."
+                )
+
+            codigo_id = registro_codigo.pk
+
+        except Exception:
+
+            registro_codigo.delete()
+
+            messages.error(
+                request,
+                "No fue posible enviar el código. "
+                "Comprueba la configuración del correo e inténtalo nuevamente.",
+            )
+
+            return render(
+                request,
+                "registration/recuperar_clave.html",
+                {"form": form},
+            )
+
+    # Guardar únicamente el identificador del código.
+    request.session[RESET_SESSION_KEY] = {
+        "email": email,
+        "codigo_id": codigo_id,
+        "emitido": ahora,
+        "reenviados": reenvios,
+        "verificado": False,
+    }
+
+    messages.info(
+        request,
+        "Si el correo está asociado a una cuenta activa, "
+        "recibirás un código de recuperación.",
+    )
+
+    return redirect("validar_codigo")
 
 
 def validar_codigo(request):
-    estado = request.session.get("recuperacion_sgr")
+    """
+    Paso 2:
+    Comprueba el código persistente, su expiración,
+    el límite de intentos y su utilización.
+    """
+
+    estado = request.session.get(
+        RESET_SESSION_KEY,
+    )
 
     if not estado:
-        messages.info(
+
+        messages.error(
             request,
             "Solicita primero un código de recuperación.",
         )
+
         return redirect("recuperar_clave")
 
-    if int(time.time()) - int(estado.get("emitido", 0)) > CODIGO_VIGENCIA_SEGUNDOS:
-        request.session.pop("recuperacion_sgr", None)
+    codigo_id = estado.get("codigo_id")
+
+    if not codigo_id:
+
+        request.session.pop(
+            RESET_SESSION_KEY,
+            None,
+        )
+
         messages.error(
             request,
-            "El código venció. Solicita uno nuevo.",
+            "No fue posible validar la solicitud. "
+            "Comprueba el correo e inténtalo nuevamente.",
         )
+
+        return redirect("recuperar_clave")
+
+    registro = PasswordResetCode.objects.filter(
+        pk=codigo_id,
+    ).first()
+
+    if not registro:
+
+        request.session.pop(
+            RESET_SESSION_KEY,
+            None,
+        )
+
+        messages.error(
+            request,
+            "El código ya no está disponible. Solicita uno nuevo.",
+        )
+
+        return redirect("recuperar_clave")
+
+    if registro.is_used:
+
+        request.session.pop(
+            RESET_SESSION_KEY,
+            None,
+        )
+
+        messages.error(
+            request,
+            "Este código ya fue utilizado. Solicita uno nuevo.",
+        )
+
+        return redirect("recuperar_clave")
+
+    if timezone.now() >= registro.expires_at:
+
+        registro.is_used = True
+        registro.save(update_fields=["is_used"])
+
+        request.session.pop(
+            RESET_SESSION_KEY,
+            None,
+        )
+
+        messages.error(
+            request,
+            "El código expiró. Solicita uno nuevo.",
+        )
+
+        return redirect("recuperar_clave")
+
+    if registro.attempts >= CODIGO_MAX_INTENTOS:
+
+        registro.is_used = True
+        registro.save(update_fields=["is_used"])
+
+        request.session.pop(
+            RESET_SESSION_KEY,
+            None,
+        )
+
+        messages.error(
+            request,
+            "Superaste el máximo de intentos. Solicita un código nuevo.",
+        )
+
         return redirect("recuperar_clave")
 
     if request.method == "POST":
+
         form = VerificarCodigoForm(request.POST)
 
         if form.is_valid():
-            estado["intentos"] = int(estado.get("intentos", 0)) + 1
 
-            recibido = hashlib.sha256(
-                form.cleaned_data["codigo"].encode("utf-8")
-            ).hexdigest()
-
-            correcto = secrets.compare_digest(
-                recibido,
-                estado.get("hash", ""),
+            codigo_ingresado = (
+                form.cleaned_data["codigo"]
             )
 
-            if correcto:
+            resultado = None
+
+            with transaction.atomic():
+
+                registro_codigo = (
+                    PasswordResetCode.objects
+                    .select_for_update()
+                    .select_related("user")
+                    .filter(pk=codigo_id)
+                    .first()
+                )
+
+                if not registro_codigo:
+
+                    resultado = "invalido"
+
+                elif registro_codigo.is_used:
+
+                    resultado = "usado"
+
+                elif timezone.now() >= registro_codigo.expires_at:
+
+                    registro_codigo.is_used = True
+                    registro_codigo.save(
+                        update_fields=["is_used"]
+                    )
+
+                    resultado = "expirado"
+
+                elif (
+                    registro_codigo.attempts
+                    >= CODIGO_MAX_INTENTOS
+                ):
+
+                    resultado = "intentos"
+
+                elif not registro_codigo.user.is_active:
+
+                    resultado = "invalido"
+
+                else:
+
+                    hash_ingresado = (
+                        _hash_codigo_recuperacion(
+                            codigo_ingresado
+                        )
+                    )
+
+                    correcto = hmac.compare_digest(
+                        hash_ingresado,
+                        registro_codigo.code_hash,
+                    )
+
+                    if correcto:
+
+                        resultado = "correcto"
+
+                    else:
+
+                        registro_codigo.attempts += 1
+
+                        if (
+                            registro_codigo.attempts
+                            >= CODIGO_MAX_INTENTOS
+                        ):
+
+                            registro_codigo.is_used = True
+
+                            resultado = "intentos"
+
+                        else:
+
+                            resultado = "incorrecto"
+
+                        registro_codigo.save(
+                            update_fields=[
+                                "attempts",
+                                "is_used",
+                            ]
+                        )
+
+            if resultado == "correcto":
+
                 estado["verificado"] = True
-                request.session["recuperacion_sgr"] = estado
+
+                request.session[RESET_SESSION_KEY] = estado
+
+                messages.success(
+                    request,
+                    "Código validado correctamente.",
+                )
+
                 return redirect("nueva_clave")
 
-            if estado["intentos"] >= CODIGO_MAX_INTENTOS:
-                request.session.pop("recuperacion_sgr", None)
+            if resultado == "incorrecto":
+
                 messages.error(
                     request,
-                    "Se superó el máximo de intentos. Solicita un código nuevo.",
+                    "Código incorrecto. "
+                    "Verifica el código e inténtalo nuevamente.",
                 )
+
+            elif resultado == "intentos":
+
+                request.session.pop(
+                    RESET_SESSION_KEY,
+                    None,
+                )
+
+                messages.error(
+                    request,
+                    "Superaste el máximo de intentos. "
+                    "Solicita un código nuevo.",
+                )
+
                 return redirect("recuperar_clave")
 
-            request.session["recuperacion_sgr"] = estado
-            messages.error(request, "El código ingresado es incorrecto.")
+            else:
+
+                request.session.pop(
+                    RESET_SESSION_KEY,
+                    None,
+                )
+
+                messages.error(
+                    request,
+                    "El código ya no es válido. Solicita uno nuevo.",
+                )
+
+                return redirect("recuperar_clave")
+
     else:
+
         form = VerificarCodigoForm()
 
     return render(
         request,
         "registration/validar_codigo.html",
-        {"form": form},
+        {
+            "form": form,
+            "email": estado.get("email", ""),
+            "email_enmascarado": _enmascarar_correo_sgr(
+                estado.get("email", "")
+            ),
+        },
     )
 
 
 def nueva_clave(request):
-    estado = request.session.get("recuperacion_sgr")
+    """
+    Paso 3:
+    Permite establecer una nueva contraseña únicamente
+    después de verificar el código.
+    """
+
+    estado = request.session.get(
+        RESET_SESSION_KEY,
+    )
 
     if not estado or not estado.get("verificado"):
+
         messages.error(
             request,
             "Primero debes validar el código enviado a tu correo.",
         )
+
         return redirect("recuperar_clave")
 
-    if int(time.time()) - int(estado.get("emitido", 0)) > CODIGO_VIGENCIA_SEGUNDOS:
-        request.session.pop("recuperacion_sgr", None)
+    codigo_id = estado.get("codigo_id")
+
+    registro = (
+        PasswordResetCode.objects
+        .select_related("user")
+        .filter(pk=codigo_id)
+        .first()
+    )
+
+    if (
+        not registro
+        or registro.is_used
+        or timezone.now() >= registro.expires_at
+        or not registro.user.is_active
+    ):
+
+        _invalidar_codigo_sesion(request)
+
+        request.session.pop(
+            RESET_SESSION_KEY,
+            None,
+        )
+
         messages.error(
             request,
-            "El código venció. Solicita uno nuevo.",
+            "La autorización expiró o dejó de ser válida. "
+            "Solicita un nuevo código.",
         )
+
         return redirect("recuperar_clave")
 
-    User = get_user_model()
-    user = User.objects.filter(
-        pk=estado.get("user_id"),
-        is_active=True,
-    ).first()
-
-    if not user:
-        request.session.pop("recuperacion_sgr", None)
-        messages.error(
-            request,
-            "No se pudo completar la recuperación. Solicita un código nuevo.",
-        )
-        return redirect("recuperar_clave")
+    usuario = registro.user
 
     if request.method == "POST":
-        form = NuevaClaveForm(request.POST, user=user)
+
+        form = NuevaClaveForm(
+            request.POST,
+            user=usuario,
+        )
 
         if form.is_valid():
-            user.set_password(form.cleaned_data["password1"])
-            user.save(update_fields=["password"])
 
-            request.session.pop("recuperacion_sgr", None)
-            messages.success(
-                request,
-                "Contraseña actualizada. Ya puedes iniciar sesión.",
+            resultado = None
+
+            with transaction.atomic():
+
+                registro_codigo = (
+                    PasswordResetCode.objects
+                    .select_for_update()
+                    .select_related("user")
+                    .filter(pk=codigo_id)
+                    .first()
+                )
+
+                if (
+                    not registro_codigo
+                    or registro_codigo.is_used
+                    or timezone.now() >= registro_codigo.expires_at
+                    or not registro_codigo.user.is_active
+                ):
+
+                    resultado = "invalido"
+
+                else:
+
+                    usuario_actual = registro_codigo.user
+
+                    usuario_actual.set_password(
+                        form.cleaned_data["password1"]
+                    )
+
+                    usuario_actual.save(
+                        update_fields=["password"]
+                    )
+
+                    # Marcar el código utilizado.
+                    registro_codigo.is_used = True
+
+                    registro_codigo.save(
+                        update_fields=["is_used"]
+                    )
+
+                    # Invalidar cualquier otro código pendiente.
+                    PasswordResetCode.objects.filter(
+                        user=usuario_actual,
+                        is_used=False,
+                    ).update(is_used=True)
+
+                    resultado = "correcto"
+
+            if resultado == "correcto":
+
+                request.session.pop(
+                    RESET_SESSION_KEY,
+                    None,
+                )
+
+                messages.success(
+                    request,
+                    "Contraseña actualizada correctamente. "
+                    "Ya puedes iniciar sesión.",
+                )
+
+                return redirect("login")
+
+            request.session.pop(
+                RESET_SESSION_KEY,
+                None,
             )
-            return redirect("login")
+
+            messages.error(
+                request,
+                "La autorización dejó de ser válida. "
+                "Solicita un nuevo código.",
+            )
+
+            return redirect("recuperar_clave")
+
     else:
-        form = NuevaClaveForm(user=user)
+
+        form = NuevaClaveForm(
+            user=usuario,
+        )
 
     return render(
         request,
