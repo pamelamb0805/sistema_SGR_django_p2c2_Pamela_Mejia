@@ -148,7 +148,7 @@ class CasoListView(PageSizeMixin, SocialMixin, ModoMixin, ListView):
         return contexto
 
 
-@permiso_requerido("atenciones.ver")
+@permiso_requerido("atenciones.exportar")
 @informe_excel("Informe de atención social")
 def exportar_casos_excel(request):
     """Exporta casos y gestiones respetando filtros, permisos e historia."""
@@ -611,7 +611,7 @@ def estadisticas(request):
         "delegaciones": Delegacion.objects.all() if es_transversal(request.user) else [],
     })
 
-@permiso_requerido("atenciones.ver")
+@permiso_requerido("atenciones.exportar")
 @informe_excel("Estadísticas de atención social")
 def exportar_estadisticas_excel(request):
     """Exporta estadísticas sociales respetando filtros y permisos."""

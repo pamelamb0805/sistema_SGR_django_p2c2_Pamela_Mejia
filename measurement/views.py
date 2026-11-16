@@ -1298,7 +1298,100 @@ def vista_global_cargos(request):
 @permiso_requerido("reportes.exportar")
 @informe_excel("Informe de metas")
 def exportar_metas_excel(request):
+    """Exporta metas respetando el nombre histórico del ítem en períodos cerrados."""
 
+    queryset = filtrar_por_ambito(
+        MetaModel.objects.select_related(
+            "periodo",
+            "funcionario",
+            "funcionario__delegacion",
+            "cargo",
+            "item",
+        ),
+        request.user,
+        "funcionario__delegacion_id",
+    )
+
+    g = request.GET
+
+    for campo, filtro in (
+        ("periodo", "periodo_id"),
+        ("funcionario", "funcionario_id"),
+        ("cargo", "cargo_id"),
+        ("item", "item_id"),
+    ):
+        if g.get(campo):
+            queryset = queryset.filter(**{filtro: g[campo]})
+
+    q = g.get("q", "").strip()
+    if q:
+        queryset = queryset.filter(
+            Q(item__nombre_item__icontains=q)
+            | Q(funcionario__nombre__icontains=q)
+            | Q(cargo__nombre_cargo__icontains=q)
+        )
+
+    libro = Workbook()
+    hoja = libro.active
+    hoja.title = "Metas"
+
+    hoja.append([
+        "Período",
+        "Funcionario",
+        "Delegación",
+        "Cargo",
+        "Ítem medible",
+        "Objetivo",
+        "Unidad",
+        "Ponderación (%)",
+        "Umbral mínimo (%)",
+        "Máximo computable (%)",
+    ])
+
+    for meta in queryset.order_by(
+        "periodo",
+        "funcionario__nombre",
+        "item__nombre_item",
+    ):
+        if meta.periodo.abierto:
+            datos_historicos = CRUDMeta._datos_version(meta)
+        else:
+            datos_historicos = CalculoIndicadores._datos_meta_historicos(
+                meta,
+                meta.periodo.fecha_termino,
+            )
+
+        nombre_item = datos_historicos.get(
+            "item_nombre",
+            meta.item.nombre_item,
+        )
+
+        hoja.append([
+            str(meta.periodo),
+            meta.funcionario.nombre,
+            meta.funcionario.delegacion.nombre,
+            meta.cargo.nombre_cargo,
+            nombre_item,
+            float(meta.valor_objetivo),
+            meta.unidad,
+            float(meta.ponderador),
+            float(meta.umbral_minimo),
+            float(meta.maximo_computable),
+        ])
+
+    respuesta = HttpResponse(
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        )
+    )
+    respuesta["Content-Disposition"] = (
+        'attachment; filename="metas_filtradas.xlsx"'
+    )
+    respuesta["Cache-Control"] = "private, no-store"
+
+    libro.save(respuesta)
+    return respuesta
 
 @permiso_requerido("reportes.exportar")
 @informe_excel("Informe de períodos")
@@ -1385,7 +1478,7 @@ def exportar_periodos_excel(request):
 
 
 
-@permiso_requerido("ajustes.ver")
+@permiso_requerido("reportes.exportar")
 @informe_excel("Informe de incentivos y penalizaciones")
 def exportar_ajustes_excel(request):
     """Exporta ajustes respetando el nombre histórico del ítem asociado."""
@@ -1494,7 +1587,7 @@ def exportar_ajustes_excel(request):
     return respuesta
 
 
-@permiso_requerido("indicadores.ver")
+@permiso_requerido("reportes.exportar")
 @informe_excel("Informe de semáforo")
 def exportar_semaforo_excel(request):
     """Exporta el semáforo completo de la delegación o ámbito autorizado."""

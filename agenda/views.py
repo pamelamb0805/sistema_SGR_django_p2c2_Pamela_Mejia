@@ -315,10 +315,169 @@ def resumen_colectivo(request):
             "page_size_options": PAGE_SIZE_OPTIONS,
         },
     )
-@permiso_requerido("agenda.ver")
+@permiso_requerido("agenda.exportar")
 @informe_excel("Informe de compromisos")
 def exportar_compromisos_excel(request):
+    queryset = compromisos_visibles(request.user).prefetch_related(
+        "historial"
+    )
+    queryset = _filtrar(queryset, request.GET)
 
-@permiso_requerido("agenda.ver")
+    libro = Workbook()
+    hoja = libro.active
+    hoja.title = "Compromisos"
+
+    hoja.append([
+        "Identificador",
+        "Fecha comprometida",
+        "Solicitante",
+        "Origen",
+        "Territorio",
+        "Responsable",
+        "Delegación",
+        "Ítem medible",
+        "Período",
+        "Área de apoyo",
+        "Estado",
+        "Plazo",
+        "Observación",
+    ])
+
+    for compromiso in queryset.order_by(
+        "fecha_comprometida", "id_compromiso"
+    ):
+        hoja.append([
+            compromiso.pk,
+            compromiso.fecha_comprometida.strftime("%d/%m/%Y"),
+            compromiso.solicitante,
+            compromiso.origen,
+            compromiso.territorio,
+            compromiso.funcionario.nombre,
+            compromiso.delegacion.nombre,
+            (
+                compromiso.item_medible.nombre_item
+                if compromiso.item_medible else ""
+            ),
+            str(compromiso.periodo or ""),
+            compromiso.area_apoyo,
+            compromiso.estado,
+            compromiso.plazo,
+            compromiso.observacion,
+        ])
+
+    respuesta = HttpResponse(
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        )
+    )
+    respuesta["Content-Disposition"] = (
+        'attachment; filename="compromisos_filtrados.xlsx"'
+    )
+    respuesta["Cache-Control"] = "private, no-store"
+
+    libro.save(respuesta)
+    return respuesta
+
+
+@permiso_requerido("agenda.exportar")
 @informe_excel("Resumen de agenda colectiva")
 def exportar_resumen_colectivo_excel(request):
+    """Exporta el resumen colectivo completo con los filtros aplicados."""
+
+    g = request.GET
+    visibles = compromisos_visibles(request.user)
+
+    periodo = None
+
+    if g.get("periodo", "").isdigit():
+        periodo = Periodo.objects.filter(
+            pk=g["periodo"]
+        ).first()
+    elif "periodo" not in g:
+        periodo = Periodo.objects.vigente()
+
+    filtros = g.copy()
+
+    if periodo:
+        filtros["periodo"] = str(periodo.pk)
+
+    queryset = _filtrar(
+        visibles.prefetch_related("historial"),
+        filtros,
+    )
+
+    resumen = CRUDCompromiso.resumen_colectivo(queryset)
+
+    libro = Workbook()
+    hoja = libro.active
+    hoja.title = "Resumen agenda"
+
+    hoja.append(["Resumen de agenda colectiva"])
+    hoja.append([
+        "Generado",
+        timezone.localtime().strftime("%d/%m/%Y %H:%M"),
+    ])
+    hoja.append([
+        "Período",
+        str(periodo) if periodo else "Todos",
+    ])
+    hoja.append([])
+
+    estados = resumen["estados"]
+
+    hoja.append(
+        ["Funcionario"]
+        + estados
+        + [
+            "Total",
+            "Realizados",
+            "% realizado",
+            "% pendiente",
+        ]
+    )
+
+    for fila in resumen["filas"]:
+        hoja.append(
+            [fila["nombre"]]
+            + [
+                fila["por_estado"].get(estado, 0)
+                for estado in estados
+            ]
+            + [
+                fila["total"],
+                fila["realizados"],
+                float(fila["pct_realizado"]),
+                float(fila["pct_pendiente"]),
+            ]
+        )
+
+    total = resumen["total"]
+
+    hoja.append(
+        ["TOTAL"]
+        + [
+            total["por_estado"].get(estado, 0)
+            for estado in estados
+        ]
+        + [
+            total["total"],
+            total["realizados"],
+            float(total["pct_realizado"]),
+            float(total["pct_pendiente"]),
+        ]
+    )
+
+    respuesta = HttpResponse(
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        )
+    )
+    respuesta["Content-Disposition"] = (
+        'attachment; filename="resumen_agenda.xlsx"'
+    )
+    respuesta["Cache-Control"] = "private, no-store"
+
+    libro.save(respuesta)
+    return respuesta
