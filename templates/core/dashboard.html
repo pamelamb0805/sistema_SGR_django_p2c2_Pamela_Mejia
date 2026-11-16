@@ -151,6 +151,84 @@
     font-size: .75rem;
 }
 
+/* Alertas operativas RF-037 */
+
+.sgr-executive .sgr-alerts {
+    margin-bottom: 9px;
+}
+
+.sgr-executive .sgr-alerts-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.sgr-executive .sgr-alerts-heading h3 {
+    color: var(--sgr-dark);
+    font-size: .7rem;
+    font-weight: 800;
+    margin: 0;
+}
+
+.sgr-executive .sgr-alert-list {
+    display: grid;
+    gap: 5px;
+}
+
+.sgr-executive .sgr-alert-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 7px 9px;
+    border: 1px solid var(--sgr-border);
+    border-left: 3px solid #CC6600;
+    border-radius: 6px;
+    background: #fff;
+    font-size: .62rem;
+}
+
+.sgr-executive .sgr-alert-item.alert-danger {
+    border-left-color: #AD0000;
+}
+
+.sgr-executive .sgr-alert-item.alert-warning {
+    border-left-color: #CC6600;
+}
+
+.sgr-executive .sgr-alert-item.alert-info {
+    border-left-color: #0d6efd;
+}
+
+.sgr-executive .sgr-alert-icon {
+    flex-shrink: 0;
+    font-size: .85rem;
+    margin-top: 1px;
+}
+
+.sgr-executive .sgr-alert-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.sgr-executive .sgr-alert-title {
+    font-weight: 800;
+    margin-bottom: 2px;
+}
+
+.sgr-executive .sgr-alert-meta {
+    color: var(--sgr-muted);
+    font-size: .55rem;
+    margin-top: 3px;
+}
+
+.sgr-executive .sgr-alert-action {
+    flex-shrink: 0;
+    align-self: center;
+    font-size: .56rem;
+}
+
 /* Gráficos */
 
 .sgr-executive .sgr-section-heading {
@@ -374,6 +452,14 @@
     .sgr-executive .sgr-welcome-date {
         text-align: left;
     }
+
+    .sgr-executive .sgr-alert-item {
+        flex-wrap: wrap;
+    }
+
+    .sgr-executive .sgr-alert-action {
+        margin-left: 22px;
+    }
 }
 </style>
 
@@ -401,18 +487,67 @@
     </div>
     {% endif %}
 
-    {% if d.compromisos_vencidos %}
-    <div class="alert alert-danger d-flex align-items-center gap-2">
-        <i class="bi bi-exclamation-octagon-fill"></i>
-        <div>
-            Existen <strong>{{ d.compromisos_vencidos }}</strong>
-            compromisos vencidos que requieren atención.
+    <!-- ALERTAS OPERATIVAS RF-037 -->
+
+    {% if d.alertas_operativas %}
+    <section class="sgr-alerts">
+
+        <div class="sgr-alerts-heading">
+            <h3>
+                <i class="bi bi-bell-fill text-danger me-1"></i>
+                Alertas operativas
+            </h3>
+
+            <span class="badge text-bg-danger">
+                {{ d.alertas_operativas|length }} alertas
+            </span>
         </div>
-        <a href="{% url 'agenda:compromiso_list' %}"
-           class="btn btn-sm btn-outline-danger ms-auto">
-            Revisar agenda
-        </a>
-    </div>
+
+        <div class="sgr-alert-list">
+
+            {% for alerta in d.alertas_operativas %}
+
+            <div class="sgr-alert-item alert-{{ alerta.nivel }}">
+
+                <i class="bi bi-exclamation-triangle-fill sgr-alert-icon"></i>
+
+                <div class="sgr-alert-content">
+
+                    <div class="sgr-alert-title">
+                        {{ alerta.titulo }}
+                    </div>
+
+                    <div>
+                        {{ alerta.motivo }}
+                    </div>
+
+                    <div class="sgr-alert-meta">
+                        <i class="bi bi-person me-1"></i>
+                        Responsable: {{ alerta.responsable }}
+
+                        <span class="mx-2">·</span>
+
+                        <i class="bi bi-calendar3 me-1"></i>
+                        Fecha: {{ alerta.fecha|date:"d/m/Y" }}
+                    </div>
+
+                </div>
+
+                {% if alerta.url %}
+                <a href="{{ alerta.url }}"
+                   class="btn btn-sm btn-outline-dark sgr-alert-action">
+                    Revisar
+                    <i class="bi bi-arrow-right ms-1"></i>
+                </a>
+                {% endif %}
+
+            </div>
+
+            {% endfor %}
+
+        </div>
+
+    </section>
     {% endif %}
 
     <section class="sgr-welcome">
@@ -536,7 +671,10 @@
             <i class="bi bi-bar-chart-line me-1"></i>
             Indicadores de gestión
         </h3>
-        <span><i class="bi bi-hand-index-thumb me-1"></i>Selecciona un gráfico para ver sus registros</span>
+        <span>
+            <i class="bi bi-hand-index-thumb me-1"></i>
+            Selecciona un gráfico para ver sus registros
+        </span>
     </div>
 
     <div class="sgr-chart-grid">
