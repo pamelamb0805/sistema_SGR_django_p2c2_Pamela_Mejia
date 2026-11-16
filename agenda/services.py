@@ -17,7 +17,13 @@ from django.utils import timezone
 
 from core.exceptions import ReglaNegocioError
 from core.mixins import (
-    ROLES_SUPERVISION, auditar, es_transversal, get_funcionario, tiene_rol, filtrar_por_ambito,
+    ROLES_SUPERVISION,
+    auditar,
+    es_transversal,
+    get_funcionario,
+    tiene_rol,
+    tiene_permiso,
+    filtrar_por_ambito,
 )
 from core.services import (
     guardar,
@@ -30,10 +36,20 @@ from organizations.models import Funcionario
 
 from .models import Compromiso, HistorialTransiciones
 
-
+def _exigir_permiso(actor, permiso, mensaje=None):
+    if not tiene_permiso(actor, permiso):
+        raise ReglaNegocioError(
+            mensaje or "No tiene permiso para realizar esta operación."
+        )
+    
 # ---------------------------------------------------------------------------
 # Visibilidad y permisos (CA-07)
 # ---------------------------------------------------------------------------
+def _exigir_permiso(actor, permiso, mensaje):
+    """Valida permisos funcionales en la capa de servicios."""
+    if not tiene_permiso(actor, permiso):
+        raise ReglaNegocioError(mensaje)
+
 def compromisos_visibles(user):
     """Agenda colectiva: todo el equipo de la delegación la ve; Administrador/Coordinador ven todas."""
     qs = Compromiso.objects.select_related("funcionario", "delegacion", "item_medible", "periodo")
@@ -46,14 +62,18 @@ def _es_responsable(actor, compromiso):
 
 
 def supervisa(actor, delegacion_id):
-    """Rol de supervisión dentro del ámbito (Delegado de esa delegación, Administrador, Coordinador)."""
-    if not tiene_rol(actor, *ROLES_SUPERVISION):
+    """Comprueba permiso de supervisión y ámbito territorial."""
+    if not tiene_permiso(actor, "agenda.reasignar"):
         return False
+
     if es_transversal(actor):
         return True
-    f = get_funcionario(actor)
-    return f is not None and f.delegacion_id == delegacion_id
 
+    funcionario = get_funcionario(actor)
+    return (
+        funcionario is not None
+        and funcionario.delegacion_id == delegacion_id
+    )
 
 def puede_gestionar(actor, compromiso):
     return _es_responsable(actor, compromiso) or supervisa(actor, compromiso.delegacion_id)
@@ -112,55 +132,125 @@ class CRUDHistorialTransiciones:
 class CRUDCompromiso:
     @staticmethod
     def crear_compromiso(compromiso, actor=None):
+        _exigir_permiso(
+            actor,
+            "agenda.registrar",
+            "No tiene permiso para registrar compromisos.",
+        )
+
         creador = get_funcionario(actor)
         if creador is None:
-            raise ReglaNegocioError("Su usuario no tiene un funcionario asociado.")
+            raise ReglaNegocioError(
+                "Su usuario no tiene un funcionario asociado."
+            )
+
         responsable = compromiso.funcionario
-        if not funcionarios_asignables(actor).filter(pk=responsable.pk).exists():
-            raise ReglaNegocioError("No puede asignar compromisos a ese funcionario.")
+
+        if not funcionarios_asignables(actor).filter(
+            pk=responsable.pk
+        ).exists():
+            raise ReglaNegocioError(
+                "No puede asignar compromisos a ese funcionario."
+            )
+
         if compromiso.fecha_comprometida < timezone.localdate():
-            raise ReglaNegocioError("La fecha comprometida no puede estar en el pasado.")
+            raise ReglaNegocioError(
+                "La fecha comprometida no puede estar en el pasado."
+            )
+
         _validar_item(compromiso)
+
         with transaction.atomic():
             compromiso.estado = Compromiso.ESTADO_INGRESADO
             compromiso.delegacion_id = responsable.delegacion_id
-            compromiso.periodo = Periodo.objects.para_fecha(compromiso.fecha_comprometida)
-            guardar(compromiso, actor, "compromiso")
-            CRUDHistorialTransiciones.registrar_cambio_estado(
-                compromiso, "", Compromiso.ESTADO_INGRESADO, "Compromiso registrado.", creador)
-        return compromiso
+            compromiso.periodo = Periodo.objects.para_fecha(
+                compromiso.fecha_comprometida
+            )
 
+            guardar(compromiso, actor, "compromiso")
+
+            CRUDHistorialTransiciones.registrar_cambio_estado(
+                compromiso,
+                "",
+                Compromiso.ESTADO_INGRESADO,
+                "Compromiso registrado.",
+                creador,
+            )
+
+        return compromiso
     @staticmethod
     def mostrar_compromisos_por_delegacion(delegacion):
         return Compromiso.objects.filter(delegacion=delegacion).select_related("funcionario", "item_medible")
 
     @staticmethod
     def modificar_compromiso(compromiso, actor=None):
+        _exigir_permiso(
+            actor,
+            "agenda.editar",
+            "No tiene permiso para editar compromisos.",
+        )
+
         original = Compromiso.objects.get(pk=compromiso.pk)
+
         if not puede_gestionar(actor, original):
-            raise ReglaNegocioError("No tiene permiso para modificar este compromiso.")
+            raise ReglaNegocioError(
+                "No tiene autorización sobre este compromiso."
+            )
+
         if original.realizado:
-            raise ReglaNegocioError("Un compromiso realizado no puede modificarse.")
+            raise ReglaNegocioError(
+                "Un compromiso realizado no puede modificarse."
+            )
+
         if compromiso.funcionario_id != original.funcionario_id:
-            raise ReglaNegocioError("Para cambiar el responsable use la opción «Reasignar».")
+            raise ReglaNegocioError(
+                "Para cambiar el responsable use la opción «Reasignar»."
+            )
+
         _validar_item(compromiso)
-        cambia_fecha = compromiso.fecha_comprometida != original.fecha_comprometida
+
+        cambia_fecha = (
+            compromiso.fecha_comprometida
+            != original.fecha_comprometida
+        )
+
         if cambia_fecha:
             if compromiso.fecha_comprometida < timezone.localdate():
-                raise ReglaNegocioError("La nueva fecha comprometida no puede estar en el pasado.")
-            if not (compromiso.observacion or "").strip() or compromiso.observacion == original.observacion:
-                raise ReglaNegocioError("Indique en la observación el motivo del cambio de fecha.")
+                raise ReglaNegocioError(
+                    "La nueva fecha comprometida no puede estar en el pasado."
+                )
+
+            if (
+                not (compromiso.observacion or "").strip()
+                or compromiso.observacion == original.observacion
+            ):
+                raise ReglaNegocioError(
+                    "Indique en la observación el motivo del cambio de fecha."
+                )
+
         with transaction.atomic():
-            compromiso.periodo = Periodo.objects.para_fecha(compromiso.fecha_comprometida)
+            compromiso.periodo = Periodo.objects.para_fecha(
+                compromiso.fecha_comprometida
+            )
+
             guardar(compromiso, actor, "compromiso")
+
             if cambia_fecha:
                 CRUDHistorialTransiciones.registrar_cambio_estado(
-                    compromiso, original.estado, original.estado,
-                    f"Fecha reprogramada del {original.fecha_comprometida:%d/%m/%Y} al "
-                    f"{compromiso.fecha_comprometida:%d/%m/%Y}. {compromiso.observacion}".strip(),
-                    get_funcionario(actor))
-        return compromiso
+                    compromiso,
+                    original.estado,
+                    original.estado,
+                    (
+                        f"Fecha reprogramada del "
+                        f"{original.fecha_comprometida:%d/%m/%Y} al "
+                        f"{compromiso.fecha_comprometida:%d/%m/%Y}. "
+                        f"{compromiso.observacion}"
+                    ).strip(),
+                    get_funcionario(actor),
+                )
 
+        return compromiso
+    
     @staticmethod
     def actualizar_estado(
         compromiso,
@@ -172,6 +262,12 @@ class CRUDCompromiso:
         Actualiza el estado del compromiso, conserva la transición,
         recalcula resultados cuando corresponde y publica el evento.
         """
+        _exigir_permiso(
+            actor,
+            "agenda.estado",
+            "No tiene permiso para cambiar estados de compromisos.",
+        )
+
         observacion = (observacion or "").strip()
         autor = get_funcionario(actor)
 
@@ -243,7 +339,7 @@ class CRUDCompromiso:
                 )
 
             c.estado = nuevo_estado
-
+            
             if observacion:
                 c.observacion = observacion
 
@@ -297,6 +393,12 @@ class CRUDCompromiso:
         motivo,
         actor=None,
     ):
+        _exigir_permiso(
+            actor,
+            "agenda.reasignar",
+            "No tiene permiso para reasignar compromisos.",
+        )
+
         motivo = (motivo or "").strip()
 
         if not motivo:

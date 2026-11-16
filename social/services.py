@@ -31,13 +31,19 @@ from core.mixins import (
     get_funcionario,
     get_delegaciones_autorizadas_ids,
     tiene_rol,
+    tiene_permiso,
 )
 
 # Acceso al módulo: datos personales de usuarios atendidos => solo quienes los necesitan (RNF-009)
 ROLES_SOCIAL = ROLES_OPERATIVOS + ROLES_TRANSVERSALES
 TIPOS_CATALOGO_ATENCION = (Catalogo.TIPO_ATENCION, Catalogo.TIPO_SUBATENCION)
 
-
+def _exigir_permiso(actor, permiso, mensaje=None):
+    if not tiene_permiso(actor, permiso):
+        raise ReglaNegocioError(
+            mensaje or "No tiene permiso para realizar esta operación."
+        )
+    
 def maximo_gestiones():
     return settings.SGR_MAX_GESTIONES_SOCIAL
 
@@ -47,12 +53,12 @@ def maximo_gestiones():
 # ---------------------------------------------------------------------------
 def casos_visibles(user):
     """
-    Devuelve los casos correspondientes a las delegaciones autorizadas
-    del usuario. Los usuarios transversales pueden consultar todas.
+    Devuelve los casos de las delegaciones autorizadas.
+    La consulta requiere el permiso funcional de lectura.
     """
     qs = UsuarioSocial.objects.select_related("delegacion")
 
-    if not tiene_rol(user, *ROLES_SOCIAL):
+    if not tiene_permiso(user, "atenciones.ver"):
         return qs.none()
 
     if es_transversal(user):
@@ -80,28 +86,32 @@ def gestiones_visibles(user):
     )
 
 def puede_escribir(user, caso_delegacion_id):
-    """
-    Permite escribir a funcionarios y delegados dentro de sus
-    delegaciones autorizadas.
-    """
-    if not tiene_rol(user, *ROLES_OPERATIVOS):
-        return False
-
+    """Comprueba el ámbito territorial; el permiso se valida por operación."""
     delegaciones_ids = get_delegaciones_autorizadas_ids(user)
-
     return caso_delegacion_id in delegaciones_ids
 
+
 def puede_reabrir(user, caso_delegacion_id):
+    """La reapertura requiere permiso de estado y ámbito autorizado."""
+    if not tiene_permiso(user, "atenciones.estado"):
+        return False
+
     if es_transversal(user):
         return True
-    f = get_funcionario(user)
-    return tiene_rol(user, ROL_DELEGADO) and f is not None and f.delegacion_id == caso_delegacion_id
 
+    return puede_escribir(user, caso_delegacion_id)
 
-def _exigir_escritura(user, caso):
-    if not puede_escribir(user, caso.delegacion_id):
-        raise ReglaNegocioError("No tiene permiso para modificar casos de esta delegación.")
+def _exigir_escritura(user, caso, permiso="atenciones.gestionar"):
+    _exigir_permiso(
+        user,
+        permiso,
+        "No tiene permiso para modificar este caso o sus gestiones.",
+    )
 
+    if not puede_escribir(user, caso.delegacion_id) and not es_transversal(user):
+        raise ReglaNegocioError(
+            "No tiene autorización sobre la delegación de este caso."
+        )
 
 
 def _validar_catalogo(tipo_atencion, subatencion, original=None):
@@ -238,6 +248,12 @@ class CRUDAtencionSocial:
 
     @staticmethod
     def registrar_gestion(gestion, actor=None):
+        _exigir_permiso(
+            actor,
+            "atenciones.gestionar",
+            "No tiene permiso para registrar gestiones sociales.",
+        )
+
         autor = get_funcionario(actor)
 
         if autor is None:
@@ -250,7 +266,7 @@ class CRUDAtencionSocial:
                 pk=gestion.usuario_id
             )
 
-            _exigir_escritura(actor, caso)
+            _exigir_escritura(actor, caso, "atenciones.gestionar")
 
             if caso.cerrado:
                 raise ReglaNegocioError(
@@ -285,7 +301,6 @@ class CRUDAtencionSocial:
                 anterior=existentes[-1] if existentes else None,
             )
 
-            # La asignación se realiza en el servidor.
             gestion.numero_gestion = len(existentes) + 1
             gestion.funcionario = autor
             gestion.delegacion = caso.delegacion
@@ -297,7 +312,6 @@ class CRUDAtencionSocial:
             guardar(gestion, actor, "atencion_social")
 
         return gestion
-
     @staticmethod
     def modificar_gestion(gestion, actor=None):
         with transaction.atomic():
@@ -318,7 +332,11 @@ class CRUDAtencionSocial:
                 pk=original.usuario_id
             )
 
-            _exigir_escritura(actor, caso)
+            _exigir_escritura(
+                actor,
+                caso,
+                "atenciones.gestionar",
+            )
 
             if caso.cerrado:
                 raise ReglaNegocioError(
@@ -406,11 +424,17 @@ class CRUDUsuarioSocial:
     @staticmethod
     def crear_caso(caso, primera_gestion, actor=None):
         """Crea el caso y su primera gestión en una sola transacción."""
+        _exigir_permiso(
+            actor,
+            "atenciones.registrar",
+            "No tiene permiso para registrar casos sociales.",
+        )
+
         autor = get_funcionario(actor)
 
-        if autor is None or not tiene_rol(actor, *ROLES_OPERATIVOS):
+        if autor is None:
             raise ReglaNegocioError(
-                "No tiene permiso para registrar casos sociales."
+                "Su usuario no tiene un funcionario asociado."
             )
 
         with transaction.atomic():
@@ -422,10 +446,25 @@ class CRUDUsuarioSocial:
             primera_gestion.delegacion = caso.delegacion
             primera_gestion.funcionario = autor
 
-            CRUDAtencionSocial.registrar_gestion(
-                primera_gestion,
+            # El alta inicial de la gestión queda cubierta por el permiso
+            # de registrar el caso.
+            _exigir_permiso(
                 actor,
+                "atenciones.registrar",
+                "No tiene permiso para registrar la primera gestión.",
             )
+
+            CRUDAtencionSocial._validar_fecha_y_estado(
+                primera_gestion
+            )
+            _validar_catalogo(
+                primera_gestion.tipo_atencion,
+                primera_gestion.subatencion,
+            )
+
+            primera_gestion.numero_gestion = 1
+            primera_gestion.full_clean()
+            guardar(primera_gestion, actor, "atencion_social")
 
         return caso
 
@@ -441,60 +480,68 @@ class CRUDUsuarioSocial:
 
     @staticmethod
     def modificar_caso(caso, actor=None):
-        _exigir_escritura(actor, caso)
+        _exigir_permiso(
+            actor,
+            "atenciones.editar",
+            "No tiene permiso para editar casos sociales.",
+        )
+
         original = UsuarioSocial.objects.get(pk=caso.pk)
+
         if original.delegacion_id != caso.delegacion_id:
-            raise ReglaNegocioError("No se puede cambiar la delegación del caso.")
+            raise ReglaNegocioError(
+                "No se puede cambiar la delegación del caso."
+            )
+
+        if (
+            not puede_escribir(actor, original.delegacion_id)
+            and not es_transversal(actor)
+        ):
+            raise ReglaNegocioError(
+                "No tiene autorización sobre la delegación de este caso."
+            )
+
         return guardar(caso, actor, "usuario_social")
 
+
     @staticmethod
-    def cambiar_estado_caso(
-        caso,
-        nuevo_estado,
-        actor=None,
-    ):
-        """
-        Cambia el estado del caso social, conserva la auditoría
-        y publica el cambio para los usuarios autorizados.
-        """
+    def cambiar_estado_caso(caso, nuevo_estado, actor=None):
+        _exigir_permiso(
+            actor,
+            "atenciones.estado",
+            "No tiene permiso para cambiar el estado de casos sociales.",
+        )
+
         with transaction.atomic():
             caso = UsuarioSocial.objects.select_for_update().get(
                 pk=caso.pk
             )
 
-            if not (
-                puede_escribir(actor, caso.delegacion_id)
-                or es_transversal(actor)
+            if (
+                not puede_escribir(actor, caso.delegacion_id)
+                and not es_transversal(actor)
             ):
                 raise ReglaNegocioError(
-                    "No tiene permiso para modificar casos "
-                    "de esta delegación."
+                    "No tiene autorización sobre la delegación de este caso."
                 )
 
             if nuevo_estado not in dict(UsuarioSocial.ESTADOS):
-                raise ReglaNegocioError(
-                    "Estado de caso no válido."
-                )
+                raise ReglaNegocioError("Estado de caso no válido.")
 
             if nuevo_estado == caso.estado_caso:
                 raise ReglaNegocioError(
                     f"El caso ya está «{caso.estado_caso}»."
                 )
 
-            if (
-                caso.cerrado
-                and not puede_reabrir(
-                    actor,
-                    caso.delegacion_id,
-                )
+            if caso.cerrado and not puede_reabrir(
+                actor,
+                caso.delegacion_id,
             ):
                 raise ReglaNegocioError(
-                    "Solo el delegado o la coordinación "
-                    "pueden reabrir un caso cerrado."
+                    "No tiene permiso para reabrir este caso."
                 )
 
             anterior = snapshot(caso)
-
             caso.estado_caso = nuevo_estado
             caso.save(update_fields=["estado_caso"])
 
@@ -518,7 +565,6 @@ class CRUDUsuarioSocial:
             )
 
         return caso
-
 # ---------------------------------------------------------------------------
 # Estadísticas (HU-03: cada atención válida se cuenta una sola vez)
 # ---------------------------------------------------------------------------

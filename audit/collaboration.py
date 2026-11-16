@@ -1,12 +1,12 @@
-
 from django.apps import apps
 from django.core.exceptions import PermissionDenied
 from django.contrib.contenttypes.models import ContentType
+from django.db import transaction
 
 from core.mixins import (
     es_transversal,
     get_delegaciones_autorizadas_ids,
-    get_roles,
+    tiene_permiso,
 )
 
 from .models import ComentarioRegistro
@@ -24,29 +24,17 @@ MODELOS_COMENTABLES = {
 
 def obtener_registro_comentable(usuario, app_label, model_name, pk):
     """
-    Recupera un registro permitido y comprueba que el usuario
-    tenga acceso a su delegación.
+    Recupera un registro permitido y comprueba permiso funcional
+    y ámbito territorial antes de mostrar la conversación.
     """
-
     if not usuario.is_authenticated or not usuario.is_active:
         raise PermissionDenied(
             "Debe iniciar sesión con una cuenta activa."
         )
 
-    roles = get_roles(usuario)
-
-    roles_autorizados = {
-        "Administrador",
-        "Coordinador",
-        "Delegado",
-        "Funcionario",
-        "Verificador",
-        "Consulta",
-    }
-
-    if not roles.intersection(roles_autorizados):
+    if not tiene_permiso(usuario, "comentarios.ver"):
         raise PermissionDenied(
-            "Su perfil no está autorizado para participar."
+            "No tiene permiso para consultar comentarios."
         )
 
     clave = (
@@ -59,19 +47,14 @@ def obtener_registro_comentable(usuario, app_label, model_name, pk):
             "Este tipo de registro no admite conversaciones."
         )
 
-    modelo = apps.get_model(
-        app_label,
-        model_name,
-    )
+    modelo = apps.get_model(app_label, model_name)
 
     if modelo is None:
         raise PermissionDenied(
             "El tipo de registro solicitado no existe."
         )
 
-    registro = modelo._default_manager.filter(
-        pk=pk
-    ).first()
+    registro = modelo._default_manager.filter(pk=pk).first()
 
     if registro is None:
         raise PermissionDenied(
@@ -103,9 +86,10 @@ def obtener_registro_comentable(usuario, app_label, model_name, pk):
 
 def obtener_conversacion(registro, delegacion_id):
     """
-    Obtiene todos los mensajes del registro en orden cronológico.
+    Obtiene los mensajes del registro en orden cronológico.
+    La autorización de lectura se comprueba antes de llamar
+    a esta función mediante obtener_registro_comentable.
     """
-
     tipo = ContentType.objects.get_for_model(
         registro,
         for_concrete_model=False,
@@ -138,10 +122,36 @@ def crear_comentario(
     respuesta_a=None,
 ):
     """
-    Registra un mensaje o respuesta dentro de la conversación.
+    Registra un comentario o respuesta únicamente si el usuario
+    posee permiso de escritura y el registro pertenece a su ámbito.
     """
+    if not usuario.is_authenticated or not usuario.is_active:
+        raise PermissionDenied(
+            "Debe iniciar sesión con una cuenta activa."
+        )
 
-    from django.db import transaction
+    if not tiene_permiso(usuario, "comentarios.crear"):
+        raise PermissionDenied(
+            "No tiene permiso para publicar comentarios."
+        )
+
+    if not es_transversal(usuario):
+        delegaciones = set(
+            get_delegaciones_autorizadas_ids(usuario)
+        )
+
+        if delegacion_id not in delegaciones:
+            raise PermissionDenied(
+                "No tiene autorización para comentar en esta delegación."
+            )
+
+    mensaje = (mensaje or "").strip()
+
+    if not mensaje:
+        raise PermissionDenied(
+            "El comentario no puede estar vacío."
+        )
+
     from .services import registrar_evento
 
     tipo = ContentType.objects.get_for_model(
@@ -150,6 +160,20 @@ def crear_comentario(
     )
 
     with transaction.atomic():
+        if respuesta_a is not None:
+            respuesta_valida = ComentarioRegistro.objects.filter(
+                pk=respuesta_a.pk,
+                content_type=tipo,
+                object_id=registro.pk,
+                delegacion_id=delegacion_id,
+            ).exists()
+
+            if not respuesta_valida:
+                raise PermissionDenied(
+                    "La respuesta seleccionada no pertenece "
+                    "a esta conversación."
+                )
+
         comentario = ComentarioRegistro(
             content_type=tipo,
             object_id=registro.pk,
