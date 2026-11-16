@@ -469,41 +469,6 @@ class CRUDCargo:
 
             return original
 
-
-    @staticmethod
-    def cambiar_vigencia_item(item, actor=None):
-        """
-        Cambia la vigencia de un ítem medible conservando
-        los valores anteriores y registrando la nueva versión.
-        """
-        with transaction.atomic():
-            original = (
-                ItemMedible.objects
-                .select_for_update()
-                .select_related("cargo")
-                .get(pk=item.pk)
-            )
-
-            datos_anteriores = CRUDCargo._datos_version_item(
-                original
-            )
-
-            original.vigencia = not original.vigencia
-
-            original = _guardar(
-                original,
-                actor,
-                "item_medible",
-            )
-
-            CRUDCargo._registrar_version_item(
-                original,
-                actor,
-                datos_anteriores=datos_anteriores,
-            )
-
-            return original
-
     @staticmethod
     def modificar_cargo(cargo, actor=None):
         return _guardar(cargo, actor, "cargo")

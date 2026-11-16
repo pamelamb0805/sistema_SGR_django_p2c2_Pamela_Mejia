@@ -99,6 +99,64 @@ class CRUDPeriodo:
             "version_formula_dias": 1,
         }
 
+
+    @staticmethod
+    def _registrar_version_reglas(periodo, actor=None, datos=None):
+        """
+        Registra una nueva versión de las reglas de cálculo del período.
+        Cierra la versión anterior y conserva su vigencia histórica.
+        """
+        with transaction.atomic():
+            periodo_bloqueado = (
+                Periodo.objects
+                .select_for_update()
+                .get(pk=periodo.pk)
+            )
+
+            versiones = (
+                ReglaCalculoVersion.objects
+                .select_for_update()
+                .filter(periodo=periodo_bloqueado)
+                .order_by("-numero_version")
+            )
+
+            ultima = versiones.first()
+
+            configuracion = (
+                dict(datos)
+                if datos is not None
+                else CRUDPeriodo._datos_reglas_actuales()
+            )
+
+            if ultima and ultima.datos == configuracion:
+                return ultima
+
+            ahora = timezone.now()
+
+            if ultima:
+                if ultima.vigente_hasta is None:
+                    ultima.vigente_hasta = ahora
+                    ultima.save(
+                        update_fields=["vigente_hasta"]
+                    )
+
+                numero_version = ultima.numero_version + 1
+            else:
+                numero_version = 1
+
+            return ReglaCalculoVersion.objects.create(
+                periodo=periodo_bloqueado,
+                numero_version=numero_version,
+                vigente_desde=ahora,
+                vigente_hasta=None,
+                datos=configuracion,
+                creado_por=(
+                    actor
+                    if getattr(actor, "is_authenticated", False)
+                    else None
+                ),
+            )
+
     @staticmethod
     def actualizar_reglas_periodo(periodo, datos, actor=None):
         """Registra una nueva versión de reglas y recalcula el período abierto."""
