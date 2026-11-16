@@ -1674,28 +1674,41 @@ class CalculoIndicadores:
 
 
 
-
-@staticmethod
 def resumen_delegacion(
     funcionarios,
     periodo,
     fecha=None,
 ):
     """
-    Consolida resultados de la delegación e indicadores de actividad reciente.
+    RF-029 y RF-030.
 
-    RF-029:
-    - Responsables, resultados, avance, meta esperada y semáforo.
-    - Promedio y resultado global.
-
-    RF-030:
-    - Fecha del último ingreso válido.
-    - Días sin ingreso.
-    - Cantidad de registros válidos.
-    - Promedio diario por funcionario.
+    Consolida resultados de funcionarios y actividad reciente:
+    - Último ingreso válido.
+    - Días sin ingreso, incluso si nunca ha registrado.
+    - Cantidad de actividades validadas.
+    - Promedio diario de actividades validadas.
     """
     from django.db.models import Count, Max
     from activities.models import Actividad
+
+    if periodo is None:
+        return {
+            "filas": [],
+            "promedio": Decimal("0.00"),
+            "resultado_global": Decimal("0.00"),
+            "total_ponderado_delegacion": Decimal("0.00"),
+            "meta_esperada": Decimal("0.00"),
+            "semaforo": "",
+            "conteo": {
+                calc.SEMAFORO_VERDE: 0,
+                calc.SEMAFORO_AMBAR: 0,
+                calc.SEMAFORO_ROJO: 0,
+            },
+            "total_funcionarios": 0,
+            "bajo_umbral": [],
+            "total_registros_validos": 0,
+            "dias_periodo_transcurridos": 0,
+        }
 
     filas = [
         CalculoIndicadores.resumen_funcionario(
@@ -1714,7 +1727,6 @@ def resumen_delegacion(
         else (fecha or timezone.localdate())
     )
 
-    # Mantener la fecha dentro del período seleccionado.
     fecha_calculo = max(
         periodo.fecha_inicio,
         min(fecha_calculo, periodo.fecha_termino),
@@ -1732,7 +1744,6 @@ def resumen_delegacion(
         fecha_calculo,
     )
 
-    # Respetar la convención oficial: el día inicial es día cero.
     dias_transcurridos = calc.calcular_dias_transcurridos(
         periodo.fecha_inicio,
         periodo.fecha_termino,
@@ -1768,7 +1779,7 @@ def resumen_delegacion(
             for registro in registros
         }
 
-    # Indicadores de actividad reciente por funcionario.
+    # RF-030: indicadores individuales de actividad reciente.
     for fila in filas:
         funcionario_id = fila["funcionario"].pk
 
@@ -1780,10 +1791,17 @@ def resumen_delegacion(
         cantidad = registro.get("cantidad", 0)
         ultima_fecha = registro.get("ultima_fecha")
 
-        dias_sin_ingreso = (
-            (fecha_calculo - ultima_fecha).days
+        # Si nunca registró, se cuentan los días desde el inicio
+        # del período seleccionado.
+        fecha_referencia = (
+            ultima_fecha
             if ultima_fecha
-            else None
+            else periodo.fecha_inicio
+        )
+
+        dias_sin_ingreso = max(
+            (fecha_calculo - fecha_referencia).days,
+            0,
         )
 
         promedio_diario = (
@@ -1799,6 +1817,7 @@ def resumen_delegacion(
             "dias_sin_ingreso": dias_sin_ingreso,
             "cantidad_registros": cantidad,
             "promedio_diario": promedio_diario,
+            "sin_registros": cantidad == 0,
         })
 
     cantidad_funcionarios = len(filas)
@@ -1872,3 +1891,9 @@ def resumen_delegacion(
         "total_registros_validos": total_registros_validos,
         "dias_periodo_transcurridos": dias_transcurridos,
     }
+
+
+# La función se expone como método estático de CalculoIndicadores.
+CalculoIndicadores.resumen_delegacion = staticmethod(
+    resumen_delegacion
+)
