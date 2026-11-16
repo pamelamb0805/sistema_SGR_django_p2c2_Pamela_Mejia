@@ -405,6 +405,26 @@ class CRUDCargo:
                 ),
             )
 
+
+    @staticmethod
+    def crear_item(item, actor=None):
+        """
+        Crea un ítem medible y registra su primera versión histórica.
+        """
+        with transaction.atomic():
+            item = _guardar(
+                item,
+                actor,
+                "item_medible",
+            )
+
+            CRUDCargo._registrar_version_item(
+                item,
+                actor=actor,
+            )
+
+            return item
+
     @staticmethod
     def modificar_item(item, actor=None):
         with transaction.atomic():
