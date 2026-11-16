@@ -183,7 +183,7 @@ class ComentarioRegistro(models.Model):
 
     object_id = models.PositiveIntegerField(db_index=True)
 
-    content_object = models.GenericForeignKey(
+    content_object = GenericForeignKey(
         "content_type",
         "object_id",
     )
