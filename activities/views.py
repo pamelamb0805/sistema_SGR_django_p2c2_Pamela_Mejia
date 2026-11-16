@@ -36,6 +36,7 @@ from core.pagination import PageSizeMixin
 from django.utils import timezone
 from core.reporting import incorporar_metadatos_informe
 from core.reporting import informe_excel
+from core.decorators import permiso_requerido
 
 TIPOS_MIME = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "pdf": "application/pdf"}
 
@@ -433,21 +434,40 @@ class EvidenciaCreateView(
             args=[self.actividad.pk],
         )
 
+@permiso_requerido("evidencias.ver")
 def evidencia_archivo(request, pk):
-    """Entrega controlada del archivo (nunca por URL pública): solo si el usuario puede ver la actividad."""
-    if not request.user.is_authenticated:
-        return redirect("login")
-    evidencia = get_object_or_404(evidencias_visibles(request.user), pk=pk)
+    """Entrega el archivo solo a usuarios con permiso y ámbito autorizado."""
+
+    evidencia = get_object_or_404(
+        evidencias_visibles(request.user),
+        pk=pk,
+    )
+
     if not evidencia.archivo_vinculo:
         raise Http404
-    respuesta = FileResponse(evidencia.archivo_vinculo.open("rb"),
-                             content_type=TIPOS_MIME.get(evidencia.extension, "application/octet-stream"))
-    modo = "attachment" if request.GET.get("descargar") else "inline"
-    respuesta["Content-Disposition"] = f'{modo}; filename="{evidencia.codigo_evidencia}.{evidencia.extension}"'
+
+    respuesta = FileResponse(
+        evidencia.archivo_vinculo.open("rb"),
+        content_type=TIPOS_MIME.get(
+            evidencia.extension,
+            "application/octet-stream",
+        ),
+    )
+
+    modo = (
+        "attachment"
+        if request.GET.get("descargar")
+        else "inline"
+    )
+
+    respuesta["Content-Disposition"] = (
+        f'{modo}; filename="{evidencia.codigo_evidencia}.'
+        f'{evidencia.extension}"'
+    )
     respuesta["X-Content-Type-Options"] = "nosniff"
     respuesta["Cache-Control"] = "private, no-store"
-    return respuesta
 
+    return respuesta
 
 # ---------------------------------------------------------------------------
 # Validación (verificador)
@@ -627,154 +647,15 @@ class ValidacionCreateView(VerificadorMixin, ModoMixin, GuardarMixin, FormView):
                 "Se solicitó corrección al funcionario.",
         }[decision]
         
-@login_required
+@permiso_requerido("actividades.ver")
 @informe_excel("Informe de actividades")
 def exportar_actividades_excel(request):
-    """Exporta las actividades aplicando los mismos filtros y permisos (RF-032/RF-033)."""
-    from django.utils.dateparse import parse_date
-
-    queryset = actividades_visibles(
-        request.user
-    ).select_related(
-        "funcionario",
-        "funcionario__delegacion",
-        "funcionario__cargo",
-        "item",
-        "catalogo",
-        "periodo",
-    )
-
-    filtros = request.GET
-
-    for campo, filtro in (
-        ("estado", "estado"),
-        ("tipo_registro", "tipo_registro"),
-        ("item", "item_id"),
-        ("periodo", "periodo_id"),
-        ("funcionario", "funcionario_id"),
-        ("delegacion", "funcionario__delegacion_id"),
-        ("cargo", "funcionario__cargo_id"),
-    ):
-        valor = filtros.get(campo, "").strip()
-
-        if not valor:
-            continue
-
-        if campo in {
-            "item",
-            "periodo",
-            "funcionario",
-            "delegacion",
-            "cargo",
-        }:
-            if valor.isdigit():
-                queryset = queryset.filter(**{filtro: valor})
-        else:
-            queryset = queryset.filter(**{filtro: valor})
-
-    area = filtros.get("area", "").strip()
-
-    if area:
-        queryset = queryset.filter(
-            funcionario__delegacion__ambito__icontains=area
-        )
-
-    fecha_desde = parse_date(
-        filtros.get("fecha_desde", "").strip()
-    )
-    fecha_hasta = parse_date(
-        filtros.get("fecha_hasta", "").strip()
-    )
-
-    if fecha_desde:
-        queryset = queryset.filter(fecha__gte=fecha_desde)
-
-    if fecha_hasta:
-        queryset = queryset.filter(fecha__lte=fecha_hasta)
-
-    termino = filtros.get("q", "").strip()
-
-    if termino:
-        queryset = queryset.filter(
-            Q(accion__icontains=termino)
-            | Q(contacto__icontains=termino)
-            | Q(funcionario__nombre__icontains=termino)
-            | Q(
-                funcionario__identificador_institucional__icontains=termino
-            )
-            | Q(item__nombre_item__icontains=termino)
-            | Q(catalogo__nombre__icontains=termino)
-            | Q(catalogo_nombre__icontains=termino)
-        )
-
-    libro = Workbook()
-    hoja = libro.active
-    hoja.title = "Actividades"
-
-    hoja.append([
-        "Código",
-        "Fecha",
-        "Tipo",
-        "Funcionario",
-        "Delegación",
-        "Área / ámbito",
-        "Cargo",
-        "Ítem medible",
-        "Actividad o servicio",
-        "Acción ejecutada",
-        "Contacto",
-        "Estado",
-        "Período",
-    ])
-
-    for actividad in queryset.order_by(
-        "-fecha",
-        "-id_actividad",
-    ):
-        hoja.append([
-            actividad.codigo,
-            actividad.fecha.strftime("%d/%m/%Y"),
-            actividad.tipo_registro,
-            actividad.funcionario.nombre,
-            actividad.funcionario.delegacion.nombre,
-            actividad.funcionario.delegacion.ambito,
-            actividad.funcionario.cargo.nombre_cargo,
-            actividad.item_nombre_historico,
-            (
-                actividad.catalogo_nombre
-                or actividad.catalogo.nombre
-            ),
-            actividad.accion,
-            actividad.contacto,
-            actividad.estado,
-            str(actividad.periodo),
-        ])
-
-    respuesta = HttpResponse(
-        content_type=(
-            "application/vnd.openxmlformats-officedocument."
-            "spreadsheetml.sheet"
-        )
-    )
-
-    respuesta["Content-Disposition"] = (
-        'attachment; filename="actividades_filtradas.xlsx"'
-    )
-    respuesta["Cache-Control"] = "private, no-store"
-
-    libro.save(respuesta)
-
-    return respuesta
 
 
-
-@login_required
+@permiso_requerido("validaciones.ver")
 @informe_excel("Informe de validación de evidencias")
 def exportar_validaciones_excel(request):
     """Exporta las evidencias pendientes dentro del ámbito autorizado."""
-
-    if not tiene_rol(request.user, *ROLES_VALIDACION):
-        return HttpResponse("No autorizado", status=403)
 
     funcionario = get_funcionario(request.user)
 

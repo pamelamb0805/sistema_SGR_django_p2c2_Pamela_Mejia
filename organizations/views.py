@@ -53,6 +53,7 @@ from core.pagination import PageSizeMixin
 from django.utils import timezone
 from core.reporting import incorporar_metadatos_informe
 from core.reporting import informe_excel
+from core.decorators import permiso_requerido
 
 # ---------------------------------------------------------------------------
 # Bloques reutilizables
@@ -1187,12 +1188,9 @@ def _respuesta_excel(
     return respuesta
 
 
-@login_required
+@permiso_requerido("delegaciones.ver")
 @informe_excel("Informe de delegaciones")
 def exportar_delegaciones_excel(request):
-    if not tiene_rol(request.user, *ROLES_SUPERVISION):
-        return HttpResponse("No autorizado", status=403)
-
     queryset = filtrar_por_ambito(
         Delegacion.objects.all(),
         request.user,
@@ -1234,16 +1232,9 @@ def exportar_delegaciones_excel(request):
     )
 
 
-
-@login_required
+@permiso_requerido("roles.ver")
 @informe_excel("Informe de roles")
 def exportar_roles_excel(request):
-    if not (
-        tiene_rol(request.user, *ROLES_SUPERVISION)
-        or tiene_permiso(request.user, "roles.ver")
-    ):
-        return HttpResponse("No autorizado", status=403)
-
     queryset = Rol.objects.all()
 
     q = request.GET.get("q", "").strip()
@@ -1273,34 +1264,17 @@ def exportar_roles_excel(request):
     return _respuesta_excel(
         "roles_filtrados.xlsx",
         "Roles",
-        [
-            "Nombre",
-            "Descripción",
-            "Permisos",
-            "Alcance autorizado",
-        ],
+        ["Nombre", "Descripción", "Permisos", "Alcance autorizado"],
         filas,
     )
 
 
-@login_required
+@permiso_requerido("usuarios.ver")
 @informe_excel("Informe de usuarios")
 def exportar_usuarios_excel(request):
-    if not (
-        tiene_rol(request.user, *ROLES_CONFIGURACION)
-        or tiene_permiso(request.user, "usuarios.ver")
-    ):
-        return HttpResponse(
-            "No autorizado",
-            status=403,
-        )
-
     queryset = (
         Usuario.objects
-        .select_related(
-            "funcionario",
-            "funcionario__delegacion",
-        )
+        .select_related("funcionario", "funcionario__delegacion")
         .prefetch_related(
             "delegaciones_autorizadas",
             "funcionario__funcionario_roles__rol",
@@ -1327,22 +1301,16 @@ def exportar_usuarios_excel(request):
             )
         ).distinct()
 
-    queryset = _filtrar_usuarios_por_estado(
-        queryset,
-        estado,
-    )
+    queryset = _filtrar_usuarios_por_estado(queryset, estado)
 
     filas = []
 
     for usuario in queryset:
         funcionario = usuario.funcionario
-
         delegaciones = []
 
         if funcionario and funcionario.delegacion_id:
-            delegaciones.append(
-                funcionario.delegacion.nombre
-            )
+            delegaciones.append(funcionario.delegacion.nombre)
 
         delegaciones.extend(
             usuario.delegaciones_autorizadas.values_list(
@@ -1352,10 +1320,7 @@ def exportar_usuarios_excel(request):
         )
 
         roles = (
-            funcionario.roles.values_list(
-                "nombre_rol",
-                flat=True,
-            )
+            funcionario.roles.values_list("nombre_rol", flat=True)
             if funcionario
             else []
         )
@@ -1382,18 +1347,11 @@ def exportar_usuarios_excel(request):
         ],
         filas,
     )
-@login_required
+
+
+@permiso_requerido("items.ver")
 @informe_excel("Informe de ítems medibles")
 def exportar_items_excel(request, pk):
-    if not (
-        tiene_rol(request.user, *ROLES_SUPERVISION)
-        or tiene_permiso(request.user, "funcionarios.ver")
-    ):
-        return HttpResponse(
-            "No autorizado",
-            status=403,
-        )
-
     cargo = get_object_or_404(Cargo, pk=pk)
     items = ItemMedible.objects.filter(
         cargo=cargo
@@ -1431,80 +1389,51 @@ def exportar_items_excel(request, pk):
     respuesta["Content-Disposition"] = (
         f'attachment; filename="items_cargo_{cargo.pk}.xlsx"'
     )
+    respuesta["Cache-Control"] = "private, no-store"
     libro.save(respuesta)
     return respuesta
 
 
-@login_required
+@permiso_requerido("funcionarios.ver")
 @informe_excel("Informe de funcionarios")
 def exportar_funcionarios_excel(request):
-    """
-    Exporta funcionarios visibles para el usuario,
-    respetando el ámbito autorizado y los filtros.
-    """
-
-    if not (
-        tiene_rol(request.user, *ROLES_SUPERVISION)
-        or tiene_permiso(request.user, "funcionarios.ver")
-    ):
-        return HttpResponse(
-            "No autorizado",
-            status=403,
-        )
-
     queryset = filtrar_por_ambito(
         Funcionario.objects.select_related(
             "cargo",
             "delegacion",
-        ).prefetch_related(
-            "funcionario_roles__rol",
-        ),
+        ).prefetch_related("funcionario_roles__rol"),
         request.user,
         "delegacion_id",
     )
 
     g = request.GET
-
     q = g.get("q", "").strip()
 
     if q:
         queryset = queryset.filter(
             Q(nombre__icontains=q)
-            | Q(
-                identificador_institucional__icontains=q
-            )
+            | Q(identificador_institucional__icontains=q)
         )
 
     if g.get("delegacion"):
-        queryset = queryset.filter(
-            delegacion_id=g["delegacion"]
-        )
+        queryset = queryset.filter(delegacion_id=g["delegacion"])
 
     if g.get("cargo"):
-        queryset = queryset.filter(
-            cargo_id=g["cargo"]
-        )
+        queryset = queryset.filter(cargo_id=g["cargo"])
 
     if g.get("estado"):
-        queryset = queryset.filter(
-            estado=g["estado"]
-        )
+        queryset = queryset.filter(estado=g["estado"])
 
     libro = Workbook()
     hoja = libro.active
     hoja.title = "Funcionarios"
 
-    hoja.append([
-        "Informe de funcionarios",
-    ])
-
+    hoja.append(["Informe de funcionarios"])
     hoja.append([
         "Generado",
         timezone.localtime().strftime("%d/%m/%Y %H:%M"),
     ])
-
     hoja.append([])
-
     hoja.append([
         "Identificador institucional",
         "Nombre",
@@ -1537,32 +1466,24 @@ def exportar_funcionarios_excel(request):
             "spreadsheetml.sheet"
         )
     )
-
     respuesta["Content-Disposition"] = (
         'attachment; filename="funcionarios_filtrados.xlsx"'
     )
-
     respuesta["Cache-Control"] = "private, no-store"
-
     libro.save(respuesta)
-
     return respuesta
 
-@login_required
+
+@permiso_requerido("cargos.ver")
 @informe_excel("Informe de cargos y funciones")
 def exportar_cargos_excel(request):
     """Exporta cargos y sus funciones (ítems medibles)."""
-
-    if not tiene_rol(request.user, *ROLES_SUPERVISION):
-        return HttpResponse("No autorizado", status=403)
 
     cargos = Cargo.objects.prefetch_related("items")
 
     q = request.GET.get("q", "").strip()
     if q:
-        cargos = cargos.filter(
-            nombre_cargo__icontains=q
-        )
+        cargos = cargos.filter(nombre_cargo__icontains=q)
 
     libro = Workbook()
 
@@ -1595,7 +1516,6 @@ def exportar_cargos_excel(request):
         ])
 
     hoja_items = libro.create_sheet("Funciones")
-
     hoja_items.append([
         "Código",
         "Cargo",
@@ -1605,22 +1525,16 @@ def exportar_cargos_excel(request):
         "Vigencia",
     ])
 
-    items = ItemMedible.objects.filter(
-        cargo__in=cargos
-    ).select_related("cargo").order_by(
-        "cargo__nombre_cargo",
-        "nombre_item",
-    )
-
-    for item in items:
-        hoja_items.append([
-            item.codigo,
-            item.cargo.nombre_cargo,
-            item.nombre_item,
-            item.descripcion,
-            item.tipo,
-            "Vigente" if item.vigencia else "No vigente",
-        ])
+    for cargo in cargos:
+        for item in cargo.items.all().order_by("nombre_item"):
+            hoja_items.append([
+                item.codigo,
+                cargo.nombre_cargo,
+                item.nombre_item,
+                item.descripcion,
+                item.tipo,
+                "Vigente" if item.vigencia else "No vigente",
+            ])
 
     respuesta = HttpResponse(
         content_type=(

@@ -318,13 +318,13 @@ def obtener_notificaciones(request):
         "notificaciones": resultado,
     })
 
-class NotificacionHistorialView(LoginRequiredMixin, ListView):
+class NotificacionHistorialView(RolRequeridoMixin, ListView):
     """
     Historial permanente de notificaciones del usuario autenticado.
-
-    Incluye notificaciones leídas y pendientes.
-    No modifica ni elimina registros.
+    Solo permite consultar las notificaciones propias.
     """
+
+    permisos_permitidos = ("notificaciones.ver",)
 
     model = Notificacion
     template_name = "audit/notificaciones.html"
@@ -357,7 +357,6 @@ class NotificacionHistorialView(LoginRequiredMixin, ListView):
         ).count()
 
         return contexto
-
 
 @login_required
 def comentarios_registro(request, app_label, model_name, pk):
