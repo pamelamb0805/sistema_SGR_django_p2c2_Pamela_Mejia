@@ -556,7 +556,8 @@ class ValidacionCreateView(VerificadorMixin, ModoMixin, GuardarMixin, FormView):
             Validacion.DECISION_CORRECCION:
                 "Se solicitó corrección al funcionario.",
         }[decision]
-
+        
+@login_required
 @informe_excel("Informe de actividades")
 def exportar_actividades_excel(request):
     """Exporta las actividades aplicando los mismos filtros y permisos (RF-032/RF-033)."""

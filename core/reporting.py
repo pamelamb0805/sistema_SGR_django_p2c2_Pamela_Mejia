@@ -1,6 +1,7 @@
 
 from functools import wraps
 from io import BytesIO
+
 from copy import copy
 
 from django.utils import timezone
@@ -35,48 +36,147 @@ ETIQUETAS_FILTROS = {
     "efecto": "Efecto",
     "territorio": "Territorio",
     "alcance": "Alcance autorizado",
+    "pk": "Identificador relacionado",
 }
 
 
-def _obtener_filtros(request):
+def _obtener_filtros(request, kwargs=None, metadato_previo=None):
     """
-    Convierte los parámetros GET en una descripción legible
-    para incorporarla al archivo exportado.
+    Obtiene los filtros utilizados para generar el informe.
+    Incluye parámetros GET y parámetros de URL.
     """
-    if request is None:
-        return "Sin filtros adicionales"
-
     filtros = []
 
-    for clave, valor in request.GET.items():
-        valor = str(valor).strip()
+    if request is not None:
+        for clave, valor in request.GET.items():
+            valor = str(valor).strip()
 
-        if not valor:
-            continue
+            if not valor:
+                continue
 
-        etiqueta = ETIQUETAS_FILTROS.get(
-            clave,
-            clave.replace("_", " ").capitalize(),
+            etiqueta = ETIQUETAS_FILTROS.get(
+                clave,
+                clave.replace("_", " ").capitalize(),
+            )
+
+            filtros.append(f"{etiqueta}: {valor}")
+
+    if kwargs:
+        for clave, valor in kwargs.items():
+            if valor is None:
+                continue
+
+            etiqueta = ETIQUETAS_FILTROS.get(
+                clave,
+                clave.replace("_", " ").capitalize(),
+            )
+
+            filtros.append(f"{etiqueta}: {valor}")
+
+    if metadato_previo:
+        previo = str(metadato_previo).strip()
+
+        if previo and not previo.lower().startswith(
+            "filtros aplicados"
+        ):
+            if previo not in filtros:
+                filtros.append(previo)
+
+    return (
+        "; ".join(filtros)
+        if filtros
+        else "Sin filtros adicionales"
+    )
+
+
+def _contar_celdas_con_datos(hoja, numero_fila):
+    return sum(
+        1
+        for celda in hoja[numero_fila]
+        if celda.value is not None
+        and str(celda.value).strip()
+    )
+
+
+def _buscar_fila_encabezados(hoja):
+    """
+    Detecta la fila que contiene los encabezados de la tabla
+    principal, incluso si el informe ya tenía títulos o resúmenes.
+    """
+    primera_fila = 4
+    ultima_fila = min(hoja.max_row, 30)
+
+    if ultima_fila < primera_fila:
+        return primera_fila
+
+    fila_encabezados = primera_fila
+    mayor_cantidad = 0
+
+    for numero_fila in range(
+        primera_fila,
+        ultima_fila + 1,
+    ):
+        cantidad = _contar_celdas_con_datos(
+            hoja,
+            numero_fila,
         )
 
-        filtros.append(f"{etiqueta}: {valor}")
+        if cantidad > mayor_cantidad:
+            mayor_cantidad = cantidad
+            fila_encabezados = numero_fila
 
-    return "; ".join(filtros) if filtros else "Sin filtros adicionales"
+    return fila_encabezados
 
 
-def incorporar_metadatos_informe(libro, request, titulo):
+def incorporar_metadatos_informe(
+    libro,
+    request,
+    titulo,
+    kwargs=None,
+):
     """
-    Incorpora título, fecha de generación y filtros aplicados
-    en todas las hojas del informe, sin eliminar sus datos.
+    Agrega metadatos a todas las hojas del informe.
+
+    Evita duplicar metadatos existentes y conserva
+    los encabezados y datos originales.
     """
     fecha_generacion = timezone.localtime().strftime(
         "%d/%m/%Y %H:%M:%S"
     )
 
-    filtros_aplicados = _obtener_filtros(request)
-
     for hoja in libro.worksheets:
-        hoja.insert_rows(1, 3)
+        texto_titulo = str(
+            hoja.cell(row=1, column=1).value or ""
+        ).strip()
+
+        texto_fecha = str(
+            hoja.cell(row=2, column=1).value or ""
+        ).strip()
+
+        texto_fila_tres = str(
+            hoja.cell(row=3, column=1).value or ""
+        ).strip()
+
+        # Reconoce los informes que ya tenían título y fecha.
+        tiene_metadatos = (
+            bool(texto_titulo)
+            and "generado" in texto_fecha.lower()
+        )
+
+        if tiene_metadatos:
+            # Conserva información previa, por ejemplo el período.
+            metadato_previo = texto_fila_tres
+
+        else:
+            # Si no tenía metadatos, crea el espacio correspondiente.
+            hoja.insert_rows(1, 3)
+            metadato_previo = None
+
+        filtros_aplicados = _obtener_filtros(
+            request,
+            kwargs=kwargs,
+            metadato_previo=metadato_previo,
+        )
 
         hoja.cell(
             row=1,
@@ -111,25 +211,38 @@ def incorporar_metadatos_informe(libro, request, titulo):
             size=10,
         )
 
-        # La fila 4 contiene los encabezados originales.
-        hoja.freeze_panes = "A5"
+        fila_encabezados = _buscar_fila_encabezados(hoja)
 
-        # Ajusta el filtro automático para que use los encabezados
-        # originales, ahora ubicados en la fila 4.
-        if hoja.max_column >= 1 and hoja.max_row >= 4:
-            ultima_columna = get_column_letter(hoja.max_column)
-            hoja.auto_filter.ref = (
-                f"A4:{ultima_columna}{hoja.max_row}"
+        # Congela las filas anteriores a los datos.
+        hoja.freeze_panes = (
+            f"A{fila_encabezados + 1}"
+        )
+
+        # Aplica filtro automático sobre la tabla principal.
+        if (
+            hoja.max_column >= 1
+            and hoja.max_row > fila_encabezados
+            and _contar_celdas_con_datos(
+                hoja,
+                fila_encabezados,
+            ) > 0
+        ):
+            ultima_columna = get_column_letter(
+                hoja.max_column
             )
 
-        # Evita que el texto de los metadatos quede oculto.
+            hoja.auto_filter.ref = (
+                f"A{fila_encabezados}:"
+                f"{ultima_columna}{hoja.max_row}"
+            )
+
         hoja.column_dimensions["A"].width = max(
             hoja.column_dimensions["A"].width or 0,
             32,
         )
 
-        # Conserva las fuentes existentes de los encabezados.
-        for celda in hoja[4]:
+        # Resalta los encabezados reales, no una fila fija.
+        for celda in hoja[fila_encabezados]:
             fuente = copy(celda.font)
             fuente.bold = True
             celda.font = fuente
@@ -139,19 +252,25 @@ def incorporar_metadatos_informe(libro, request, titulo):
 
 def informe_excel(titulo):
     """
-    Decorador para agregar metadatos a las respuestas Excel
-    de las vistas de exportación, sin cambiar sus consultas,
-    filtros, permisos ni construcción de las hojas.
+    Decorador que agrega metadatos a las respuestas Excel
+    sin modificar las consultas, filtros ni permisos originales.
     """
     def decorador(vista):
         @wraps(vista)
         def vista_con_metadatos(request, *args, **kwargs):
-            respuesta = vista(request, *args, **kwargs)
+            respuesta = vista(
+                request,
+                *args,
+                **kwargs,
+            )
 
             if getattr(respuesta, "status_code", None) != 200:
                 return respuesta
 
-            content_type = respuesta.get("Content-Type", "")
+            content_type = respuesta.get(
+                "Content-Type",
+                "",
+            )
 
             if "spreadsheetml" not in content_type:
                 return respuesta
@@ -168,6 +287,7 @@ def informe_excel(titulo):
                 libro=libro,
                 request=request,
                 titulo=titulo,
+                kwargs=kwargs,
             )
 
             salida = BytesIO()
