@@ -568,31 +568,28 @@ class AmbitoDelegacionMixin:
 
 class ModoMixin:
     """
-    Reutiliza la plantilla de lista, formulario o detalle.
-    También determina si el usuario puede mostrar acciones de edición.
+    Contexto de presentación.
+
+    Los botones se muestran únicamente cuando el usuario posee
+    el permiso de edición configurado. La seguridad real siempre
+    se verifica nuevamente en la vista que recibe la operación.
     """
 
     modo = "lista"
     titulo = ""
-    roles_edicion = ROLES_CONFIGURACION
+    roles_edicion = ()
     permisos_edicion = ()
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
 
-        puede_editar = tiene_rol(
-            self.request.user,
-            *self.roles_edicion,
-        )
-
-        if (
-            not puede_editar
-            and self.permisos_edicion
-        ):
-            puede_editar = tiene_permiso(
+        puede_editar = bool(
+            self.permisos_edicion
+            and tiene_permiso(
                 self.request.user,
                 *self.permisos_edicion,
             )
+        )
 
         contexto.update(
             modo=self.modo,
@@ -601,7 +598,6 @@ class ModoMixin:
         )
 
         return contexto
-
 
 class GuardarMixin:
     """
@@ -765,16 +761,22 @@ class GuardarMixin:
         return redirect(self.get_success_url())
 
 class AccionPostView(RolRequeridoMixin, View):
-    """Acciones que cambian datos (activar, eliminar...): solo POST, con rol exigido."""
+    """
+    Acciones que modifican información.
+
+    Cada subclase debe declarar permisos_permitidos.
+    Las acciones solo aceptan POST.
+    """
+
     http_method_names = ["post"]
-    roles_permitidos = ROLES_CONFIGURACION
+    roles_permitidos = ()
+    permisos_permitidos = ()
     redirect_name = ""
 
     def get_objeto(self, pk):
         raise NotImplementedError
 
     def accion(self, request, objeto):
-        """Ejecuta la acción y devuelve el mensaje de éxito."""
         raise NotImplementedError
 
     def get_redirect(self, objeto):
@@ -782,12 +784,15 @@ class AccionPostView(RolRequeridoMixin, View):
 
     def post(self, request, pk):
         objeto = self.get_objeto(pk)
+
         try:
-            messages.success(request, self.accion(request, objeto))
+            mensaje = self.accion(request, objeto)
+            messages.success(request, mensaje)
+
         except ReglaNegocioError as exc:
             messages.error(request, str(exc))
-        return redirect(self.get_redirect(objeto))
 
+        return redirect(self.get_redirect(objeto))
 
 def errores_form(form):
     """Texto plano con los errores de un formulario (para mensajes SweetAlert)."""

@@ -170,19 +170,82 @@ class ItemMedibleForm(BootstrapFormMixin, forms.ModelForm):
 class RolForm(BootstrapFormMixin, forms.ModelForm):
 
     PERMISOS = [
+        # Administración y seguridad
         ("roles.ver", "Consultar roles"),
-        ("roles.editar", "Administrar roles"),
+        ("roles.editar", "Crear, editar y eliminar roles"),
         ("usuarios.ver", "Consultar usuarios"),
-        ("usuarios.editar", "Administrar usuarios"),
+        ("usuarios.editar", "Crear, editar y administrar accesos de usuarios"),
         ("funcionarios.ver", "Consultar funcionarios"),
-        ("funcionarios.editar", "Administrar funcionarios"),
+        ("funcionarios.editar", "Crear, editar y administrar funcionarios"),
         ("delegaciones.ver", "Consultar delegaciones"),
-        ("delegaciones.editar", "Administrar delegaciones"),
+        ("delegaciones.editar", "Crear, editar y administrar delegaciones"),
+        ("cargos.ver", "Consultar cargos"),
+        ("cargos.editar", "Administrar cargos"),
+        ("items.ver", "Consultar ítems medibles"),
+        ("items.editar", "Administrar ítems medibles"),
+
+        # Catálogos
         ("catalogos.ver", "Consultar catálogos"),
         ("catalogos.editar", "Administrar catálogos"),
-        ("atenciones.ver", "Consultar atenciones"),
-        ("atenciones.registrar", "Registrar atenciones"),
+
+        # Atención social
+        ("atenciones.ver", "Consultar casos de atención social"),
+        ("atenciones.registrar", "Registrar casos de atención social"),
+        ("atenciones.editar", "Editar casos de atención social"),
+        ("atenciones.gestionar", "Registrar gestiones y seguimientos"),
+        ("atenciones.estado", "Cambiar estado de casos"),
+        ("atenciones.exportar", "Exportar información de atención social"),
+
+        # Organizaciones comunitarias
+        ("organizaciones.ver", "Consultar organizaciones comunitarias"),
+        ("organizaciones.editar", "Administrar organizaciones comunitarias"),
+
+        # Actividades y evidencias
+        ("actividades.ver", "Consultar actividades"),
+        ("actividades.registrar", "Registrar actividades"),
+        ("actividades.editar", "Editar actividades"),
+        ("actividades.anular", "Anular actividades"),
+        ("evidencias.registrar", "Adjuntar evidencias"),
+        ("evidencias.ver", "Consultar evidencias"),
+        ("validaciones.ver", "Consultar bandeja de validaciones"),
+        ("validaciones.gestionar", "Aprobar o rechazar evidencias"),
+
+        # Agenda
+        ("agenda.ver", "Consultar agenda y compromisos"),
+        ("agenda.registrar", "Registrar compromisos"),
+        ("agenda.editar", "Editar compromisos"),
+        ("agenda.estado", "Cambiar estado de compromisos"),
+        ("agenda.reasignar", "Reasignar compromisos"),
+        ("agenda.exportar", "Exportar agenda"),
+
+        # Medición y planificación
+        ("periodos.ver", "Consultar períodos de medición"),
+        ("periodos.editar", "Crear y editar períodos"),
+        ("periodos.cerrar", "Cerrar períodos"),
+        ("periodos.reabrir", "Reabrir períodos"),
+        ("metas.ver", "Consultar metas"),
+        ("metas.editar", "Crear y editar metas"),
+        ("metas.eliminar", "Eliminar metas"),
+        ("ajustes.ver", "Consultar ajustes"),
+        ("ajustes.editar", "Crear y editar ajustes"),
+        ("indicadores.ver", "Consultar indicadores y desempeño"),
         ("reportes.ver", "Consultar reportes"),
+        ("reportes.exportar", "Exportar reportes"),
+
+        # Auditoría
+        ("auditoria.ver", "Consultar auditoría"),
+        ("auditoria.exportar", "Exportar auditoría"),
+        ("notificaciones.ver", "Consultar notificaciones"),
+        ("comentarios.ver", "Consultar comentarios de registros"),
+        ("comentarios.registrar", "Registrar comentarios"),
+
+        # Servicios comunitarios y gestión territorial
+        ("servicios.ver", "Consultar servicios comunitarios"),
+        ("servicios.gestionar", "Gestionar servicios comunitarios"),
+        ("proyectos.ver", "Consultar proyectos y compras"),
+        ("proyectos.gestionar", "Gestionar proyectos y compras"),
+        ("planificacion.ver", "Consultar información de planificación"),
+        ("planificacion.gestionar", "Gestionar planificación"),
     ]
 
     permisos = forms.MultipleChoiceField(
@@ -205,9 +268,7 @@ class RolForm(BootstrapFormMixin, forms.ModelForm):
         super().__init__(*args, **kwargs)
 
         if self.instance and self.instance.pk:
-            self.initial["permisos"] = (
-                self.instance.permisos or []
-            )
+            self.initial["permisos"] = self.instance.permisos or []
 
     def clean_nombre_rol(self):
         nombre = self.cleaned_data["nombre_rol"].strip()
@@ -217,9 +278,7 @@ class RolForm(BootstrapFormMixin, forms.ModelForm):
         )
 
         if self.instance and self.instance.pk:
-            duplicados = duplicados.exclude(
-                pk=self.instance.pk
-            )
+            duplicados = duplicados.exclude(pk=self.instance.pk)
 
         if duplicados.exists():
             raise ValidationError(
@@ -229,25 +288,27 @@ class RolForm(BootstrapFormMixin, forms.ModelForm):
         return nombre
 
     def clean_permisos(self):
-        return list(
-            dict.fromkeys(
-                self.cleaned_data.get("permisos", [])
+        permisos_seleccionados = self.cleaned_data.get("permisos", [])
+        permisos_validos = {codigo for codigo, _ in self.PERMISOS}
+
+        invalidos = set(permisos_seleccionados) - permisos_validos
+
+        if invalidos:
+            raise ValidationError(
+                "Se enviaron permisos que no están disponibles."
             )
-        )
+
+        return list(dict.fromkeys(permisos_seleccionados))
 
     def save(self, commit=True):
         rol = super().save(commit=False)
-        rol.permisos = self.cleaned_data.get(
-            "permisos",
-            [],
-        )
+        rol.permisos = self.cleaned_data.get("permisos", [])
 
         if commit:
             rol.save()
             self.save_m2m()
 
         return rol
-
 
 class FuncionarioForm(BootstrapFormMixin, forms.ModelForm):
 
