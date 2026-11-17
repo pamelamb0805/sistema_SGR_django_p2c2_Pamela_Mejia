@@ -16,7 +16,8 @@ from django.views.generic import CreateView, DetailView, FormView, ListView, Upd
 from core.exceptions import ReglaNegocioError
 from core.mixins import (
     ROLES_OPERATIVOS, AccionPostView, GuardarMixin, ModoMixin, RolRequeridoMixin, denegar_acceso,
-    es_transversal, registrar_auditoria, tiene_rol,tiene_permiso
+    es_transversal, registrar_auditoria, tiene_rol,tiene_permiso,
+    get_delegacion_activa,
 )
 from organizations.models import Delegacion
 
@@ -354,7 +355,9 @@ class CasoCreateView(
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
-        kwargs["area"] = self.request.GET.get("area") or None
+        delegacion_id = get_delegacion_activa(self.request.user)
+        delegacion = Delegacion.objects.filter(pk=delegacion_id).first() if delegacion_id else None
+        kwargs["area"] = delegacion.ambito if delegacion else None
         return kwargs
 
     def guardar(self, form):
@@ -501,7 +504,7 @@ class GestionCreateView(
         kwargs = super().get_form_kwargs()
         kwargs.update(
             caso=self.caso,
-            area=self.request.GET.get("area") or None,
+            area=self.caso.delegacion.ambito,
             instance=AtencionSocial(usuario=self.caso),
         )
         return kwargs

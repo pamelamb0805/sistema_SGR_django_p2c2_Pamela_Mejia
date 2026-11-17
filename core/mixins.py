@@ -204,9 +204,25 @@ def tiene_permiso(user, *permisos):
 
 
 def get_delegaciones_autorizadas_ids(user):
-    """Devuelve la delegación principal y las delegaciones adicionales."""
-    funcionario = get_funcionario(user)
+    """IDs activos a los que el usuario puede acceder según el alcance de sus roles."""
+    if not getattr(user, "is_authenticated", False):
+        return []
 
+    from organizations.models import Delegacion
+
+    if getattr(user, "is_superuser", False):
+        return list(
+            Delegacion.objects.filter(estado=Delegacion.ESTADO_ACTIVA)
+            .values_list("pk", flat=True)
+        )
+
+    if "global" in get_alcances(user):
+        return list(
+            Delegacion.objects.filter(estado=Delegacion.ESTADO_ACTIVA)
+            .values_list("pk", flat=True)
+        )
+
+    funcionario = get_funcionario(user)
     if funcionario is None or not funcionario.activo:
         return []
 
@@ -216,52 +232,52 @@ def get_delegaciones_autorizadas_ids(user):
 
     alcances = get_alcances(user)
     if "multiples" in alcances and hasattr(user, "delegaciones_autorizadas"):
-        ids.update(
-            user.delegaciones_autorizadas.values_list("pk", flat=True)
-        )
+        ids.update(user.delegaciones_autorizadas.values_list("pk", flat=True))
 
-    return sorted(ids)
-
-
-def es_transversal(user):
-    """
-    Determina si el usuario puede consultar todas las delegaciones.
-    """
-    if getattr(user, "is_superuser", False):
-        return True
-
-    return "global" in get_alcances(user)
+    return list(
+        Delegacion.objects.filter(
+            pk__in=ids,
+            estado=Delegacion.ESTADO_ACTIVA,
+        ).values_list("pk", flat=True)
+    )
 
 
 def get_delegacion_id(user):
     """
     Obtiene la delegación principal del funcionario.
-    """
-    funcionario = get_funcionario(user)
-    return funcionario.delegacion_id if funcionario else None
-
-
-def get_delegaciones_autorizadas_ids(user):
-    """
-    Obtiene la delegación principal y las delegaciones adicionales.
+    No concede permisos adicionales ni modifica el ámbito autorizado.
     """
     funcionario = get_funcionario(user)
 
     if funcionario is None:
-        return []
+        return None
 
-    ids = {funcionario.delegacion_id}
+    if not getattr(funcionario, "activo", False):
+        return None
 
-    if hasattr(user, "delegaciones_autorizadas"):
-        ids.update(
-            user.delegaciones_autorizadas.values_list(
-                "pk",
-                flat=True,
-            )
+    return funcionario.delegacion_id
+
+def es_transversal(user):
+    """Determina si el usuario puede consultar todas las delegaciones."""
+    return bool(
+        getattr(user, "is_authenticated", False)
+        and (
+            getattr(user, "is_superuser", False)
+            or "global" in get_alcances(user)
         )
+    )
 
-    return list(ids)
 
+def get_delegacion_activa(user):
+    """Resuelve el contexto activo de la petición sin ampliar permisos."""
+    ids = set(get_delegaciones_autorizadas_ids(user))
+    seleccion = getattr(user, "_sgr_delegacion_activa_id", None)
+    if seleccion in ids:
+        return seleccion
+    principal = get_delegacion_id(user)
+    if principal in ids:
+        return principal
+    return next(iter(sorted(ids)), None)
 
 
 def filtrar_por_ambito(queryset, user, campo="delegacion_id"):
@@ -275,7 +291,10 @@ def filtrar_por_ambito(queryset, user, campo="delegacion_id"):
     if not getattr(user, "is_authenticated", False):
         return queryset.none()
 
-    if getattr(user, "is_superuser", False):
+    if getattr(user, "is_superuser", False) or "global" in get_alcances(user):
+        seleccion = getattr(user, "_sgr_delegacion_activa_id", None)
+        if seleccion:
+            return queryset.filter(**{campo: seleccion})
         return queryset
 
     funcionario = get_funcionario(user)
@@ -283,12 +302,11 @@ def filtrar_por_ambito(queryset, user, campo="delegacion_id"):
         return queryset.none()
 
     alcances = get_alcances(user)
-
-    if "global" in alcances:
-        return queryset
-
     if "multiples" in alcances:
         ids = get_delegaciones_autorizadas_ids(user)
+        seleccion = getattr(user, "_sgr_delegacion_activa_id", None)
+        if seleccion in ids:
+            ids = [seleccion]
         return queryset.filter(**{f"{campo}__in": ids}) if ids else queryset.none()
 
     if "propia" in alcances and funcionario.delegacion_id:

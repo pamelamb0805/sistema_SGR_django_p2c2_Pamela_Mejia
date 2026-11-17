@@ -23,8 +23,15 @@ def env_bool(name, default=False):
 # ---------------------------------------------------------------------------
 # Seguridad
 # ---------------------------------------------------------------------------
-SECRET_KEY = os.getenv("SECRET_KEY", "cambia-esta-clave-solo-para-desarrollo")
-DEBUG = env_bool("DEBUG", True)
+DEBUG = env_bool("DEBUG", False)
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = "clave-insegura-solo-desarrollo-local"
+    else:
+        raise ImproperlyConfigured(
+            "Define SECRET_KEY en el entorno antes de iniciar el sistema."
+        )
 ALLOWED_HOSTS = [h.strip() for h in os.getenv("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",") if h.strip()]
 
 # ---------------------------------------------------------------------------
@@ -58,6 +65,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "core.middleware.DelegacionActivaMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -139,6 +147,11 @@ if not DEBUG:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", True)
+    SECURE_HSTS_SECONDS = int(os.getenv("SECURE_HSTS_SECONDS", "31536000"))
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool("SECURE_HSTS_INCLUDE_SUBDOMAINS", True)
+    SECURE_HSTS_PRELOAD = env_bool("SECURE_HSTS_PRELOAD", False)
+    SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 # ---------------------------------------------------------------------------
 # Internacionalización
@@ -184,6 +197,10 @@ SGR_UMBRAL_COLECTIVO = float(os.getenv("SGR_UMBRAL_COLECTIVO", 80))      # % umb
 SGR_SEMAFORO_AMBAR = float(os.getenv("SGR_SEMAFORO_AMBAR", 60))          # % del esperado para ámbar
 SGR_SUMA_PONDERADORES = float(os.getenv("SGR_SUMA_PONDERADORES", 100))   # RN-001
 SGR_MAX_GESTIONES_SOCIAL = int(os.getenv("SGR_MAX_GESTIONES_SOCIAL", 3)) # RN-012
+SGR_RESET_CODE_LIFETIME_SECONDS = int(os.getenv("SGR_RESET_CODE_LIFETIME_SECONDS", 600))
+SGR_RESET_CODE_RESEND_SECONDS = int(os.getenv("SGR_RESET_CODE_RESEND_SECONDS", 45))
+SGR_RESET_CODE_MAX_ATTEMPTS = int(os.getenv("SGR_RESET_CODE_MAX_ATTEMPTS", 5))
+SGR_RESET_CODE_MAX_RESENDS = int(os.getenv("SGR_RESET_CODE_MAX_RESENDS", 3))
 SGR_DIAS_ALERTA_VENCIMIENTO = int(os.getenv("SGR_DIAS_ALERTA_VENCIMIENTO", 3))
 SGR_DIAS_SIN_REGISTRO_ALERTA = int(
     os.getenv("SGR_DIAS_SIN_REGISTRO_ALERTA", 7)

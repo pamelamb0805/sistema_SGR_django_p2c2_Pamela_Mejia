@@ -30,6 +30,7 @@ from core.mixins import (
     es_transversal,
     get_funcionario,
     get_delegaciones_autorizadas_ids,
+    get_delegacion_activa,
     tiene_rol,
     tiene_permiso,
 )
@@ -61,6 +62,10 @@ def casos_visibles(user):
     if not tiene_permiso(user, "atenciones.ver"):
         return qs.none()
 
+    contexto_activo = getattr(user, "_sgr_delegacion_activa_id", None)
+    if contexto_activo:
+        return qs.filter(delegacion_id=contexto_activo)
+
     if es_transversal(user):
         return qs
 
@@ -87,6 +92,9 @@ def gestiones_visibles(user):
 
 def puede_escribir(user, caso_delegacion_id):
     """Comprueba el ámbito territorial; el permiso se valida por operación."""
+    contexto_activo = getattr(user, "_sgr_delegacion_activa_id", None)
+    if contexto_activo:
+        return caso_delegacion_id == contexto_activo
     delegaciones_ids = get_delegaciones_autorizadas_ids(user)
     return caso_delegacion_id in delegaciones_ids
 
@@ -96,7 +104,7 @@ def puede_reabrir(user, caso_delegacion_id):
     if not tiene_permiso(user, "atenciones.estado"):
         return False
 
-    if es_transversal(user):
+    if es_transversal(user) and not getattr(user, "_sgr_delegacion_activa_id", None):
         return True
 
     return puede_escribir(user, caso_delegacion_id)
@@ -108,7 +116,7 @@ def _exigir_escritura(user, caso, permiso="atenciones.gestionar"):
         "No tiene permiso para modificar este caso o sus gestiones.",
     )
 
-    if not puede_escribir(user, caso.delegacion_id) and not es_transversal(user):
+    if not puede_escribir(user, caso.delegacion_id):
         raise ReglaNegocioError(
             "No tiene autorización sobre la delegación de este caso."
         )
@@ -438,7 +446,12 @@ class CRUDUsuarioSocial:
             )
 
         with transaction.atomic():
-            caso.delegacion_id = autor.delegacion_id
+            delegacion_activa_id = get_delegacion_activa(actor)
+            if not delegacion_activa_id or not puede_escribir(actor, delegacion_activa_id):
+                raise ReglaNegocioError(
+                    "No tiene una delegación activa autorizada para registrar la atención."
+                )
+            caso.delegacion_id = delegacion_activa_id
             caso.estado_caso = UsuarioSocial.ESTADO_ABIERTO
             guardar(caso, actor, "usuario_social")
 
@@ -493,10 +506,7 @@ class CRUDUsuarioSocial:
                 "No se puede cambiar la delegación del caso."
             )
 
-        if (
-            not puede_escribir(actor, original.delegacion_id)
-            and not es_transversal(actor)
-        ):
+        if not puede_escribir(actor, original.delegacion_id):
             raise ReglaNegocioError(
                 "No tiene autorización sobre la delegación de este caso."
             )
@@ -517,10 +527,7 @@ class CRUDUsuarioSocial:
                 pk=caso.pk
             )
 
-            if (
-                not puede_escribir(actor, caso.delegacion_id)
-                and not es_transversal(actor)
-            ):
+            if not puede_escribir(actor, caso.delegacion_id):
                 raise ReglaNegocioError(
                     "No tiene autorización sobre la delegación de este caso."
                 )

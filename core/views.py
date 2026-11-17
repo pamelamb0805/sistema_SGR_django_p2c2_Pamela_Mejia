@@ -21,6 +21,7 @@ from core.mixins import (
     es_transversal,
     filtrar_por_ambito,
     get_funcionario,
+    get_delegaciones_autorizadas_ids,
     tiene_rol,
 )
 from organizations.forms import PerfilUsuarioForm
@@ -63,6 +64,41 @@ class SGRLoginView(LoginView):
         messages.error(self.request, "Usuario o contraseña incorrectos, o usuario inactivo.")
         return super().form_invalid(form)
 
+
+
+@login_required
+@require_POST
+def cambiar_delegacion_activa(request):
+    """Cambia el contexto de trabajo solo a una delegación previamente autorizada."""
+    from organizations.models import Delegacion
+
+    valor = (request.POST.get("delegacion_id") or "").strip()
+    try:
+        delegacion_id = int(valor)
+    except (TypeError, ValueError):
+        messages.error(request, "Seleccione una delegación válida.")
+        return redirect("dashboard")
+
+    autorizadas = get_delegaciones_autorizadas_ids(request.user)
+    delegacion = Delegacion.objects.filter(
+        pk=delegacion_id,
+        pk__in=autorizadas,
+        estado=Delegacion.ESTADO_ACTIVA,
+    ).first()
+    if delegacion is None:
+        registrar_auditoria(
+            request,
+            evento="ACCESO_DENEGADO",
+            entidad="delegacion_contexto",
+            id_entidad=delegacion_id,
+            valor_nuevo="Intento de seleccionar delegación no autorizada",
+        )
+        messages.error(request, "No tiene autorización para esa delegación.")
+        return redirect("dashboard")
+
+    request.session["sgr_delegacion_activa"] = delegacion.pk
+    messages.success(request, f"Contexto cambiado a {delegacion.codigo} · {delegacion.nombre}.")
+    return redirect("dashboard")
 
 
 
@@ -978,10 +1014,10 @@ def dashboard(request):
 # Código de un solo uso, almacenado mediante hash en MySQL.
 # ============================================================
 
-CODIGO_VIGENCIA_SEGUNDOS = 120
-CODIGO_REENVIO_SEGUNDOS = 45
-CODIGO_MAX_INTENTOS = 5
-CODIGO_MAX_REENVIOS = 3
+CODIGO_VIGENCIA_SEGUNDOS = settings.SGR_RESET_CODE_LIFETIME_SECONDS
+CODIGO_REENVIO_SEGUNDOS = settings.SGR_RESET_CODE_RESEND_SECONDS
+CODIGO_MAX_INTENTOS = settings.SGR_RESET_CODE_MAX_ATTEMPTS
+CODIGO_MAX_REENVIOS = settings.SGR_RESET_CODE_MAX_RESENDS
 
 RESET_SESSION_KEY = "recuperacion_sgr"
 
@@ -1167,7 +1203,7 @@ def recuperar_clave(request):
                 message=(
                     f"Hola {usuario.get_username()},\n\n"
                     f"Tu código de recuperación es: {codigo}\n\n"
-                    "Este código vence en 2 minutos.\n\n"
+                    f"Este código vence en {max(1, CODIGO_VIGENCIA_SEGUNDOS // 60)} minutos.\n\n"
                     "Si no solicitaste este cambio, "
                     "puedes ignorar este correo.\n\n"
                     "Sistema de Gestión de Resultados."

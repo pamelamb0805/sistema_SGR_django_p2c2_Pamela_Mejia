@@ -7,6 +7,7 @@ from .dashboard_details import dashboard_detalle
 
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
+    path("contexto/delegacion/", views.cambiar_delegacion_activa, name="cambiar_delegacion_activa"),
 
     path(
         "alertas/<int:pk>/atendida/",
