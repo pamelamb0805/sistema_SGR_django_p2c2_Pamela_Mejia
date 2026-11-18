@@ -49,7 +49,7 @@ def registrar_evento(usuario=None, evento="", entidad="", id_entidad=0, valor_an
         funcionario=funcionario)
 
 
-def crear_notificaciones(auditoria, delegacion_id=None):
+def crear_notificaciones(auditoria, delegacion_id=None, usuario_actor=None):
     """
     Crea notificaciones persistentes según el rol responsable
     y el tipo de evento. Respeta el ámbito territorial.
@@ -87,6 +87,7 @@ def crear_notificaciones(auditoria, delegacion_id=None):
             "caso": {"Funcionario", "Delegado"},
             "atencion_social": {"Funcionario", "Delegado"},
             "gestion": {"Funcionario", "Delegado"},
+            "alerta_operativa": {"Funcionario", "Delegado", "Verificador", "Administrador", "Coordinador"},
         }
 
         roles_permitidos = destinatarios.get(entidad, set())
@@ -108,7 +109,11 @@ def crear_notificaciones(auditoria, delegacion_id=None):
         "delegaciones_autorizadas",
     )
 
-    notificaciones = []
+    # El actor también recibe una copia: permite que el usuario vea la
+    # confirmación de sus propias altas, cambios, bajas y acciones del dashboard.
+    destinatarios_ids = set()
+    if usuario_actor is not None and getattr(usuario_actor, "is_authenticated", False):
+        destinatarios_ids.add(usuario_actor.pk)
 
     for usuario in usuarios:
         if not usuario.is_active:
@@ -127,13 +132,12 @@ def crear_notificaciones(auditoria, delegacion_id=None):
             if delegacion_id not in autorizadas:
                 continue
 
-        notificaciones.append(
-            Notificacion(
-                usuario=usuario,
-                auditoria=auditoria,
-                delegacion_id=delegacion_id,
-            )
-        )
+        destinatarios_ids.add(usuario.pk)
+
+    notificaciones = [
+        Notificacion(usuario_id=usuario_id, auditoria=auditoria, delegacion_id=delegacion_id)
+        for usuario_id in destinatarios_ids
+    ]
 
     if notificaciones:
         Notificacion.objects.bulk_create(

@@ -10,6 +10,61 @@ from .models import Cargo, Delegacion, Funcionario, ItemMedible, Rol, Usuario
 from django.core.exceptions import ValidationError
 from django.core.exceptions import ValidationError
 
+def _roles_disponibles_para_actor(actor, roles_actuales_ids=None):
+    """
+    Devuelve únicamente los roles que el actor puede delegar.
+
+    Conserva los roles que ya tenía el funcionario editado,
+    pero no permite conceder nuevos privilegios superiores.
+    """
+    roles_actuales_ids = set(roles_actuales_ids or [])
+
+    if actor is None:
+        return Rol.objects.all()
+
+    if not getattr(actor, "is_authenticated", False):
+        return Rol.objects.none()
+
+    if getattr(actor, "is_superuser", False):
+        return Rol.objects.all()
+
+    from core.mixins import get_permisos, get_alcances
+
+    permisos_actor = get_permisos(actor)
+    alcances_actor = get_alcances(actor)
+
+    roles_permitidos = []
+
+    for rol in Rol.objects.all():
+
+        # Permite conservar roles que ya estaban asignados.
+        if rol.pk in roles_actuales_ids:
+            roles_permitidos.append(rol.pk)
+            continue
+
+        # Nadie puede delegar el rol Administrador.
+        if rol.nombre_rol.strip().casefold() == "administrador":
+            continue
+
+        # El alcance global está reservado al superusuario.
+        if rol.alcance_autorizado == "global":
+            continue
+
+        permisos_rol = set(rol.permisos or [])
+
+        if not permisos_rol.issubset(permisos_actor):
+            continue
+
+        if (
+            rol.alcance_autorizado == "multiples"
+            and "multiples" not in alcances_actor
+        ):
+            continue
+
+        roles_permitidos.append(rol.pk)
+
+    return Rol.objects.filter(pk__in=roles_permitidos)
+
 class DelegacionForm(BootstrapFormMixin, forms.ModelForm):
 
     class Meta:
@@ -115,19 +170,82 @@ class ItemMedibleForm(BootstrapFormMixin, forms.ModelForm):
 class RolForm(BootstrapFormMixin, forms.ModelForm):
 
     PERMISOS = [
+        # Administración y seguridad
         ("roles.ver", "Consultar roles"),
-        ("roles.editar", "Administrar roles"),
+        ("roles.editar", "Crear, editar y eliminar roles"),
         ("usuarios.ver", "Consultar usuarios"),
-        ("usuarios.editar", "Administrar usuarios"),
+        ("usuarios.editar", "Crear, editar y administrar accesos de usuarios"),
         ("funcionarios.ver", "Consultar funcionarios"),
-        ("funcionarios.editar", "Administrar funcionarios"),
+        ("funcionarios.editar", "Crear, editar y administrar funcionarios"),
         ("delegaciones.ver", "Consultar delegaciones"),
-        ("delegaciones.editar", "Administrar delegaciones"),
+        ("delegaciones.editar", "Crear, editar y administrar delegaciones"),
+        ("cargos.ver", "Consultar cargos"),
+        ("cargos.editar", "Administrar cargos"),
+        ("items.ver", "Consultar ítems medibles"),
+        ("items.editar", "Administrar ítems medibles"),
+
+        # Catálogos
         ("catalogos.ver", "Consultar catálogos"),
         ("catalogos.editar", "Administrar catálogos"),
-        ("atenciones.ver", "Consultar atenciones"),
-        ("atenciones.registrar", "Registrar atenciones"),
+
+        # Atención social
+        ("atenciones.ver", "Consultar casos de atención social"),
+        ("atenciones.registrar", "Registrar casos de atención social"),
+        ("atenciones.editar", "Editar casos de atención social"),
+        ("atenciones.gestionar", "Registrar gestiones y seguimientos"),
+        ("atenciones.estado", "Cambiar estado de casos"),
+        ("atenciones.exportar", "Exportar información de atención social"),
+
+        # Organizaciones comunitarias
+        ("organizaciones.ver", "Consultar organizaciones comunitarias"),
+        ("organizaciones.editar", "Administrar organizaciones comunitarias"),
+
+        # Actividades y evidencias
+        ("actividades.ver", "Consultar actividades"),
+        ("actividades.registrar", "Registrar actividades"),
+        ("actividades.editar", "Editar actividades"),
+        ("actividades.anular", "Anular actividades"),
+        ("evidencias.registrar", "Adjuntar evidencias"),
+        ("evidencias.ver", "Consultar evidencias"),
+        ("validaciones.ver", "Consultar bandeja de validaciones"),
+        ("validaciones.gestionar", "Aprobar o rechazar evidencias"),
+
+        # Agenda
+        ("agenda.ver", "Consultar agenda y compromisos"),
+        ("agenda.registrar", "Registrar compromisos"),
+        ("agenda.editar", "Editar compromisos"),
+        ("agenda.estado", "Cambiar estado de compromisos"),
+        ("agenda.reasignar", "Reasignar compromisos"),
+        ("agenda.exportar", "Exportar agenda"),
+
+        # Medición y planificación
+        ("periodos.ver", "Consultar períodos de medición"),
+        ("periodos.editar", "Crear y editar períodos"),
+        ("periodos.cerrar", "Cerrar períodos"),
+        ("periodos.reabrir", "Reabrir períodos"),
+        ("metas.ver", "Consultar metas"),
+        ("metas.editar", "Crear y editar metas"),
+        ("metas.eliminar", "Eliminar metas"),
+        ("ajustes.ver", "Consultar ajustes"),
+        ("ajustes.editar", "Crear y editar ajustes"),
+        ("indicadores.ver", "Consultar indicadores y desempeño"),
         ("reportes.ver", "Consultar reportes"),
+        ("reportes.exportar", "Exportar reportes"),
+
+        # Auditoría
+        ("auditoria.ver", "Consultar auditoría"),
+        ("auditoria.exportar", "Exportar auditoría"),
+        ("notificaciones.ver", "Consultar notificaciones"),
+        ("comentarios.ver", "Consultar comentarios de registros"),
+        ("comentarios.registrar", "Registrar comentarios"),
+
+        # Servicios comunitarios y gestión territorial
+        ("servicios.ver", "Consultar servicios comunitarios"),
+        ("servicios.gestionar", "Gestionar servicios comunitarios"),
+        ("proyectos.ver", "Consultar proyectos y compras"),
+        ("proyectos.gestionar", "Gestionar proyectos y compras"),
+        ("planificacion.ver", "Consultar información de planificación"),
+        ("planificacion.gestionar", "Gestionar planificación"),
     ]
 
     permisos = forms.MultipleChoiceField(
@@ -150,9 +268,7 @@ class RolForm(BootstrapFormMixin, forms.ModelForm):
         super().__init__(*args, **kwargs)
 
         if self.instance and self.instance.pk:
-            self.initial["permisos"] = (
-                self.instance.permisos or []
-            )
+            self.initial["permisos"] = self.instance.permisos or []
 
     def clean_nombre_rol(self):
         nombre = self.cleaned_data["nombre_rol"].strip()
@@ -162,9 +278,7 @@ class RolForm(BootstrapFormMixin, forms.ModelForm):
         )
 
         if self.instance and self.instance.pk:
-            duplicados = duplicados.exclude(
-                pk=self.instance.pk
-            )
+            duplicados = duplicados.exclude(pk=self.instance.pk)
 
         if duplicados.exists():
             raise ValidationError(
@@ -174,18 +288,21 @@ class RolForm(BootstrapFormMixin, forms.ModelForm):
         return nombre
 
     def clean_permisos(self):
-        return list(
-            dict.fromkeys(
-                self.cleaned_data.get("permisos", [])
+        permisos_seleccionados = self.cleaned_data.get("permisos", [])
+        permisos_validos = {codigo for codigo, _ in self.PERMISOS}
+
+        invalidos = set(permisos_seleccionados) - permisos_validos
+
+        if invalidos:
+            raise ValidationError(
+                "Se enviaron permisos que no están disponibles."
             )
-        )
+
+        return list(dict.fromkeys(permisos_seleccionados))
 
     def save(self, commit=True):
         rol = super().save(commit=False)
-        rol.permisos = self.cleaned_data.get(
-            "permisos",
-            [],
-        )
+        rol.permisos = self.cleaned_data.get("permisos", [])
 
         if commit:
             rol.save()
@@ -193,13 +310,12 @@ class RolForm(BootstrapFormMixin, forms.ModelForm):
 
         return rol
 
-
 class FuncionarioForm(BootstrapFormMixin, forms.ModelForm):
 
     roles = forms.ModelMultipleChoiceField(
-        queryset=Rol.objects.all(),
+        queryset=Rol.objects.none(),
         label="Roles",
-        help_text="Seleccione uno o más roles (Ctrl + clic para varios).",
+        help_text="Seleccione uno o más roles autorizados.",
         error_messages={
             "required": "Debe asignar al menos un rol."
         },
@@ -224,7 +340,10 @@ class FuncionarioForm(BootstrapFormMixin, forms.ModelForm):
             estado=Delegacion.ESTADO_ACTIVA
         )
 
+        roles_actuales_ids = set()
+
         if self.instance and self.instance.pk:
+
             cargos = Cargo.objects.filter(
                 Q(pk=self.instance.cargo_id)
                 | Q(pk__in=cargos.values("pk"))
@@ -235,12 +354,14 @@ class FuncionarioForm(BootstrapFormMixin, forms.ModelForm):
                 | Q(pk=self.instance.delegacion_id)
             )
 
-            self.fields["roles"].initial = list(
+            roles_actuales_ids = set(
                 self.instance.roles.values_list(
                     "pk",
                     flat=True,
                 )
             )
+
+            self.fields["roles"].initial = roles_actuales_ids
 
         if actor is not None:
             from core.mixins import filtrar_por_ambito
@@ -252,7 +373,16 @@ class FuncionarioForm(BootstrapFormMixin, forms.ModelForm):
             )
 
         self.fields["cargo"].queryset = cargos
+
         self.fields["delegacion"].queryset = delegaciones
+
+        self.fields["roles"].queryset = (
+            _roles_disponibles_para_actor(
+                actor,
+                roles_actuales_ids=roles_actuales_ids,
+            )
+        )
+
     def clean_identificador_institucional(self):
         return self.cleaned_data[
             "identificador_institucional"
@@ -262,6 +392,7 @@ class FuncionarioForm(BootstrapFormMixin, forms.ModelForm):
         delegacion = self.cleaned_data["delegacion"]
 
         if not delegacion.activa:
+
             es_delegacion_actual = (
                 self.instance
                 and self.instance.pk
@@ -270,12 +401,11 @@ class FuncionarioForm(BootstrapFormMixin, forms.ModelForm):
 
             if not es_delegacion_actual:
                 raise ValidationError(
-                    "No se puede asignar un funcionario a una "
-                    "delegación inactiva."
+                    "No se puede asignar un funcionario "
+                    "a una delegación inactiva."
                 )
 
         return delegacion
-
 
 
 class AccesoForm(BootstrapFormMixin, forms.Form):
@@ -555,7 +685,62 @@ class UsuarioAdminForm(BootstrapFormMixin, forms.ModelForm):
             )
 
         self.fields["funcionario"].queryset = funcionarios
-        self.fields["roles"].queryset = Rol.objects.all()
+        roles_queryset = Rol.objects.all()
+
+        if (
+            actor is not None
+            and getattr(actor, "is_authenticated", False)
+            and not getattr(actor, "is_superuser", False)
+        ):
+            from core.mixins import get_permisos, get_alcances
+
+            permisos_actor = get_permisos(actor)
+            alcances_actor = get_alcances(actor)
+
+            roles_permitidos = []
+
+            for rol in roles_queryset:
+                if (
+                    rol.nombre_rol.strip().casefold()
+                    == "administrador"
+                ):
+                    continue
+
+                if rol.alcance_autorizado == "global":
+                    continue
+
+                if not set(
+                    rol.permisos or []
+                ).issubset(permisos_actor):
+                    continue
+
+                if (
+                    rol.alcance_autorizado == "multiples"
+                    and "multiples" not in alcances_actor
+                ):
+                    continue
+
+                roles_permitidos.append(rol.pk)
+
+            roles_actuales_ids = set()
+
+            if self.instance and self.instance.pk:
+                if self.instance.funcionario_id:
+                    roles_actuales_ids = set(
+                        self.instance.funcionario.roles.values_list(
+                            "pk",
+                            flat=True,
+                        )
+                    )
+
+            roles_queryset = Rol.objects.filter(
+                pk__in=(
+                    set(roles_permitidos)
+                    | roles_actuales_ids
+                )
+            )
+
+        self.fields["roles"].queryset = roles_queryset
         self.fields[
             "delegaciones_autorizadas"
         ].queryset = delegaciones

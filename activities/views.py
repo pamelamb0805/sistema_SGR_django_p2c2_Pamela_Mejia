@@ -36,6 +36,7 @@ from core.pagination import PageSizeMixin
 from django.utils import timezone
 from core.reporting import incorporar_metadatos_informe
 from core.reporting import informe_excel
+from core.decorators import permiso_requerido
 
 TIPOS_MIME = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "pdf": "application/pdf"}
 
@@ -67,6 +68,7 @@ def _puede_anular(user, actividad):
 
 class ActividadListView(PageSizeMixin, RolRequeridoMixin, ModoMixin, ListView):
     """Historial de actividades con filtros completos y ámbito autorizado (RF-032)."""
+    permisos_permitidos = ('actividades.ver',)
 
     template_name = "activities/actividad_.html"
     context_object_name = "actividades"
@@ -227,6 +229,7 @@ class ActividadListView(PageSizeMixin, RolRequeridoMixin, ModoMixin, ListView):
 
 
 class ActividadDetailView(RolRequeridoMixin, ModoMixin, DetailView):
+    permisos_permitidos = ('actividades.ver',)
     template_name = "activities/actividad_.html"
     context_object_name = "actividad"
     modo = "detalle"
@@ -265,6 +268,7 @@ class _FormularioActividadMixin(ModoMixin, GuardarMixin):
 
 
 class ActividadCreateView(OperativoMixin, _FormularioActividadMixin, CreateView):
+    permisos_permitidos = ('actividades.registrar',)
     titulo = "Registrar actividad"
 
     def get_form_kwargs(self):
@@ -299,6 +303,7 @@ class ActividadCreateView(OperativoMixin, _FormularioActividadMixin, CreateView)
 
 
 class ActividadUpdateView(OperativoMixin, _FormularioActividadMixin, UpdateView):
+    permisos_permitidos = ('actividades.editar',)
     titulo = "Editar actividad"
     mensaje_exito = "Actividad actualizada."
 
@@ -320,23 +325,44 @@ class ActividadUpdateView(OperativoMixin, _FormularioActividadMixin, UpdateView)
 
 
 class ActividadAnularView(AccionPostView):
-    roles_permitidos = ()   # la autorización fina se valida en accion()
+    permisos_permitidos = ("actividades.anular",)
+    roles_permitidos = ()
 
     def get_objeto(self, pk):
-        return get_object_or_404(actividades_visibles(self.request.user), pk=pk)
+        return get_object_or_404(
+            actividades_visibles(self.request.user),
+            pk=pk,
+        )
 
     def accion(self, request, objeto):
         form = AnularForm(request.POST)
+
         if not _puede_anular(request.user, objeto):
-            raise ReglaNegocioError("No tiene permiso para anular esta actividad.")
+            raise ReglaNegocioError(
+                "No tiene permiso para anular esta actividad."
+            )
+
         if not form.is_valid():
-            raise ReglaNegocioError("Debe indicar el motivo de la anulación.")
-        CRUDActividad.anular_actividad(objeto, form.cleaned_data["motivo"], request.user)
-        return f"Actividad {objeto.codigo} anulada: ya no aporta al avance."
+            raise ReglaNegocioError(
+                "Debe indicar el motivo de la anulación."
+            )
+
+        CRUDActividad.anular_actividad(
+            objeto,
+            form.cleaned_data["motivo"],
+            request.user,
+        )
+
+        return (
+            f"Actividad {objeto.codigo} anulada: "
+            "ya no aporta al avance."
+        )
 
     def get_redirect(self, objeto):
-        return reverse("activities:actividad_detail", args=[objeto.pk])
-
+        return reverse(
+            "activities:actividad_detail",
+            args=[objeto.pk],
+        )
 
 def buscar_codigo(request):
     """Busca una actividad por su código (ACT-0000123 o ACT-0000123-E01), HU-10."""
@@ -352,53 +378,107 @@ def buscar_codigo(request):
 # ---------------------------------------------------------------------------
 # Evidencias
 # ---------------------------------------------------------------------------
-class EvidenciaCreateView(OperativoMixin, ModoMixin, GuardarMixin, FormView):
+class EvidenciaCreateView(
+    OperativoMixin,
+    ModoMixin,
+    GuardarMixin,
+    FormView,
+):
+    permisos_permitidos = ("evidencias.registrar",)
     form_class = EvidenciaForm
     template_name = "activities/evidencia_.html"
-    modo, titulo = "form", "Adjuntar evidencia"
+    modo = "form"
+    titulo = "Adjuntar evidencia"
     roles_edicion = ROLES_OPERATIVOS
 
     def dispatch(self, request, *args, **kwargs):
         if request.user.is_authenticated:
             self.actividad = get_object_or_404(
-                actividades_visibles(request.user).filter(funcionario=get_funcionario(request.user)),
-                pk=kwargs["pk"])
-        return super().dispatch(request, *args, **kwargs)
+                actividades_visibles(request.user).filter(
+                    funcionario=get_funcionario(request.user)
+                ),
+                pk=kwargs["pk"],
+            )
+
+        return super().dispatch(
+            request,
+            *args,
+            **kwargs,
+        )
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
-        contexto.update(actividad=self.actividad, evidencias=self.actividad.evidencias.all())
+
+        contexto.update(
+            actividad=self.actividad,
+            evidencias=self.actividad.evidencias.all(),
+        )
+
         return contexto
 
     def guardar(self, form):
-        evidencia = CRUDEvidencia.adjuntar_evidencia(self.actividad, form.cleaned_data["archivo"], self.request.user)
-        self.mensaje_exito = f"Evidencia {evidencia.codigo_evidencia} adjuntada. Quedó pendiente de revisión."
+        evidencia = CRUDEvidencia.adjuntar_evidencia(
+            self.actividad,
+            form.cleaned_data["archivo"],
+            self.request.user,
+        )
+
+        self.mensaje_exito = (
+            f"Evidencia {evidencia.codigo_evidencia} adjuntada. "
+            "Quedó pendiente de revisión."
+        )
 
     def get_success_url(self):
-        return reverse("activities:actividad_detail", args=[self.actividad.pk])
+        return reverse(
+            "activities:actividad_detail",
+            args=[self.actividad.pk],
+        )
 
-
+@permiso_requerido("evidencias.ver")
 def evidencia_archivo(request, pk):
-    """Entrega controlada del archivo (nunca por URL pública): solo si el usuario puede ver la actividad."""
-    if not request.user.is_authenticated:
-        return redirect("login")
-    evidencia = get_object_or_404(evidencias_visibles(request.user), pk=pk)
+    """Entrega el archivo solo a usuarios con permiso y ámbito autorizado."""
+
+    evidencia = get_object_or_404(
+        evidencias_visibles(request.user),
+        pk=pk,
+    )
+
     if not evidencia.archivo_vinculo:
         raise Http404
-    respuesta = FileResponse(evidencia.archivo_vinculo.open("rb"),
-                             content_type=TIPOS_MIME.get(evidencia.extension, "application/octet-stream"))
-    modo = "attachment" if request.GET.get("descargar") else "inline"
-    respuesta["Content-Disposition"] = f'{modo}; filename="{evidencia.codigo_evidencia}.{evidencia.extension}"'
+
+    respuesta = FileResponse(
+        evidencia.archivo_vinculo.open("rb"),
+        content_type=TIPOS_MIME.get(
+            evidencia.extension,
+            "application/octet-stream",
+        ),
+    )
+
+    modo = (
+        "attachment"
+        if request.GET.get("descargar")
+        else "inline"
+    )
+
+    respuesta["Content-Disposition"] = (
+        f'{modo}; filename="{evidencia.codigo_evidencia}.'
+        f'{evidencia.extension}"'
+    )
     respuesta["X-Content-Type-Options"] = "nosniff"
     respuesta["Cache-Control"] = "private, no-store"
-    return respuesta
 
+    return respuesta
 
 # ---------------------------------------------------------------------------
 # Validación (verificador)
 # ---------------------------------------------------------------------------
-class ValidacionBandejaView(PageSizeMixin, VerificadorMixin, ModoMixin, ListView):
-    """Bandeja filtrable de evidencias pendientes dentro del ámbito autorizado."""
+class ValidacionBandejaView(
+    PageSizeMixin,
+    VerificadorMixin,
+    ModoMixin,
+    ListView,
+):
+    permisos_permitidos = ("validaciones.ver",)
     template_name = "activities/validacion_.html"
     context_object_name = "evidencias"
     paginate_by = 15
@@ -409,12 +489,16 @@ class ValidacionBandejaView(PageSizeMixin, VerificadorMixin, ModoMixin, ListView
     def get_queryset(self):
         funcionario = get_funcionario(self.request.user)
 
-        qs = evidencias_visibles(self.request.user).filter(
+        qs = evidencias_visibles(
+            self.request.user
+        ).filter(
             estado_revision=Evidencia.ESTADO_PENDIENTE
         )
 
         if funcionario is not None:
-            qs = qs.exclude(actividad__funcionario=funcionario)
+            qs = qs.exclude(
+                actividad__funcionario=funcionario
+            )
         else:
             qs = qs.none()
 
@@ -441,6 +525,7 @@ class ValidacionBandejaView(PageSizeMixin, VerificadorMixin, ModoMixin, ListView
             )
 
         q = filtros.get("q", "").strip()
+
         if q:
             qs = qs.filter(
                 Q(codigo_evidencia__icontains=q)
@@ -459,12 +544,17 @@ class ValidacionBandejaView(PageSizeMixin, VerificadorMixin, ModoMixin, ListView
         contexto = super().get_context_data(**kwargs)
 
         funcionario = get_funcionario(self.request.user)
-        visibles = evidencias_visibles(self.request.user).filter(
+
+        visibles = evidencias_visibles(
+            self.request.user
+        ).filter(
             estado_revision=Evidencia.ESTADO_PENDIENTE
         )
 
         if funcionario is not None:
-            visibles = visibles.exclude(actividad__funcionario=funcionario)
+            visibles = visibles.exclude(
+                actividad__funcionario=funcionario
+            )
         else:
             visibles = visibles.none()
 
@@ -487,8 +577,8 @@ class ValidacionBandejaView(PageSizeMixin, VerificadorMixin, ModoMixin, ListView
         )
 
         return contexto
-
 class ValidacionCreateView(VerificadorMixin, ModoMixin, GuardarMixin, FormView):
+    permisos_permitidos = ('validaciones.gestionar',)
     form_class = ValidacionForm
     template_name = "activities/validacion_.html"
     modo, titulo = "form", "Revisar evidencia"
@@ -557,10 +647,11 @@ class ValidacionCreateView(VerificadorMixin, ModoMixin, GuardarMixin, FormView):
                 "Se solicitó corrección al funcionario.",
         }[decision]
         
-@login_required
+@permiso_requerido("reportes.exportar")
 @informe_excel("Informe de actividades")
 def exportar_actividades_excel(request):
     """Exporta las actividades aplicando los mismos filtros y permisos (RF-032/RF-033)."""
+
     from django.utils.dateparse import parse_date
 
     queryset = actividades_visibles(
@@ -696,15 +787,10 @@ def exportar_actividades_excel(request):
 
     return respuesta
 
-
-
-@login_required
+@permiso_requerido("reportes.exportar")
 @informe_excel("Informe de validación de evidencias")
 def exportar_validaciones_excel(request):
     """Exporta las evidencias pendientes dentro del ámbito autorizado."""
-
-    if not tiene_rol(request.user, *ROLES_VALIDACION):
-        return HttpResponse("No autorizado", status=403)
 
     funcionario = get_funcionario(request.user)
 

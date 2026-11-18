@@ -26,6 +26,27 @@
     min-width: 0;
 }
 
+/* Paleta solicitada para bienvenida, tarjetas KPI y paneles del dashboard. */
+.sgr-executive .sgr-welcome {
+    background: linear-gradient(110deg, #fbe3e1, #f7c7c3);
+    color: #54201d;
+    border: 1px solid #efaaa4;
+}
+.sgr-executive .sgr-welcome p,
+.sgr-executive .sgr-welcome-tag { color: #54201d; opacity: 1; }
+.sgr-executive .sgr-kpi,
+.sgr-executive .sgr-chart-card,
+.sgr-executive .sgr-table-card {
+    border-color: #efc1bd;
+}
+.sgr-executive .sgr-kpi { background: #fff5f4; border-left-color: #E85A53; }
+.sgr-executive .sgr-kpi-value,
+.sgr-executive .sgr-kpi-icon,
+.sgr-executive .sgr-table-heading h3 { color: #b63f39; }
+.sgr-executive .sgr-section-heading h3 { color: #b63f39; }
+.sgr-executive .sgr-chart-card .sgr-chart-header { border-bottom-color: #f0cfcc; }
+.sgr-executive .sgr-chart-icon { color: #E85A53; }
+
 .sgr-executive .sgr-welcome {
     display: flex;
     justify-content: space-between;
@@ -487,6 +508,8 @@
     </div>
     {% endif %}
 
+    
+   
     <!-- ALERTAS OPERATIVAS RF-037 -->
 
     {% if d.alertas_operativas %}
@@ -499,7 +522,7 @@
             </h3>
 
             <span class="badge text-bg-danger">
-                {{ d.alertas_operativas|length }} alertas
+                {{ d.alertas_operativas|length }} pendientes
             </span>
         </div>
 
@@ -529,17 +552,38 @@
 
                         <i class="bi bi-calendar3 me-1"></i>
                         Fecha: {{ alerta.fecha|date:"d/m/Y" }}
+
+                        <span class="mx-2">·</span>
+
+                        <span class="badge text-bg-warning">
+                            {{ alerta.estado }}
+                        </span>
                     </div>
 
                 </div>
 
-                {% if alerta.url %}
-                <a href="{{ alerta.url }}"
-                   class="btn btn-sm btn-outline-dark sgr-alert-action">
-                    Revisar
-                    <i class="bi bi-arrow-right ms-1"></i>
-                </a>
-                {% endif %}
+                <div class="d-flex flex-column gap-1 sgr-alert-action">
+
+                    {% if alerta.url %}
+                    <a href="{{ alerta.url }}"
+                    class="btn btn-sm btn-outline-dark">
+                        Revisar
+                        <i class="bi bi-arrow-right ms-1"></i>
+                    </a>
+                    {% endif %}
+
+                    <form method="post"
+                        action="{% url 'marcar_alerta_atendida' alerta.pk %}">
+                        {% csrf_token %}
+
+                        <button type="submit"
+                                class="btn btn-sm btn-success w-100">
+                            <i class="bi bi-check-circle me-1"></i>
+                            Marcar atendida
+                        </button>
+                    </form>
+
+                </div>
 
             </div>
 
@@ -549,6 +593,7 @@
 
     </section>
     {% endif %}
+
 
     <section class="sgr-welcome">
         <div>
@@ -613,7 +658,7 @@
         </a>
 
     </div>
-
+    {% include "core/partials/actividad_reciente.html" %}
     <!-- ACCESOS -->
 
     <div class="sgr-quick-access">
@@ -765,6 +810,29 @@
                         <i class="bi bi-calendar2-check"></i>
                         <strong>Sin datos disponibles</strong>
                         <p>Aún no hay compromisos registrados.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </section>
+        {% endif %}
+
+        {% if d.grafico_trabajo.labels or user.is_superuser %}
+        <section class="sgr-chart-card">
+            <div class="sgr-chart-header">
+                <div>
+                    <h3 class="sgr-chart-title">Compromisos por trabajo</h3>
+                    <div class="sgr-chart-subtitle">Distribución por ítem medible · Seleccionable</div>
+                </div>
+                <i class="bi bi-briefcase sgr-chart-icon"></i>
+            </div>
+            <div class="sgr-chart-body">
+                {% if d.grafico_trabajo.labels %}
+                    <canvas id="graficoTrabajo"></canvas>
+                {% else %}
+                    <div class="sgr-empty">
+                        <i class="bi bi-briefcase"></i>
+                        <strong>Sin datos disponibles</strong>
+                        <p>Aún no hay compromisos asociados a trabajos o ítems medibles.</p>
                     </div>
                 {% endif %}
             </div>
@@ -1002,6 +1070,7 @@
 {{ d.grafico_semaforo|json_script:"datosSemaforo" }}
 {{ d.grafico_delegaciones|json_script:"datosDelegaciones" }}
 {{ d.grafico_agenda|json_script:"datosAgenda" }}
+{{ d.grafico_trabajo|json_script:"datosTrabajo" }}
 {{ d.grafico_evolucion|json_script:"datosEvolucion" }}
 {{ d.grafico_evidencias|json_script:"datosEvidencias" }}
 
@@ -1063,6 +1132,13 @@ document.addEventListener("DOMContentLoaded", function () {
             interaction: {
                 mode: "nearest",
                 intersect: true
+            },
+            onHover: function(event, elementos, grafico) {
+                if (grafico && grafico.canvas) {
+                    grafico.canvas.style.cursor = elementos && elementos.length
+                        ? "pointer"
+                        : "default";
+                }
             },
             plugins: {
                 legend: {
@@ -1238,7 +1314,7 @@ document.addEventListener("DOMContentLoaded", function () {
             data: {
                 labels: datos.labels,
                 datasets: [{
-                    label: "Cumplimiento",
+                    label: tipo === "trabajo" ? "Compromisos" : "Cumplimiento",
                     data: datos.values,
                     backgroundColor: COLORES,
                     borderRadius: 3,
@@ -1251,6 +1327,8 @@ document.addEventListener("DOMContentLoaded", function () {
                 indexAxis: horizontal ? "y" : "x",
 
                 onClick: eventoSeleccion(tipo),
+                onHover: function(evento, elementos) { canvas.style.cursor = elementos.length ? "pointer" : "default"; },
+                interaction: { mode: "nearest", intersect: true },
 
                 plugins: {
                     ...opcionesBase().plugins,
@@ -1258,7 +1336,9 @@ document.addEventListener("DOMContentLoaded", function () {
                     tooltip: {
                         callbacks: {
                             label: function(context) {
-                                return " " + context.raw + "%";
+                                return tipo === "trabajo"
+                                    ? " " + context.raw + " compromisos"
+                                    : " " + context.raw + "%";
                             }
                         }
                     }
@@ -1267,11 +1347,11 @@ document.addEventListener("DOMContentLoaded", function () {
                 scales: horizontal ? {
                     x: {
                         beginAtZero: true,
-                        max: 100,
+                        ...(tipo === "trabajo" ? {} : { max: 100 }),
                         grid: { color: "rgba(0,0,0,.06)" },
                         ticks: {
                             font: { size: 7 },
-                            callback: value => value + "%"
+                            callback: value => tipo === "trabajo" ? value : value + "%"
                         }
                     },
                     y: {
@@ -1318,7 +1398,9 @@ document.addEventListener("DOMContentLoaded", function () {
             options: {
                 ...opcionesBase(),
                 cutout: "65%",
-                onClick: eventoSeleccion(tipo)
+                onClick: eventoSeleccion(tipo),
+                onHover: function(evento, elementos) { canvas.style.cursor = elementos.length ? "pointer" : "default"; },
+                interaction: { mode: "nearest", intersect: true }
             }
         });
     }
@@ -1379,7 +1461,7 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
-    /* INICIALIZACIÓN DE LOS SEIS GRÁFICOS */
+    /* INICIALIZACIÓN DE LOS SIETE GRÁFICOS */
 
     crearBarras(
         "graficoPersonal",
@@ -1407,6 +1489,13 @@ document.addEventListener("DOMContentLoaded", function () {
         obtenerDatos("datosAgenda"),
         COLORES,
         "agenda"
+    );
+
+    crearBarras(
+        "graficoTrabajo",
+        obtenerDatos("datosTrabajo"),
+        true,
+        "trabajo"
     );
 
     crearLinea(

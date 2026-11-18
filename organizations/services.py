@@ -13,7 +13,12 @@ from django.db import IntegrityError, transaction
 from django.db.models import ProtectedError, Q
 
 from core.exceptions import ReglaNegocioError
-from core.mixins import auditar, filtrar_por_ambito
+from core.mixins import (
+    auditar,
+    filtrar_por_ambito,
+    get_permisos,
+    get_alcances,
+)
 from core.services import (
     eliminar,
     guardar,
@@ -27,10 +32,75 @@ from .models import (
 from django.utils import timezone
 from datetime import datetime, time
 
+
+def _validar_roles_delegables(
+    actor,
+    roles,
+    roles_actuales_ids=None,
+):
+    """
+    Impide conceder privilegios superiores a los que
+    el administrador puede delegar.
+    """
+
+    if actor is None:
+        return
+
+    if not getattr(actor, "is_authenticated", False):
+        raise ReglaNegocioError(
+            "Debe iniciar sesión para administrar roles."
+        )
+
+    if getattr(actor, "is_superuser", False):
+        return
+
+    actuales = set(roles_actuales_ids or [])
+    permisos_actor = get_permisos(actor)
+    alcances_actor = get_alcances(actor)
+
+    for rol in roles:
+
+        # Mantiene los roles que el funcionario ya tenía.
+        if rol.pk in actuales:
+            continue
+
+        if (
+            rol.nombre_rol.strip().casefold()
+            == "administrador"
+        ):
+            raise ReglaNegocioError(
+                "Solo el superusuario técnico puede asignar "
+                "el rol Administrador."
+            )
+
+        if rol.alcance_autorizado == "global":
+            raise ReglaNegocioError(
+                "Solo el superusuario técnico puede conceder "
+                "alcance global."
+            )
+
+        permisos_rol = set(rol.permisos or [])
+
+        if not permisos_rol.issubset(permisos_actor):
+            raise ReglaNegocioError(
+                f"No puede conceder el rol «{rol.nombre_rol}»: "
+                "contiene permisos que usted no posee."
+            )
+
+        if (
+            rol.alcance_autorizado == "multiples"
+            and "multiples" not in alcances_actor
+        ):
+            raise ReglaNegocioError(
+                f"No puede conceder el alcance del rol "
+                f"«{rol.nombre_rol}»."
+            )
+    
 # Helpers compartidos (core.services)
 _guardar = guardar
 _eliminar = eliminar
 _snapshot = snapshot
+
 def _validar_ambito_asignacion(
     actor,
     queryset,
@@ -43,14 +113,17 @@ def _validar_ambito_asignacion(
     Comprueba que el actor pueda operar sobre el objeto
     según sus delegaciones y alcances autorizados.
 
-    Registra los intentos de asignación fuera del ámbito.
+    Los procesos internos pueden operar sin actor.
+    Un usuario no autenticado nunca obtiene autorización.
     """
 
     if actor is None:
         return
 
     if not getattr(actor, "is_authenticated", False):
-        return
+        raise ReglaNegocioError(
+            "Debe iniciar sesión para realizar esta operación."
+        )
 
     if getattr(actor, "is_superuser", False):
         return
@@ -508,16 +581,19 @@ class CRUDCargo:
 # CRUDRol (RF-002)
 # ---------------------------------------------------------------------------
 class CRUDRol:
+   
     @staticmethod
     def crear_rol(rol, actor=None):
+        _validar_roles_delegables(actor, [rol])
         return _guardar(rol, actor, "rol")
-
+   
     @staticmethod
     def mostrar_roles():
         return Rol.objects.all()
 
     @staticmethod
     def modificar_rol(rol, actor=None):
+        _validar_roles_delegables(actor, [rol])
         return _guardar(rol, actor, "rol")
 
     @staticmethod
@@ -525,11 +601,60 @@ class CRUDRol:
         _eliminar(rol, actor, "rol", "No se puede eliminar: el rol está asignado a funcionarios.")
 
     @staticmethod
-    def asignar_rol_a_funcionario(funcionario, rol, actor=None):
+    def asignar_rol_a_funcionario(
+        funcionario,
+        rol,
+        actor=None,
+    ):
         with transaction.atomic():
-            vinculo, creado = FuncionarioRol.objects.get_or_create(
-                funcionario=funcionario,
-                rol=rol,
+
+            funcionario = (
+                Funcionario.objects
+                .select_for_update()
+                .select_related("delegacion")
+                .get(pk=funcionario.pk)
+            )
+
+            if not funcionario.activo:
+                raise ReglaNegocioError(
+                    "No se pueden asignar roles a un funcionario inactivo."
+                )
+
+            if not funcionario.delegacion.activa:
+                raise ReglaNegocioError(
+                    "No se pueden asignar roles en una delegación inactiva."
+                )
+
+            _validar_ambito_asignacion(
+                actor=actor,
+                queryset=Delegacion.objects.all(),
+                campo="id_delegacion",
+                objeto_id=funcionario.delegacion_id,
+                entidad="funcionario_rol",
+                mensaje=(
+                    "No tienes autorización para asignar roles "
+                    "en esa delegación."
+                ),
+            )
+
+            roles_actuales_ids = set(
+                funcionario.roles.values_list(
+                    "pk",
+                    flat=True,
+                )
+            )
+
+            _validar_roles_delegables(
+                actor,
+                [rol],
+                roles_actuales_ids=roles_actuales_ids,
+            )
+
+            vinculo, creado = (
+                FuncionarioRol.objects.get_or_create(
+                    funcionario=funcionario,
+                    rol=rol,
+                )
             )
 
             if creado:
@@ -570,6 +695,7 @@ class CRUDRol:
                 )
             )
 
+
             anterior = sorted(
                 funcionario.funcionario_roles.values_list(
                     "rol__nombre_rol",
@@ -581,6 +707,13 @@ class CRUDRol:
 
             if actuales == ids_nuevos:
                 return
+
+            
+            _validar_roles_delegables(
+                actor,
+                nuevos.values(),
+                roles_actuales_ids=actuales,
+            )
 
             funcionario.funcionario_roles.exclude(
                 rol_id__in=ids_nuevos
@@ -661,6 +794,12 @@ class CRUDFuncionario:
                 roles,
                 actor,
             )
+
+            # RF-002: todo funcionario nuevo queda vinculado a una cuenta.
+            # La contraseña es inutilizable hasta que se establezca por un
+            # canal administrativo seguro; nunca se genera una clave conocida.
+            from .account_utils import crear_cuenta_funcionario
+            crear_cuenta_funcionario(funcionario)
 
         return funcionario
     @staticmethod

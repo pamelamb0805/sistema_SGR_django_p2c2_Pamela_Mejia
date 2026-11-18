@@ -3,6 +3,7 @@
 from django.conf import settings
 
 from . import mixins as m
+from organizations.models import Delegacion
 
 
 def sgr_context(request):
@@ -26,9 +27,14 @@ def sgr_context(request):
     contexto.update({
         "sgr_funcionario": funcionario,
         "sgr_delegacion": (
-            funcionario.delegacion
-            if funcionario else None
+            Delegacion.objects.filter(pk=m.get_delegacion_activa(user)).first()
+            if m.get_delegacion_activa(user) else None
         ),
+        "sgr_delegaciones_contexto": Delegacion.objects.filter(
+            pk__in=m.get_delegaciones_autorizadas_ids(user),
+            estado="Activa",
+        ).order_by("nombre"),
+        "sgr_delegacion_activa_id": m.get_delegacion_activa(user),
         "sgr_roles": sorted(m.get_roles(user)),
         "sgr_rol_principal": m.get_rol_principal(user),
         "sgr_es_transversal": m.es_transversal(user),

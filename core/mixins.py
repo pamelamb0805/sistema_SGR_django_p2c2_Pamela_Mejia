@@ -146,37 +146,81 @@ def get_rol_principal(user):
             return rol
     return next(iter(sorted(roles)), None)
 
-def get_alcances(user):
-    """
-    Devuelve los alcances configurados en los roles del funcionario.
-    """
-    funcionario = get_funcionario(user)
 
+
+def get_alcances(user):
+    """Obtiene los alcances autorizados de todos los roles del funcionario."""
+    funcionario = get_funcionario(user)
     if funcionario is None:
         return set()
 
     return set(
-        funcionario.roles.values_list(
-            "alcance_autorizado",
-            flat=True,
-        )
+        funcionario.roles.values_list("alcance_autorizado", flat=True)
     )
 
-def get_alcances(user):
-    """
-    Obtiene los alcances autorizados de los roles del funcionario.
-    """
-    funcionario = get_funcionario(user)
 
-    if funcionario is None:
+def get_permisos(user):
+    """
+    Une los permisos funcionales configurados en los roles del usuario.
+    Los permisos se almacenan como listas JSON en Rol.permisos.
+    """
+    if not getattr(user, "is_authenticated", False):
         return set()
 
-    return set(
-        funcionario.roles.values_list(
-            "alcance_autorizado",
-            flat=True,
+    if getattr(user, "is_superuser", False):
+        return {"*"}
+
+    funcionario = get_funcionario(user)
+    if funcionario is None or not funcionario.activo:
+        return set()
+
+    permisos = set()
+    for lista in funcionario.roles.values_list("permisos", flat=True):
+        if isinstance(lista, (list, tuple, set)):
+            permisos.update(str(item).strip() for item in lista if item)
+
+    return permisos
+
+
+def tiene_permiso(user, *permisos):
+    """
+    Comprueba permisos funcionales configurados en los roles.
+    Si se solicitan varios, deben estar todos concedidos.
+    """
+    if not getattr(user, "is_authenticated", False):
+        return False
+
+    if getattr(user, "is_superuser", False):
+        return True
+
+    concedidos = get_permisos(user)
+    if "*" in concedidos:
+        return True
+
+    if not permisos:
+        return True
+
+    return all(permiso in concedidos for permiso in permisos)
+
+
+def get_delegaciones_autorizadas_ids(user):
+    """Devuelve la delegación principal y las delegaciones adicionales."""
+    funcionario = get_funcionario(user)
+
+    if funcionario is None or not funcionario.activo:
+        return []
+
+    ids = set()
+    if funcionario.delegacion_id:
+        ids.add(funcionario.delegacion_id)
+
+    alcances = get_alcances(user)
+    if "multiples" in alcances and hasattr(user, "delegaciones_autorizadas"):
+        ids.update(
+            user.delegaciones_autorizadas.values_list("pk", flat=True)
         )
-    )
+
+    return sorted(ids)
 
 
 def es_transversal(user):
@@ -196,6 +240,19 @@ def get_delegacion_id(user):
     funcionario = get_funcionario(user)
     return funcionario.delegacion_id if funcionario else None
 
+def get_delegacion_activa(user):
+    """Resuelve el contexto activo de la petición sin ampliar permisos."""
+    ids = set(get_delegaciones_autorizadas_ids(user))
+    seleccion = getattr(user, "_sgr_delegacion_activa_id", None)
+
+    if seleccion in ids:
+        return seleccion
+
+    principal = get_delegacion_id(user)
+    if principal in ids:
+        return principal
+
+    return next(iter(sorted(ids)), None)
 
 def get_delegaciones_autorizadas_ids(user):
     """
@@ -219,23 +276,15 @@ def get_delegaciones_autorizadas_ids(user):
     return list(ids)
 
 
+
 def filtrar_por_ambito(queryset, user, campo="delegacion_id"):
     """
-    Filtra los registros según el alcance autorizado del usuario.
+    Limita los registros al ámbito territorial autorizado.
 
-    propia:
-        Solo su delegación.
-
-    multiples:
-        Su delegación y las delegaciones adicionales autorizadas.
-
-    global:
-        Todas las delegaciones.
-
-    Superusuario:
-        Acceso transversal.
+    propia: delegación principal.
+    multiples: delegación principal y delegaciones adicionales autorizadas.
+    global: todas las delegaciones.
     """
-
     if not getattr(user, "is_authenticated", False):
         return queryset.none()
 
@@ -243,7 +292,6 @@ def filtrar_por_ambito(queryset, user, campo="delegacion_id"):
         return queryset
 
     funcionario = get_funcionario(user)
-
     if funcionario is None or not funcionario.activo:
         return queryset.none()
 
@@ -252,25 +300,12 @@ def filtrar_por_ambito(queryset, user, campo="delegacion_id"):
     if "global" in alcances:
         return queryset
 
-    delegacion_id = funcionario.delegacion_id
-
-    if not delegacion_id:
-        return queryset.none()
-
     if "multiples" in alcances:
-        delegaciones_ids = get_delegaciones_autorizadas_ids(user)
+        ids = get_delegaciones_autorizadas_ids(user)
+        return queryset.filter(**{f"{campo}__in": ids}) if ids else queryset.none()
 
-        if not delegaciones_ids:
-            return queryset.none()
-
-        return queryset.filter(
-            **{f"{campo}__in": delegaciones_ids}
-        )
-
-    if "propia" in alcances:
-        return queryset.filter(
-            **{campo: delegacion_id}
-        )
+    if "propia" in alcances and funcionario.delegacion_id:
+        return queryset.filter(**{campo: funcionario.delegacion_id})
 
     return queryset.none()
 
@@ -327,6 +362,7 @@ def auditar(
             crear_notificaciones(
                 auditoria,
                 delegacion_id=delegacion_notificacion,
+                usuario_actor=usuario,
             )
         except Exception:
             logger.exception(
@@ -484,69 +520,50 @@ def denegar_acceso(request, detalle="No tiene permisos para acceder a esta secci
 # Mixins para vistas basadas en clases
 # ---------------------------------------------------------------------------
 
+
 class RolRequeridoMixin(LoginRequiredMixin):
     """
-    Exige autenticación y uno de estos requisitos:
-    - Alguno de los roles permitidos.
-    - Alguno de los permisos funcionales permitidos.
+    Exige autenticación, rol permitido y, cuando se declara,
+    los permisos funcionales correspondientes.
     """
-
     roles_permitidos = ()
-    permisos_permitidos = ()
+    permisos_requeridos = ()
 
     def dispatch(self, request, *args, **kwargs):
         if not request.user.is_authenticated:
             return self.handle_no_permission()
 
-        autorizado = False
-
-        if self.roles_permitidos:
-            autorizado = tiene_rol(
-                request.user,
-                *self.roles_permitidos,
-            )
-
-        if (
-            not autorizado
-            and self.permisos_permitidos
-        ):
-            autorizado = tiene_permiso(
-                request.user,
-                *self.permisos_permitidos,
-            )
-
-        if (
-            not self.roles_permitidos
-            and not self.permisos_permitidos
-        ):
-            autorizado = True
-
-        if not autorizado:
+        if not tiene_rol(request.user, *self.roles_permitidos):
             return denegar_acceso(request)
 
-        return super().dispatch(
-            request,
-            *args,
-            **kwargs,
-        )
-
-    def get_paginate_by(self, queryset):
-        valores_permitidos = (10, 15, 20)
-
-        try:
-            cantidad = int(
-                self.request.GET.get(
-                    "page_size",
-                    self.paginate_by,
-                )
+        if self.permisos_requeridos and not tiene_permiso(
+            request.user, *self.permisos_requeridos
+        ):
+            return denegar_acceso(
+                request,
+                "Su rol no tiene autorización para realizar esta operación.",
             )
-        except (TypeError, ValueError):
-            cantidad = self.paginate_by
 
-        if cantidad not in valores_permitidos:
-            cantidad = self.paginate_by
+        return super().dispatch(request, *args, **kwargs)
 
-        return cantidad
+
+class PermisoRequeridoMixin:
+    """
+    Exige permisos funcionales configurados en Rol.permisos.
+    Se puede combinar con RolRequeridoMixin en vistas basadas en clases.
+    """
+    permisos_requeridos = ()
+
+    def dispatch(self, request, *args, **kwargs):
+        if self.permisos_requeridos and not tiene_permiso(
+            request.user, *self.permisos_requeridos
+        ):
+            return denegar_acceso(
+                request,
+                "Su rol no tiene autorización para realizar esta operación.",
+            )
+
+        return super().dispatch(request, *args, **kwargs)
 
 
 class AmbitoDelegacionMixin:
@@ -566,33 +583,46 @@ class AmbitoDelegacionMixin:
 # Bloques reutilizables para vistas CRUD (todas las apps)
 # ---------------------------------------------------------------------------
 
+
 class ModoMixin:
     """
-    Reutiliza la plantilla de lista, formulario o detalle.
-    También determina si el usuario puede mostrar acciones de edición.
+    Controla la presentación de botones según los permisos funcionales.
+    Ocultar botones no reemplaza la autorización del servidor.
     """
 
     modo = "lista"
     titulo = ""
-    roles_edicion = ROLES_CONFIGURACION
+    roles_edicion = ()
     permisos_edicion = ()
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
 
-        puede_editar = tiene_rol(
-            self.request.user,
-            *self.roles_edicion,
-        )
+        usuario = self.request.user
 
-        if (
-            not puede_editar
-            and self.permisos_edicion
-        ):
-            puede_editar = tiene_permiso(
-                self.request.user,
-                *self.permisos_edicion,
+        # Los listados y detalles usan el mismo contrato de permisos:
+        # si la vista declara un permiso de lectura terminado en ".ver",
+        # se infiere su permiso de edición correspondiente. Esto evita que
+        # los botones desaparezcan por olvidar permisos_edicion en una vista.
+        permisos_edicion = tuple(self.permisos_edicion or ())
+        if not permisos_edicion:
+            permisos_edicion = tuple(
+                permiso[:-4] + ".editar"
+                for permiso in (getattr(self, "permisos_permitidos", ()) or ())
+                if isinstance(permiso, str) and permiso.endswith(".ver")
             )
+
+        puede_editar_por_permiso = bool(
+            usuario.is_authenticated
+            and permisos_edicion
+            and tiene_permiso(usuario, *permisos_edicion)
+        )
+        puede_editar_por_rol = bool(
+            usuario.is_authenticated
+            and self.roles_edicion
+            and tiene_rol(usuario, *self.roles_edicion)
+        )
+        puede_editar = puede_editar_por_permiso or puede_editar_por_rol
 
         contexto.update(
             modo=self.modo,
@@ -601,7 +631,6 @@ class ModoMixin:
         )
 
         return contexto
-
 
 class GuardarMixin:
     """
@@ -764,17 +793,24 @@ class GuardarMixin:
 
         return redirect(self.get_success_url())
 
+
 class AccionPostView(RolRequeridoMixin, View):
-    """Acciones que cambian datos (activar, eliminar...): solo POST, con rol exigido."""
+    """
+    Acciones que modifican información.
+
+    Cada subclase debe declarar permisos_permitidos.
+    Solo acepta POST y verifica autorización en el servidor.
+    """
+
     http_method_names = ["post"]
-    roles_permitidos = ROLES_CONFIGURACION
+    roles_permitidos = ()
+    permisos_permitidos = ()
     redirect_name = ""
 
     def get_objeto(self, pk):
         raise NotImplementedError
 
     def accion(self, request, objeto):
-        """Ejecuta la acción y devuelve el mensaje de éxito."""
         raise NotImplementedError
 
     def get_redirect(self, objeto):
@@ -782,12 +818,15 @@ class AccionPostView(RolRequeridoMixin, View):
 
     def post(self, request, pk):
         objeto = self.get_objeto(pk)
+
         try:
-            messages.success(request, self.accion(request, objeto))
+            mensaje = self.accion(request, objeto)
+            messages.success(request, mensaje)
+
         except ReglaNegocioError as exc:
             messages.error(request, str(exc))
-        return redirect(self.get_redirect(objeto))
 
+        return redirect(self.get_redirect(objeto))
 
 def errores_form(form):
     """Texto plano con los errores de un formulario (para mensajes SweetAlert)."""

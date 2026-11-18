@@ -473,3 +473,51 @@ class ItemMedibleVersion(models.Model):
             f"Ítem {self.objeto_id} "
             f"- versión {self.numero_version}"
         )
+
+
+class PasswordResetCode(models.Model):
+    """
+    Código de recuperación de contraseña.
+    Se almacena únicamente su hash, nunca el código original.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="password_reset_codes",
+    )
+
+    code_hash = models.CharField(max_length=64)
+
+    created_at = models.DateTimeField(
+        default=timezone.now,
+    )
+
+    expires_at = models.DateTimeField()
+
+    attempts = models.PositiveSmallIntegerField(
+        default=0,
+    )
+
+    is_used = models.BooleanField(
+        default=False,
+    )
+
+    class Meta:
+        db_table = "codigo_recuperacion_contrasena"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(
+                fields=["user", "is_used"],
+                name="idx_reset_usuario_uso",
+            ),
+            models.Index(
+                fields=["expires_at"],
+                name="idx_reset_expiracion",
+            ),
+        ]
+        verbose_name = "Código de recuperación"
+        verbose_name_plural = "Códigos de recuperación"
+
+    def __str__(self):
+        return f"Solicitud de recuperación #{self.pk}"

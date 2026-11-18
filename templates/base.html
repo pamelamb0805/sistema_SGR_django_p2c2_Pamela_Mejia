@@ -1,5 +1,5 @@
 
-{% load static ui_extras %}
+{% load static ui_extras solicitudes_tags %}
 <!DOCTYPE html>
 <html lang="es-CL">
 <head>
@@ -14,6 +14,10 @@
     <link rel="stylesheet" href="{% static 'css/sgr.css' %}?v=20261111-1">
     <link rel="stylesheet" href="{% static 'css/sgr-redesign.css' %}?v=20261114-1">
 
+    {% if user.is_authenticated %}
+    <link rel="stylesheet" href="{% static 'css/sgr-tutorial-chat.css' %}?v=20261116-2">
+    {% endif %}
+
     <style>
         .sgr-notification-menu {
             width: min(390px, calc(100vw - 24px));
@@ -22,10 +26,6 @@
             overflow: hidden;
             border: 1px solid rgba(0,0,0,.08);
             border-radius: 12px;
-        }
-
-        .sgr-notification-menu.show {
-            display: block !important;
         }
 
         .sgr-notification-header {
@@ -149,6 +149,7 @@
 <body
     class="{% if user.is_authenticated %}sgr-app{% else %}sgr-guest{% endif %}"
     data-sgr-module="{{ request.resolver_match.app_name|default:'' }}"
+    data-sgr-url-name="{{ request.resolver_match.url_name|default:'' }}"
 >
 
 <a class="visually-hidden-focusable position-absolute p-2 bg-white" href="#contenido">
@@ -190,6 +191,26 @@
         </a>
     </div>
 
+    <!-- CONTEXTO TERRITORIAL ACTIVO -->
+    <div class="d-flex align-items-center me-2">
+        {% if sgr_delegacion %}
+            {% if sgr_delegaciones_contexto|length > 1 %}
+            <form method="post" action="{% url 'cambiar_delegacion_activa' %}" id="sgrDelegacionContextoForm" class="d-flex align-items-center gap-2">
+                {% csrf_token %}
+                <label for="sgrDelegacionActiva" class="visually-hidden">Delegación activa</label>
+                <span class="badge rounded-pill text-bg-light text-dark"><i class="bi bi-geo-alt-fill me-1"></i>{{ sgr_delegacion.codigo }}</span>
+                <select class="form-select form-select-sm" id="sgrDelegacionActiva" name="delegacion_id" aria-label="Cambiar delegación activa" style="max-width: 210px" data-current-value="{{ sgr_delegacion_activa_id }}">
+                    {% for delegacion_opcion in sgr_delegaciones_contexto %}
+                    <option value="{{ delegacion_opcion.pk }}" {% if delegacion_opcion.pk == sgr_delegacion_activa_id %}selected{% endif %}>{{ delegacion_opcion.codigo }} · {{ delegacion_opcion.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </form>
+            {% else %}
+            <span class="badge rounded-pill text-bg-light text-dark" title="Delegación activa"><i class="bi bi-geo-alt-fill me-1"></i>{{ sgr_delegacion.codigo }} · {{ sgr_delegacion.nombre }}</span>
+            {% endif %}
+        {% endif %}
+    </div>
+
     <!-- NOTIFICACIONES -->
     <div class="dropdown ms-auto me-2">
 
@@ -197,6 +218,7 @@
             id="sgrNotificationDropdown"
             class="btn sgr-notification-bell"
             type="button"
+            data-bs-auto-close="outside"
             aria-expanded="false"
             aria-controls="sgrNotificationMenu"
             aria-label="Ver notificaciones"
@@ -242,54 +264,10 @@
                 {% csrf_token %}
             </form>
 
-            <div 
-    id="sgrNotificationList" 
-    class="sgr-notification-list"
-    data-list-url="{% url 'audit:notificaciones_listar' %}">
-
-    {% for notificacion in sgr_notificaciones %}
-    {% with operacion=notificacion.operacion %}
-    <div
-        class="sgr-notification-item{% if not notificacion.leida %} sgr-notification-unread{% endif %}"
-        data-notification-id="{{ notificacion.id_notificacion }}">
-
-        <div class="d-flex align-items-start gap-2">
-            <i class="bi bi-activity text-primary mt-1"></i>
-
-            <div class="flex-grow-1">
-                <div class="sgr-notification-title">
-                    {{ operacion.modulo_display }} · {{ operacion.accion_display }}
-                </div>
-
-                <span class="sgr-notification-detail">
-                    {{ operacion.object_label }}
-                </span>
-
-                <span class="sgr-notification-detail">
-                    <i class="bi bi-person me-1"></i>
-                    {{ operacion.actor_display }}
-                </span>
-
-                <span class="sgr-notification-detail">
-                    <i class="bi bi-diagram-3 me-1"></i>
-                    {{ operacion.delegacion_display }}
-                </span>
-
-                <span class="sgr-notification-date">
-                    <i class="bi bi-clock me-1"></i>
-                    {{ notificacion.fecha_creacion|date:"d/m/Y H:i" }}
-                </span>
-            </div>
-        </div>
-    </div>
-    {% endwith %}
-    {% empty %}
-    <div id="sgrNotificationEmpty" class="sgr-notification-empty">
-        <i class="bi bi-bell-slash fs-3 d-block mb-2"></i>
-        No hay notificaciones recientes.
-    </div>
-    {% endfor %}
-</div>
+            <div
+                id="sgrNotificationList"
+                class="sgr-notification-list"
+                data-list-url="{% url 'audit:notificaciones_listar' %}">
 
                 {% for notificacion in sgr_notificaciones %}
                 {% with operacion=notificacion.operacion %}
@@ -333,11 +311,9 @@
                     No hay notificaciones recientes.
                 </div>
                 {% endfor %}
-
             </div>
         </div>
     </div>
-
 
     <!-- PERFIL -->
     <div class="dropdown me-2 me-lg-3">
@@ -503,6 +479,14 @@
                             <i class="bi bi-calendar-event"></i>Agenda colectiva
                         </a>
                     </li>
+                    {% puede_ver_solicitudes user as sgr_puede_ver_solicitudes %}
+                    {% if sgr_puede_ver_solicitudes %}
+                    <li class="nav-item">
+                        <a class="nav-link {% if ns == 'solicitudes' %}active{% endif %}" href="{% url 'solicitudes:lista' %}">
+                            <i class="bi bi-inbox"></i>Solicitudes vecinales
+                        </a>
+                    </li>
+                    {% endif %}
 
                     <li class="nav-item">
                         <a class="nav-link {% if ns == 'agenda' and name == 'resumen' %}active{% endif %}"
@@ -650,12 +634,18 @@
 {% block content %}{% endblock %}
 
 {% if user.is_authenticated %}
+
             <footer class="text-body-secondary small border-top mt-5 pt-3">
                 SGR · Delegaciones municipales · Proyecto académico INACAP — solo datos ficticios.
             </footer>
+
         </main>
     </div>
 </div>
+
+<!-- ASISTENTE TUTORIAL SGR: SOLO USUARIOS AUTENTICADOS -->
+{% include "partials/_sgr_tutorial_chat.html" %}
+
 {% else %}
     </main>
 {% endif %}
@@ -663,11 +653,55 @@
 {% include "partials/_messages.html" %}
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.10.8/dist/sweetalert2.all.min.js"></script>
 <script src="{% static 'js/alerts.js' %}"></script>
 <script src="{% static 'js/sgr-websocket.js' %}?v=20261111-4"></script>
 
+{% if user.is_authenticated %}
+<script src="{% static 'js/sgr-tutorial-chat.js' %}?v=20261116-2" defer></script>
+{% endif %}
+
 {% block extra_js %}{% endblock %}
 
+<script>
+window.sgrHayCambiosSinGuardar = function (selector) {
+    const formularios = Array.from(document.querySelectorAll('main form, #contenido form'))
+        .filter(form => form !== selector.form && !form.closest('#sgrDelegacionContextoForm'));
+    return formularios.some(form => Array.from(form.elements).some(campo => {
+        if (!campo.name || campo.disabled || ['submit', 'button', 'hidden', 'csrfmiddlewaretoken'].includes(campo.type)) return false;
+        if (campo.type === 'checkbox' || campo.type === 'radio') return campo.checked !== campo.defaultChecked;
+        if (campo.tagName === 'SELECT') return Array.from(campo.options).some(opcion => opcion.selected !== opcion.defaultSelected);
+        return campo.value !== campo.defaultValue;
+    }));
+};
+document.addEventListener('DOMContentLoaded', function () {
+    const selector = document.getElementById('sgrDelegacionActiva');
+    if (!selector) return;
+    selector.addEventListener('change', function () {
+        const anterior = selector.dataset.currentValue;
+        const continuar = function () {
+            selector.dataset.currentValue = selector.value;
+            selector.form.submit();
+        };
+        if (!window.sgrHayCambiosSinGuardar(selector)) {
+            continuar();
+            return;
+        }
+        Swal.fire({
+            title: 'Hay cambios sin guardar',
+            text: 'Si cambia la delegación, los cambios del formulario actual podrían perderse.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Cambiar delegación',
+            cancelButtonText: 'Seguir editando',
+            confirmButtonColor: '#AD0000',
+        }).then(function (resultado) {
+            if (resultado.isConfirmed) continuar();
+            else selector.value = anterior;
+        });
+    });
+});
+</script>
 </body>
 </html>

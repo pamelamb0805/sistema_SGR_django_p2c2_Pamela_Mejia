@@ -17,7 +17,6 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.generic import CreateView, DetailView, ListView, UpdateView
 
-from core.decorators import funcionario_requerido
 from core.exceptions import ReglaNegocioError
 from core.mixins import (
     ROLES_CONFIGURACION, ROLES_MEDICION, ROLES_SUPERVISION, AccionPostView, AmbitoDelegacionMixin,
@@ -49,6 +48,7 @@ from django.core.paginator import Paginator
 from core.pagination import PageSizeMixin, PAGE_SIZE_OPTIONS, get_page_size
 from core.reporting import incorporar_metadatos_informe
 from core.reporting import informe_excel
+from core.decorators import permiso_requerido, funcionario_requerido
 
 class LecturaMixin(RolRequeridoMixin):
     roles_permitidos = ROLES_SUPERVISION
@@ -71,6 +71,7 @@ def _periodo_seleccionado(request):
 # ---------------------------------------------------------------------------
 
 class PeriodoListView(PageSizeMixin, LecturaMixin, ModoMixin, ListView):
+    permisos_permitidos = ('periodos.ver',)
     model = Periodo
     template_name = "measurement/periodo_.html"
     context_object_name = "periodos"
@@ -182,6 +183,7 @@ def get_context_data(self, **kwargs):
 
 class PeriodoDetailView(LecturaMixin, ModoMixin, DetailView):
     """Resumen del período y estado de ponderaciones por funcionario."""
+    permisos_permitidos = ('periodos.ver',)
 
     model = Periodo
     template_name = "measurement/periodo_.html"
@@ -273,6 +275,7 @@ class PeriodoFormMixin(MedicionMixin, ModoMixin, GuardarMixin):
 
 
 class PeriodoCreateView(PeriodoFormMixin, CreateView):
+    permisos_permitidos = ('periodos.editar',)
     titulo = "Nuevo período"
     mensaje_exito = "Período creado. Los días computables se calcularon automáticamente."
 
@@ -281,6 +284,7 @@ class PeriodoCreateView(PeriodoFormMixin, CreateView):
 
 
 class PeriodoUpdateView(PeriodoFormMixin, UpdateView):
+    permisos_permitidos = ('periodos.editar',)
     titulo = "Editar período"
     mensaje_exito = "Período actualizado; los indicadores se recalcularon."
 
@@ -289,6 +293,7 @@ class PeriodoUpdateView(PeriodoFormMixin, UpdateView):
 
 
 class PeriodoCerrarView(AccionPostView):
+    permisos_permitidos = ('periodos.cerrar',)
     roles_permitidos = ROLES_MEDICION
     redirect_name = "measurement:periodo_list"
 
@@ -301,6 +306,7 @@ class PeriodoCerrarView(AccionPostView):
 
 
 class PeriodoReabrirView(AccionPostView):
+    permisos_permitidos = ('periodos.reabrir',)
     roles_permitidos = ROLES_CONFIGURACION        # solo Administrador (RN-013)
     redirect_name = "measurement:periodo_list"
 
@@ -312,15 +318,12 @@ class PeriodoReabrirView(AccionPostView):
         return f"Período {objeto} reabierto. Quedó registrado en la auditoría."
 
 
-@login_required
+@permiso_requerido("periodos.editar")
 def configurar_reglas_periodo(request, pk):
     """
-    Permite al Administrador configurar reglas de cálculo
-    para un período abierto y conservar sus versiones.
+    Permite configurar reglas de cálculo para un período abierto
+    y conservar sus versiones históricas.
     """
-    if not tiene_rol(request.user, *ROLES_CONFIGURACION):
-        return denegar_acceso(request)
-
     periodo = get_object_or_404(Periodo, pk=pk)
 
     if not periodo.abierto:
@@ -373,7 +376,6 @@ def configurar_reglas_periodo(request, pk):
 
             except ReglaNegocioError as exc:
                 messages.error(request, str(exc))
-
     else:
         form = ReglasCalculoForm(
             initial={
@@ -402,20 +404,13 @@ def configurar_reglas_periodo(request, pk):
             "version_actual": version_actual,
         },
     )
-
-@login_required
+@permiso_requerido("periodos.ver")
 def historial_reglas_periodo(request, pk):
     """
     Consulta el historial de versiones de reglas de cálculo
     de un período, sin permitir modificar versiones anteriores.
     """
-    if not tiene_rol(request.user, *ROLES_SUPERVISION):
-        return denegar_acceso(request)
-
-    periodo = get_object_or_404(
-        Periodo,
-        pk=pk,
-    )
+    periodo = get_object_or_404(Periodo, pk=pk)
 
     versiones = (
         ReglaCalculoVersion.objects
@@ -435,8 +430,8 @@ def historial_reglas_periodo(request, pk):
         },
     )
 
-
 class PeriodoRecalcularView(AccionPostView):
+    permisos_permitidos = ('periodos.editar',)
     roles_permitidos = ROLES_MEDICION
     redirect_name = "measurement:periodo_list"
 
@@ -460,19 +455,12 @@ class PeriodoRecalcularView(AccionPostView):
         )
 
 
-@login_required
+@permiso_requerido("items.ver", respuesta_json=True)
 def items_vigentes_funcionario(request, funcionario_id):
     """
     Devuelve exclusivamente los ítems vigentes del cargo
     del funcionario seleccionado y dentro del ámbito autorizado.
     """
-
-    if not tiene_rol(request.user, *ROLES_MEDICION):
-        return JsonResponse(
-            {"error": "No tienes permiso para consultar estos ítems."},
-            status=403,
-        )
-
     funcionario = (
         filtrar_por_ambito(
             Funcionario.objects.select_related(
@@ -519,7 +507,6 @@ def items_vigentes_funcionario(request, funcionario_id):
             for item in items
         ],
     })
-
 # ---------------------------------------------------------------------------
 # Metas
 # ---------------------------------------------------------------------------
@@ -532,6 +519,7 @@ class MetaListView(
     ModoMixin,
     ListView,
 ):
+    permisos_permitidos = ('metas.ver',)
     model = MetaModel
     template_name = "measurement/meta_.html"
     context_object_name = "metas"
@@ -668,6 +656,7 @@ class MetaFormMixin(MedicionMixin, ModoMixin, GuardarMixin):
 
 
 class MetaCreateView(MetaFormMixin, CreateView):
+    permisos_permitidos = ('metas.editar',)
     titulo = "Nueva meta"
     mensaje_exito = "Meta creada."
 
@@ -686,6 +675,7 @@ class MetaCreateView(MetaFormMixin, CreateView):
 
 
 class MetaUpdateView(MetaFormMixin, UpdateView):
+    permisos_permitidos = ('metas.editar',)
     titulo = "Editar meta"
     mensaje_exito = "Meta actualizada y versionada."
 
@@ -694,29 +684,33 @@ class MetaUpdateView(MetaFormMixin, UpdateView):
 
 
 class MetaDeleteView(AccionPostView):
-    roles_permitidos = ROLES_MEDICION
+    permisos_permitidos = ("metas.eliminar",)
+    roles_permitidos = ()
     redirect_name = "measurement:meta_list"
 
     def get_objeto(self, pk):
-        return get_object_or_404(MetaModel, pk=pk)
+        return get_object_or_404(
+            MetaModel,
+            pk=pk,
+        )
 
     def accion(self, request, objeto):
-        CRUDMeta.eliminar_meta(objeto, request.user)
-        return "Meta eliminada."
+        CRUDMeta.eliminar_meta(
+            objeto,
+            request.user,
+        )
 
+        return "Meta eliminada."
 # ---------------------------------------------------------------------------
 # Historial de versiones de metas (RF-038)
 # ---------------------------------------------------------------------------
 
-@login_required
+@permiso_requerido("metas.ver")
 def meta_historial(request, pk):
     """
     Muestra el historial de parámetros de una meta,
     limitado al ámbito de delegación autorizado.
     """
-    if not tiene_rol(request.user, *ROLES_SUPERVISION):
-        return denegar_acceso(request)
-
     metas = filtrar_por_ambito(
         MetaModel.objects.select_related(
             "funcionario",
@@ -748,12 +742,12 @@ def meta_historial(request, pk):
             "total_versiones": versiones.count(),
         },
     )
-
 # ---------------------------------------------------------------------------
 # Ajustes (incentivos y penalizaciones)
 # ---------------------------------------------------------------------------
 
 class AjusteListView(PageSizeMixin, LecturaMixin, AmbitoDelegacionMixin, ModoMixin, ListView):
+    permisos_permitidos = ('ajustes.ver',)
     model = Ajuste
     template_name = "measurement/ajuste_.html"
     context_object_name = "ajustes"
@@ -809,6 +803,7 @@ class AjusteListView(PageSizeMixin, LecturaMixin, AmbitoDelegacionMixin, ModoMix
         return contexto
 
 class AjusteCreateView(MedicionMixin, ModoMixin, GuardarMixin, CreateView):
+    permisos_permitidos = ('ajustes.editar',)
     model = Ajuste
     form_class = AjusteForm
     template_name = "measurement/ajuste_.html"
@@ -822,6 +817,7 @@ class AjusteCreateView(MedicionMixin, ModoMixin, GuardarMixin, CreateView):
 
 
 class AjusteUpdateView(MedicionMixin, ModoMixin, GuardarMixin, UpdateView):
+    permisos_permitidos = ('ajustes.editar',)
     model = Ajuste
     form_class = AjusteForm
     template_name = "measurement/ajuste_.html"
@@ -856,6 +852,7 @@ class AjusteUpdateView(MedicionMixin, ModoMixin, GuardarMixin, UpdateView):
         )
 
 class AjusteDeleteView(AccionPostView):
+    permisos_permitidos = ('ajustes.editar',)
     roles_permitidos = ROLES_MEDICION
     redirect_name = "measurement:ajuste_list"
 
@@ -1064,87 +1061,36 @@ def mi_desempeno(request):
                   _contexto_panel(request, funcionario, "personal", "Mi desempeño"))
 
 
-@login_required
+@permiso_requerido("indicadores.ver")
 def desempeno_funcionario(request, pk):
-    """Panel de un funcionario para supervisión, dentro del ámbito del usuario (CA-07)."""
-    if not tiene_rol(request.user, *ROLES_SUPERVISION):
-        return denegar_acceso(request)
-    qs = filtrar_por_ambito(Funcionario.objects.select_related("cargo", "delegacion"), request.user,
-                            "delegacion_id")
-    funcionario = get_object_or_404(qs, pk=pk)
-    return render(request, "measurement/indicador_.html",
-                  _contexto_panel(request, funcionario, "funcionario", f"Desempeño: {funcionario.nombre}"))
-
-@login_required
-def semaforo(request):
-    """Tablero de delegación (RF-029, HU-08, HU-18, HU-21)."""
-    if not tiene_rol(request.user, *ROLES_SUPERVISION):
-        return denegar_acceso(request)
-
-    periodo = _periodo_seleccionado(request)
-
-    funcionarios = filtrar_por_ambito(
-        Funcionario.objects.filter(
-            estado=Funcionario.ESTADO_ACTIVO
-        ).select_related("cargo", "delegacion"),
+    """
+    Panel de un funcionario para supervisión,
+    respetando el ámbito de delegación autorizado.
+    """
+    qs = filtrar_por_ambito(
+        Funcionario.objects.select_related(
+            "cargo",
+            "delegacion",
+        ),
         request.user,
         "delegacion_id",
     )
 
-    delegacion_sel = request.GET.get("delegacion", "")
+    funcionario = get_object_or_404(qs, pk=pk)
 
-    if delegacion_sel and es_transversal(request.user):
-        funcionarios = funcionarios.filter(
-            delegacion_id=delegacion_sel
-        )
-
-    resumen = (
-        CalculoIndicadores.resumen_delegacion(funcionarios, periodo)
-        if periodo
-        else None
-    )
-
-    page_size = get_page_size(
+    return render(
         request,
-        "semaforo_page_size",
-    )
-
-    page_obj = None
-
-    if resumen:
-        paginator = Paginator(resumen["filas"], page_size)
-        page_obj = paginator.get_page(request.GET.get("page"))
-        resumen["filas"] = page_obj.object_list
-
-    return render(request, "measurement/semaforo.html", {
-        "titulo": "Semáforo de delegación",
-        "periodo": periodo,
-        "periodos": Periodo.objects.all(),
-        "resumen": resumen,
-        "delegaciones": (
-            Delegacion.objects.all()
-            if es_transversal(request.user)
-            else []
+        "measurement/indicador_.html",
+        _contexto_panel(
+            request,
+            funcionario,
+            "funcionario",
+            f"Desempeño: {funcionario.nombre}",
         ),
-        "delegacion_sel": delegacion_sel,
-        "hoy": timezone.localdate(),
-        "page_obj": page_obj,
-        "page_size": page_size,
-        "page_size_options": PAGE_SIZE_OPTIONS,
-    })
-
-
-@login_required
-def vista_global_cargos(request):
-    """
-    RF-031: vista global del desempeño agrupado por cargo.
-
-    Consolida funcionarios, metas, resultados y fechas relevantes,
-    respetando el ámbito de acceso del usuario.
-    """
-    if not tiene_rol(request.user, *ROLES_SUPERVISION):
-        return denegar_acceso(request)
-
+    )
+@permiso_requerido("indicadores.ver")
+def semaforo(request):
+    """Tablero de delegación (RF-029, HU-08, HU-18, HU-21)."""
     periodo = _periodo_seleccionado(request)
 
     funcionarios = filtrar_por_ambito(
@@ -1158,8 +1104,90 @@ def vista_global_cargos(request):
         "delegacion_id",
     )
 
-    delegacion_sel = request.GET.get("delegacion", "").strip()
-    cargo_sel = request.GET.get("cargo", "").strip()
+    delegacion_sel = request.GET.get("delegacion", "")
+
+    if delegacion_sel and es_transversal(request.user):
+        funcionarios = funcionarios.filter(
+            delegacion_id=delegacion_sel
+        )
+
+    resumen = (
+        CalculoIndicadores.resumen_delegacion(
+            funcionarios,
+            periodo,
+        )
+        if periodo
+        else None
+    )
+
+    page_size = get_page_size(
+        request,
+        "semaforo_page_size",
+    )
+
+    page_obj = None
+
+    if resumen:
+        paginator = Paginator(
+            resumen["filas"],
+            page_size,
+        )
+        page_obj = paginator.get_page(
+            request.GET.get("page")
+        )
+        resumen["filas"] = page_obj.object_list
+
+    return render(
+        request,
+        "measurement/semaforo.html",
+        {
+            "titulo": "Semáforo de delegación",
+            "periodo": periodo,
+            "periodos": Periodo.objects.all(),
+            "resumen": resumen,
+            "delegaciones": (
+                Delegacion.objects.all()
+                if es_transversal(request.user)
+                else []
+            ),
+            "delegacion_sel": delegacion_sel,
+            "hoy": timezone.localdate(),
+            "page_obj": page_obj,
+            "page_size": page_size,
+            "page_size_options": PAGE_SIZE_OPTIONS,
+        },
+    )
+
+@permiso_requerido("indicadores.ver")
+def vista_global_cargos(request):
+    """
+    RF-031: vista global del desempeño agrupado por cargo.
+
+    Consolida funcionarios, metas, resultados y fechas relevantes,
+    respetando el ámbito de acceso del usuario.
+    """
+    periodo = _periodo_seleccionado(request)
+
+    funcionarios = filtrar_por_ambito(
+        Funcionario.objects.filter(
+            estado=Funcionario.ESTADO_ACTIVO
+        ).select_related(
+            "cargo",
+            "delegacion",
+        ),
+        request.user,
+        "delegacion_id",
+    )
+
+    delegacion_sel = request.GET.get(
+        "delegacion",
+        "",
+    ).strip()
+
+    cargo_sel = request.GET.get(
+        "cargo",
+        "",
+    ).strip()
 
     if delegacion_sel.isdigit() and es_transversal(request.user):
         funcionarios = funcionarios.filter(
@@ -1267,14 +1295,10 @@ def vista_global_cargos(request):
         },
     )
 
-
-@login_required
+@permiso_requerido("reportes.exportar")
 @informe_excel("Informe de metas")
 def exportar_metas_excel(request):
     """Exporta metas respetando el nombre histórico del ítem en períodos cerrados."""
-
-    if not tiene_rol(request.user, *ROLES_SUPERVISION):
-        return HttpResponse("No autorizado", status=403)
 
     queryset = filtrar_por_ambito(
         MetaModel.objects.select_related(
@@ -1369,14 +1393,10 @@ def exportar_metas_excel(request):
     libro.save(respuesta)
     return respuesta
 
-
-@login_required
+@permiso_requerido("reportes.exportar")
 @informe_excel("Informe de períodos")
 def exportar_periodos_excel(request):
     """Exporta todos los períodos que coinciden con los filtros."""
-
-    if not tiene_rol(request.user, *ROLES_SUPERVISION):
-        return HttpResponse("No autorizado", status=403)
 
     queryset = Periodo.objects.all()
     filtros = request.GET
@@ -1458,13 +1478,10 @@ def exportar_periodos_excel(request):
 
 
 
-@login_required
+@permiso_requerido("reportes.exportar")
 @informe_excel("Informe de incentivos y penalizaciones")
 def exportar_ajustes_excel(request):
     """Exporta ajustes respetando el nombre histórico del ítem asociado."""
-
-    if not tiene_rol(request.user, *ROLES_SUPERVISION):
-        return HttpResponse("No autorizado", status=403)
 
     queryset = filtrar_por_ambito(
         Ajuste.objects.select_related(
@@ -1570,13 +1587,10 @@ def exportar_ajustes_excel(request):
     return respuesta
 
 
-@login_required
+@permiso_requerido("reportes.exportar")
 @informe_excel("Informe de semáforo")
 def exportar_semaforo_excel(request):
     """Exporta el semáforo completo de la delegación o ámbito autorizado."""
-
-    if not tiene_rol(request.user, *ROLES_SUPERVISION):
-        return HttpResponse("No autorizado", status=403)
 
     periodo = _periodo_seleccionado(request)
 

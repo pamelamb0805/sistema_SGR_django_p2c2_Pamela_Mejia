@@ -14,8 +14,15 @@ from django.utils import timezone
 
 from core.exceptions import ReglaNegocioError
 from core.mixins import (
-    ROLES_VALIDACION, ROL_CONSULTA, ROL_DELEGADO, ROL_VERIFICADOR,
-    auditar, es_transversal, get_funcionario, tiene_rol,
+    ROLES_VALIDACION,
+    ROL_CONSULTA,
+    ROL_DELEGADO,
+    ROL_VERIFICADOR,
+    auditar,
+    es_transversal,
+    get_funcionario,
+    tiene_rol,
+    tiene_permiso,
 )
 from core.services import guardar, snapshot, _notificar_crud
 from catalogs.models import Catalogo
@@ -33,6 +40,15 @@ FIRMAS_ARCHIVO = {
 }
 CODIGO_RE = re.compile(r"^ACT-(\d+)(?:-E(\d+))?$", re.IGNORECASE)
 
+def _exigir_permiso(actor, permiso, mensaje=None):
+    """
+    Verifica permisos funcionales en el servicio.
+    La autorización no depende únicamente de los botones o vistas.
+    """
+    if not tiene_permiso(actor, permiso):
+        raise ReglaNegocioError(
+            mensaje or "No tiene permiso para realizar esta operación."
+        )
 
 # ---------------------------------------------------------------------------
 # Visibilidad (ámbito por rol y delegación, CA-07)
@@ -204,18 +220,22 @@ class CRUDActividad:
         return periodo
     @staticmethod
     def crear_actividad(actividad, actor=None):
+        _exigir_permiso(
+            actor,
+            "actividades.registrar",
+            "No tiene permiso para registrar actividades.",
+        )
+
         with transaction.atomic():
             actividad.estado = Actividad.ESTADO_REGISTRADA
 
             CRUDActividad.validar_campos_actividad(actividad)
 
-            # Conserva el nombre del catálogo vigente al registrar.
             actividad.catalogo_nombre = actividad.catalogo.nombre
 
             guardar(actividad, actor, "actividad")
 
         return actividad
-
     @staticmethod
     def mostrar_actividades_por_funcionario(funcionario, periodo=None):
         qs = Actividad.objects.filter(funcionario=funcionario).select_related("item", "catalogo", "periodo")
@@ -228,6 +248,12 @@ class CRUDActividad:
 
     @staticmethod
     def modificar_actividad(actividad, actor=None):
+        _exigir_permiso(
+            actor,
+            "actividades.editar",
+            "No tiene permiso para editar actividades.",
+        )
+
         original = Actividad.objects.select_related("catalogo").get(
             pk=actividad.pk
         )
@@ -246,8 +272,6 @@ class CRUDActividad:
                 original,
             )
 
-            # Si se cambió el catálogo, toma el nombre del nuevo.
-            # Si no cambió, conserva la fotografía histórica.
             if actividad.catalogo_id != original.catalogo_id:
                 actividad.catalogo_nombre = actividad.catalogo.nombre
             else:
@@ -262,10 +286,12 @@ class CRUDActividad:
 
     @staticmethod
     def anular_actividad(actividad, motivo, actor=None):
-        """
-        Anula una actividad, conserva su historial, recalcula indicadores
-        y comunica el cambio a los usuarios autorizados.
-        """
+        _exigir_permiso(
+            actor,
+            "actividades.anular",
+            "No tiene permiso para anular actividades.",
+        )
+
         motivo = (motivo or "").strip()
 
         if not motivo:
@@ -308,10 +334,8 @@ class CRUDActividad:
                 ),
             )
 
-            # Recalcular los resultados afectados.
             _recalcular_indicadores(actividad)
 
-            # Publicar después del COMMIT.
             _notificar_crud(
                 "actividad",
                 "actualizar",
@@ -320,7 +344,6 @@ class CRUDActividad:
             )
 
         return actividad
-
 
 # ---------------------------------------------------------------------------
 # CRUDEvidencia (RF-011, RF-012, HU-09, HU-10)
@@ -359,31 +382,67 @@ class CRUDEvidencia:
 
     @staticmethod
     def adjuntar_evidencia(actividad, archivo, actor=None):
-        """Vincula el archivo al código de la actividad; la actividad pasa a 'En revisión'."""
+        _exigir_permiso(
+            actor,
+            "evidencias.registrar",
+            "No tiene permiso para registrar evidencias.",
+        )
+
         funcionario = get_funcionario(actor)
+        if funcionario is None:
+            raise ReglaNegocioError(
+                "Su usuario no tiene un funcionario asociado."
+            )
+
         metadatos = CRUDEvidencia.validar_formato_archivo(archivo)
         evidencia = None
+
         try:
             with transaction.atomic():
-                actividad = Actividad.objects.select_for_update().get(pk=actividad.pk)
+                actividad = Actividad.objects.select_for_update().get(
+                    pk=actividad.pk
+                )
+
                 _exigir_autor(actividad, actor)
+
                 if not actividad.admite_evidencia:
                     raise ReglaNegocioError(
-                        f"Una actividad en estado «{actividad.estado}» no admite nuevas evidencias.")
-                _exigir_periodo_abierto(actividad.periodo_id, "adjuntar evidencias")
+                        f"Una actividad en estado «{actividad.estado}» "
+                        "no admite nuevas evidencias."
+                    )
+
+                _exigir_periodo_abierto(
+                    actividad.periodo_id,
+                    "adjuntar evidencias",
+                )
+
                 evidencia = Evidencia(
-                    actividad=actividad, funcionario=funcionario, archivo_vinculo=archivo, metadatos=metadatos,
-                    codigo_evidencia=CRUDEvidencia.generar_codigo_evidencia(actividad),
-                    estado_revision=Evidencia.ESTADO_PENDIENTE)
+                    actividad=actividad,
+                    funcionario=funcionario,
+                    archivo_vinculo=archivo,
+                    metadatos=metadatos,
+                    codigo_evidencia=(
+                        CRUDEvidencia.generar_codigo_evidencia(actividad)
+                    ),
+                    estado_revision=Evidencia.ESTADO_PENDIENTE,
+                )
+
                 guardar(evidencia, actor, "evidencia")
                 _recalcular_estado(actividad)
                 _recalcular_indicadores(actividad)
-        except Exception:
-            if evidencia is not None and evidencia.archivo_vinculo and evidencia.archivo_vinculo.name:
-                evidencia.archivo_vinculo.storage.delete(evidencia.archivo_vinculo.name)   # sin archivos huérfanos
-            raise
-        return evidencia
 
+        except Exception:
+            if (
+                evidencia is not None
+                and evidencia.archivo_vinculo
+                and evidencia.archivo_vinculo.name
+            ):
+                evidencia.archivo_vinculo.storage.delete(
+                    evidencia.archivo_vinculo.name
+                )
+            raise
+
+        return evidencia
     @staticmethod
     def mostrar_evidencia_por_actividad(actividad):
         return actividad.evidencias.prefetch_related("validaciones")
@@ -422,10 +481,11 @@ class CRUDValidacion:
                 "La decisión seleccionada no es válida."
             )
 
-        if not tiene_rol(actor, *ROLES_VALIDACION):
-            raise ReglaNegocioError(
-                "No tiene el rol de verificador."
-            )
+        _exigir_permiso(
+            actor,
+            "validaciones.gestionar",
+            "No tiene permiso para validar evidencias.",
+        )
 
         verificador = get_funcionario(actor)
 

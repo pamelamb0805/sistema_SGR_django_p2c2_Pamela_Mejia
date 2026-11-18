@@ -50,6 +50,13 @@ class FuncionarioAdmin(admin.ModelAdmin):
     search_fields = ("nombre", "identificador_institucional")
     inlines = [FuncionarioRolInline]
 
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        if not change:
+            # También cubre altas realizadas directamente desde Django Admin.
+            from .account_utils import crear_cuenta_funcionario
+            crear_cuenta_funcionario(obj)
+
 
 class UsuarioCreationForm(UserCreationForm):
     class Meta(UserCreationForm.Meta):

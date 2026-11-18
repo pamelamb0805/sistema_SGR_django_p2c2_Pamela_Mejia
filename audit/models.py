@@ -323,3 +323,84 @@ class ComentarioRegistro(models.Model):
         raise ValidationError(
             "Los comentarios publicados no pueden eliminarse."
         )
+
+class AlertaOperativa(models.Model):
+    """
+    Alerta operativa persistente del RF-037.
+    Cada usuario conserva su propio estado de atención.
+    """
+
+    ESTADO_PENDIENTE = "Pendiente"
+    ESTADO_ATENDIDA = "Atendida"
+
+    ESTADOS = [
+        (ESTADO_PENDIENTE, "Pendiente"),
+        (ESTADO_ATENDIDA, "Atendida"),
+    ]
+
+    id_alerta = models.AutoField(primary_key=True)
+
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="alertas_operativas",
+    )
+
+    clave = models.CharField(
+        max_length=64,
+        db_index=True,
+    )
+
+    tipo = models.CharField(max_length=40)
+    titulo = models.CharField(max_length=180)
+    motivo = models.TextField()
+    responsable = models.CharField(max_length=180)
+    fecha = models.DateField()
+    url = models.CharField(max_length=500, blank=True)
+    nivel = models.CharField(max_length=20, default="warning")
+    prioridad = models.PositiveSmallIntegerField(default=10)
+
+    estado = models.CharField(
+        max_length=15,
+        choices=ESTADOS,
+        default=ESTADO_PENDIENTE,
+        db_index=True,
+    )
+
+    fecha_generacion = models.DateTimeField(
+        auto_now=True,
+    )
+
+    fecha_atencion = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    atendida_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="alertas_atendidas",
+    )
+
+    class Meta:
+        db_table = "alerta_operativa"
+        ordering = ["prioridad", "fecha", "id_alerta"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["usuario", "clave"],
+                name="uq_alerta_usuario_clave",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["usuario", "estado"],
+                name="ix_alerta_usuario_estado",
+            ),
+        ]
+        verbose_name = "alerta operativa"
+        verbose_name_plural = "alertas operativas"
+
+    def __str__(self):
+        return f"{self.titulo} - {self.estado}"

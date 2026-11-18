@@ -1,0 +1,435 @@
+
+/* =====================================================
+   ASISTENTE TUTORIAL SGR
+   Municipalidad de La Serena
+===================================================== */
+
+
+.sgr-chat {
+    --chat-primary: #AD0000;
+    --chat-dark: #660000;
+    --chat-deep: #4D0000;
+    --chat-soft: #F9DCDC;
+    --chat-border: #E7E8E5;
+
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    z-index: 1080;
+    font-family: inherit;
+
+    /* El contenedor no debe bloquear clics fuera del asistente */
+    pointer-events: none;
+}
+
+/* Solo los elementos interactivos del asistente reciben clics */
+.sgr-chat-toggle,
+.sgr-chat-window {
+    pointer-events: auto;
+}
+
+
+/* Botón flotante */
+
+.sgr-chat-toggle {
+    width: 62px;
+    height: 62px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 50%;
+    color: #fff;
+    background: linear-gradient(135deg, #AD0000, #660000);
+    box-shadow: 0 6px 22px rgba(77,0,0,.3);
+    font-size: 25px;
+    cursor: pointer;
+    transition: transform .2s, box-shadow .2s;
+}
+
+.sgr-chat-toggle:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 9px 26px rgba(77,0,0,.4);
+}
+
+.sgr-chat-toggle-dot {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 13px;
+    height: 13px;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    background: #198754;
+}
+
+/* Ventana */
+
+.sgr-chat-window {
+    position: absolute;
+    right: 0;
+    bottom: 78px;
+    width: 370px;
+    max-width: calc(100vw - 32px);
+    height: 590px;
+    max-height: calc(100vh - 120px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid rgba(102,0,0,.12);
+    border-radius: 17px;
+    background: #fff;
+    box-shadow: 0 12px 45px rgba(0,0,0,.2);
+    animation: sgrChatAppear .2s ease;
+}
+
+.sgr-chat-window[hidden] {
+    display: none !important;
+}
+
+@keyframes sgrChatAppear {
+    from {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Encabezado */
+
+.sgr-chat-header {
+    min-height: 76px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 13px 16px;
+    color: #fff;
+    background: linear-gradient(110deg, #660000, #AD0000);
+}
+
+.sgr-chat-header strong {
+    font-size: .98rem;
+}
+
+.sgr-chat-header small {
+    color: rgba(255,255,255,.85);
+    font-size: .76rem;
+}
+
+.sgr-chat-avatar {
+    width: 43px;
+    height: 43px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(255,255,255,.3);
+    border-radius: 50%;
+    background: rgba(255,255,255,.14);
+    font-size: 20px;
+}
+
+.sgr-chat-online {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 3px;
+    font-size: .68rem;
+    color: #e9f7ed;
+}
+
+.sgr-chat-online span {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #62d88a;
+}
+
+.sgr-chat-close {
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 50%;
+    color: #fff;
+    background: rgba(255,255,255,.12);
+}
+
+.sgr-chat-close:hover {
+    background: rgba(255,255,255,.25);
+}
+
+/* Contenido */
+
+.sgr-chat-content {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: #fafafa;
+}
+
+.sgr-chat-messages {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 16px 13px;
+}
+
+.sgr-chat-message {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 13px;
+}
+
+.sgr-chat-message.sgr-chat-user {
+    justify-content: flex-end;
+}
+
+.sgr-chat-message-avatar {
+    width: 29px;
+    height: 29px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    color: var(--chat-dark);
+    background: var(--chat-soft);
+}
+
+.sgr-chat-bubble {
+    max-width: 86%;
+    padding: 11px 13px;
+    border: 1px solid var(--chat-border);
+    border-radius: 4px 13px 13px 13px;
+    background: #fff;
+    color: #343a40;
+    font-size: .83rem;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+.sgr-chat-bubble p {
+    margin-bottom: 0;
+}
+
+.sgr-chat-user .sgr-chat-bubble {
+    color: #fff;
+    background: #660000;
+    border-color: #660000;
+    border-radius: 13px 4px 13px 13px;
+}
+
+.sgr-chat-bubble a {
+    color: #AD0000;
+    font-weight: 700;
+    text-decoration: underline;
+}
+
+.sgr-chat-user .sgr-chat-bubble a {
+    color: #fff;
+}
+
+/* Opciones */
+
+.sgr-chat-options {
+    padding: 12px 13px;
+    border-top: 1px solid var(--chat-border);
+    background: #fff;
+}
+
+.sgr-chat-section-title {
+    margin-bottom: 8px;
+    color: #6c757d;
+    font-size: .74rem;
+    font-weight: 700;
+}
+
+.sgr-chat-options button {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin-top: 6px;
+    padding: 9px 11px;
+    border: 1px solid #eadada;
+    border-radius: 8px;
+    color: #660000;
+    background: #fff;
+    text-align: left;
+    font-size: .81rem;
+    transition: background .2s;
+}
+
+.sgr-chat-options button:hover {
+    background: #F9DCDC;
+}
+
+/* Tutorial */
+
+.sgr-chat-tutorial {
+    padding: 13px;
+    border-top: 1px solid var(--chat-border);
+    background: #fff;
+}
+
+.sgr-chat-tutorial[hidden] {
+    display: none !important;
+}
+
+.sgr-chat-tutorial-heading {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    color: #660000;
+    font-size: .78rem;
+    font-weight: 700;
+}
+
+.sgr-chat-progress {
+    height: 5px;
+    margin: 9px 0 12px;
+    overflow: hidden;
+    border-radius: 8px;
+    background: #eee;
+}
+
+.sgr-chat-progress div {
+    height: 100%;
+    width: 0;
+    background: #AD0000;
+    transition: width .2s ease;
+}
+
+.sgr-chat-step {
+    min-height: 95px;
+    max-height: 150px;
+    overflow-y: auto;
+    color: #343a40;
+    font-size: .82rem;
+    line-height: 1.5;
+}
+
+.sgr-chat-step strong {
+    display: block;
+    margin-bottom: 5px;
+    color: #660000;
+}
+
+.sgr-chat-tutorial-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.sgr-chat-tutorial-actions button {
+    flex: 1;
+    min-height: 36px;
+    border-radius: 7px;
+    font-size: .77rem;
+}
+
+.sgr-chat-primary {
+    color: #fff;
+    background: #AD0000;
+    border: 1px solid #AD0000;
+}
+
+.sgr-chat-primary:hover {
+    background: #660000;
+}
+
+.sgr-chat-secondary {
+    color: #660000;
+    background: #fff;
+    border: 1px solid #660000;
+}
+
+.sgr-chat-secondary:disabled {
+    opacity: .4;
+    cursor: not-allowed;
+}
+
+.sgr-chat-exit {
+    display: block;
+    margin: 9px auto 0;
+    border: 0;
+    color: #777;
+    background: transparent;
+    font-size: .73rem;
+}
+
+/* Preguntas */
+
+.sgr-chat-question-area {
+    padding: 11px 12px;
+    border-top: 1px solid var(--chat-border);
+    background: #fff;
+}
+
+.sgr-chat-question-area form {
+    display: flex;
+    gap: 7px;
+}
+
+.sgr-chat-question-area input {
+    min-width: 0;
+    flex: 1;
+    height: 40px;
+    padding: 0 11px;
+    border: 1px solid #d7dce1;
+    border-radius: 8px;
+    outline: none;
+    font-size: .8rem;
+}
+
+.sgr-chat-question-area input:focus {
+    border-color: #AD0000;
+    box-shadow: 0 0 0 3px rgba(173,0,0,.1);
+}
+
+.sgr-chat-question-area form button {
+    width: 42px;
+    border: 0;
+    border-radius: 8px;
+    color: #fff;
+    background: #AD0000;
+}
+
+.sgr-chat-question-area small {
+    display: block;
+    margin-top: 6px;
+    color: #899198;
+    font-size: .65rem;
+}
+
+/* Adaptación móvil */
+
+@media (max-width: 480px) {
+    .sgr-chat {
+        right: 14px;
+        bottom: 14px;
+    }
+
+    .sgr-chat-toggle {
+        width: 56px;
+        height: 56px;
+    }
+
+    .sgr-chat-window {
+        position: fixed;
+        right: 8px;
+        bottom: 80px;
+        width: calc(100vw - 16px);
+        height: min(650px, calc(100dvh - 100px));
+        max-width: none;
+        max-height: none;
+    }
+}

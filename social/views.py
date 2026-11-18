@@ -16,7 +16,8 @@ from django.views.generic import CreateView, DetailView, FormView, ListView, Upd
 from core.exceptions import ReglaNegocioError
 from core.mixins import (
     ROLES_OPERATIVOS, AccionPostView, GuardarMixin, ModoMixin, RolRequeridoMixin, denegar_acceso,
-    es_transversal, registrar_auditoria, tiene_rol,
+    es_transversal, registrar_auditoria, tiene_rol,tiene_permiso,
+    get_delegacion_activa,
 )
 from organizations.models import Delegacion
 
@@ -33,6 +34,7 @@ from django.http import Http404, JsonResponse, HttpResponse
 from openpyxl import Workbook
 from core.reporting import incorporar_metadatos_informe
 from core.reporting import informe_excel
+from core.decorators import permiso_requerido
 
 class SocialMixin(RolRequeridoMixin):
     roles_permitidos = ROLES_SOCIAL
@@ -41,24 +43,22 @@ class SocialMixin(RolRequeridoMixin):
 class EscrituraSocialMixin(RolRequeridoMixin):
     roles_permitidos = ROLES_OPERATIVOS
 
+@permiso_requerido(
+    "atenciones.ver",
+    respuesta_json=True,
+)
 def cargar_subatenciones(request):
-    if not request.user.is_authenticated:
-        return JsonResponse(
-            {"error": "Debe iniciar sesión."},
-            status=401,
-        )
+    tipo_id = request.GET.get(
+        "tipo_atencion",
+        "",
+    ).strip()
 
-    if not tiene_rol(request.user, *ROLES_SOCIAL):
-        return JsonResponse(
-            {"error": "No tiene permiso para consultar las subatenciones."},
-            status=403,
-        )
-
-    tipo_id = request.GET.get("tipo_atencion", "").strip()
     area = request.GET.get("area") or None
 
     if not tipo_id.isdigit():
-        return JsonResponse({"subatenciones": []})
+        return JsonResponse({
+            "subatenciones": [],
+        })
 
     from catalogs.models import Catalogo
 
@@ -69,7 +69,9 @@ def cargar_subatenciones(request):
     ).first()
 
     if tipo is None:
-        return JsonResponse({"subatenciones": []})
+        return JsonResponse({
+            "subatenciones": [],
+        })
 
     subatenciones = (
         Catalogo.objects.disponibles(
@@ -89,10 +91,12 @@ def cargar_subatenciones(request):
             for subatencion in subatenciones
         ]
     })
+
 # ---------------------------------------------------------------------------
 # Casos
 # ---------------------------------------------------------------------------
 class CasoListView(PageSizeMixin, SocialMixin, ModoMixin, ListView):
+    permisos_permitidos = ('atenciones.ver',)
     template_name = "social/caso_.html"
     context_object_name = "casos"
     paginate_by = 15
@@ -145,15 +149,10 @@ class CasoListView(PageSizeMixin, SocialMixin, ModoMixin, ListView):
         return contexto
 
 
+@permiso_requerido("atenciones.exportar")
 @informe_excel("Informe de atención social")
 def exportar_casos_excel(request):
     """Exporta casos y gestiones respetando filtros, permisos e historia."""
-
-    if not request.user.is_authenticated:
-        return redirect("login")
-
-    if not tiene_rol(request.user, *ROLES_SOCIAL):
-        return denegar_acceso(request)
 
     casos = (
         casos_visibles(request.user)
@@ -314,6 +313,7 @@ def exportar_casos_excel(request):
 
 class CasoDetailView(SocialMixin, ModoMixin, DetailView):
     """Secuencia completa de gestiones desde un único caso (CA-04)."""
+    permisos_permitidos = ('atenciones.ver',)
     template_name = "social/caso_.html"
     context_object_name = "caso"
     modo = "detalle"
@@ -347,6 +347,7 @@ class CasoCreateView(
     GuardarMixin,
     FormView,
 ):
+    permisos_permitidos = ('atenciones.registrar',)
     form_class = NuevoCasoForm
     template_name = "social/caso_.html"
     modo, titulo = "form", "Nuevo caso de atención social"
@@ -354,7 +355,9 @@ class CasoCreateView(
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
-        kwargs["area"] = self.request.GET.get("area") or None
+        delegacion_id = get_delegacion_activa(self.request.user)
+        delegacion = Delegacion.objects.filter(pk=delegacion_id).first() if delegacion_id else None
+        kwargs["area"] = delegacion.ambito if delegacion else None
         return kwargs
 
     def guardar(self, form):
@@ -392,6 +395,7 @@ class CasoCreateView(
 
 
 class CasoUpdateView(EscrituraSocialMixin, ModoMixin, GuardarMixin, UpdateView):
+    permisos_permitidos = ('atenciones.editar',)
     form_class = CasoForm
     template_name = "social/caso_.html"
     modo, titulo = "form", "Editar datos del caso"
@@ -409,21 +413,39 @@ class CasoUpdateView(EscrituraSocialMixin, ModoMixin, GuardarMixin, UpdateView):
 
 
 class CasoEstadoView(AccionPostView):
-    roles_permitidos = ROLES_SOCIAL
+    permisos_permitidos = ("atenciones.estado",)
+    roles_permitidos = ()
 
     def get_objeto(self, pk):
-        return get_object_or_404(casos_visibles(self.request.user), pk=pk)
+        return get_object_or_404(
+            casos_visibles(self.request.user),
+            pk=pk,
+        )
 
     def accion(self, request, objeto):
         form = EstadoCasoForm(request.POST)
+
         if not form.is_valid():
-            raise ReglaNegocioError("Seleccione un estado válido.")
-        CRUDUsuarioSocial.cambiar_estado_caso(objeto, form.cleaned_data["estado_caso"], request.user)
-        return f"Caso actualizado a «{form.cleaned_data['estado_caso']}»."
+            raise ReglaNegocioError(
+                "Seleccione un estado válido."
+            )
+
+        CRUDUsuarioSocial.cambiar_estado_caso(
+            objeto,
+            form.cleaned_data["estado_caso"],
+            request.user,
+        )
+
+        return (
+            f"Caso actualizado a "
+            f"«{form.cleaned_data['estado_caso']}»."
+        )
 
     def get_redirect(self, objeto):
-        return reverse("social:caso_detail", args=[objeto.pk])
-
+        return reverse(
+            "social:caso_detail",
+            args=[objeto.pk],
+        )
 
 # ---------------------------------------------------------------------------
 # Gestiones
@@ -434,6 +456,7 @@ class GestionCreateView(
     GuardarMixin,
     CreateView,
 ):
+    permisos_permitidos = ('atenciones.gestionar',)
     model = AtencionSocial
     form_class = GestionForm
     template_name = "social/gestion_.html"
@@ -443,9 +466,6 @@ class GestionCreateView(
 
     def dispatch(self, request, *args, **kwargs):
         if request.user.is_authenticated:
-            if not tiene_rol(request.user, *ROLES_OPERATIVOS):
-                return denegar_acceso(request)
-
             self.caso = get_object_or_404(
                 casos_visibles(request.user),
                 pk=kwargs["pk"],
@@ -465,20 +485,26 @@ class GestionCreateView(
             ):
                 messages.error(
                     request,
-                    "El caso está cerrado o ya tiene todas las gestiones permitidas.",
+                    (
+                        "El caso está cerrado o ya tiene "
+                        "todas las gestiones permitidas."
+                    ),
                 )
                 return redirect(
                     "social:caso_detail",
                     pk=self.caso.pk,
                 )
 
-        return super().dispatch(request, *args, **kwargs)
-
+        return super().dispatch(
+            request,
+            *args,
+            **kwargs,
+        )
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs.update(
             caso=self.caso,
-            area=self.request.GET.get("area") or None,
+            area=self.caso.delegacion.ambito,
             instance=AtencionSocial(usuario=self.caso),
         )
         return kwargs
@@ -512,6 +538,7 @@ class GestionUpdateView(
     GuardarMixin,
     UpdateView,
 ):
+    permisos_permitidos = ('atenciones.gestionar',)
     form_class = GestionForm
     template_name = "social/gestion_.html"
     modo, titulo = "form", "Corregir gestión"
@@ -572,11 +599,9 @@ class GestionUpdateView(
 # ---------------------------------------------------------------------------
 # Estadísticas
 # ---------------------------------------------------------------------------
+@permiso_requerido("atenciones.ver")
 def estadisticas(request):
-    if not request.user.is_authenticated:
-        return redirect("login")
-    if not tiene_rol(request.user, *ROLES_SOCIAL):
-        return denegar_acceso(request)
+
     g = request.GET
     qs = gestiones_visibles(request.user)
     for campo, filtro in (("fecha_desde", "fecha__gte"), ("fecha_hasta", "fecha__lte"),
@@ -589,15 +614,10 @@ def estadisticas(request):
         "delegaciones": Delegacion.objects.all() if es_transversal(request.user) else [],
     })
 
+@permiso_requerido("atenciones.exportar")
 @informe_excel("Estadísticas de atención social")
 def exportar_estadisticas_excel(request):
     """Exporta estadísticas sociales respetando filtros y permisos."""
-
-    if not request.user.is_authenticated:
-        return redirect("login")
-
-    if not tiene_rol(request.user, *ROLES_SOCIAL):
-        return denegar_acceso(request)
 
     filtros = request.GET
     gestiones = gestiones_visibles(request.user)

@@ -37,6 +37,7 @@
     let temporizador = null;
     let actualizando = false;
     let actualizacionPendiente = false;
+    let dashboardRefreshScheduled = false;
 
     // ---------------------------------------------------------
     // MENÚ DE NOTIFICACIONES
@@ -475,47 +476,76 @@
             console.info("[SGR] WebSocket conectado.");
         });
 
-        socket.addEventListener("message", async (evento) => {
-            let mensaje;
+    socket.addEventListener("message", async (evento) => {
+        let mensaje;
 
-            try {
-                mensaje = JSON.parse(evento.data);
-            } catch (error) {
-                console.warn(
-                    "[SGR] Mensaje WebSocket inválido.",
-                    error
-                );
-                return;
-            }
+        try {
+            mensaje = JSON.parse(evento.data);
+        } catch (error) {
+            console.warn(
+                "[SGR] Mensaje WebSocket inválido.",
+                error
+            );
+            return;
+        }
 
-            if (!mensaje.module || !mensaje.action) {
-                return;
-            }
+        if (!mensaje.module || !mensaje.action) {
+            return;
+        }
 
-            // Actualizar notificaciones en cualquier módulo.
-            if (mensaje.type === "crud_update") {
-                await cargarNotificaciones();
-
-                document.dispatchEvent(
-                    new CustomEvent("sgr:notification", {
-                        detail: mensaje
-                    })
-                );
-            }
-
-            // Actualizar tabla solamente en el módulo correspondiente.
-            if (mensaje.module !== moduloActual) {
-                return;
-            }
+        if (mensaje.type === "crud_update") {
+            await cargarNotificaciones();
 
             document.dispatchEvent(
-                new CustomEvent("sgr:crud-update", {
+                new CustomEvent("sgr:notification", {
                     detail: mensaje
                 })
             );
+        }
 
-            await actualizarListado();
-        });
+        // El panel ejecutivo necesita recalcular sus datos
+        // cuando cambian actividades, compromisos o medición.
+        const esDashboard = Boolean(
+            document.querySelector(".sgr-executive")
+        );
+
+        const modulosIndicadores = [
+            "activities",
+            "agenda",
+            "measurement"
+        ];
+
+        if (
+            esDashboard &&
+            modulosIndicadores.includes(mensaje.module)
+        ) {
+            if (!dashboardRefreshScheduled) {
+                dashboardRefreshScheduled = true;
+
+                window.setTimeout(() => {
+                    window.location.reload();
+                }, 350);
+            }
+
+            return;
+        }
+
+        // En los demás módulos solo se actualiza
+        // el listado correspondiente.
+        if (mensaje.module !== moduloActual) {
+            return;
+        }
+
+        document.dispatchEvent(
+            new CustomEvent("sgr:crud-update", {
+                detail: mensaje
+            })
+        );
+
+        await actualizarListado();
+    });
+
+
 
         socket.addEventListener("close", () => {
             body.dataset.sgrWebsocket = "desconectado";

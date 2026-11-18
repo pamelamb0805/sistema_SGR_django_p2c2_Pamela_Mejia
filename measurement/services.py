@@ -17,6 +17,7 @@ from core.exceptions import ReglaNegocioError
 from core.mixins import (
     auditar,
     tiene_rol,
+    tiene_permiso,
     ROLES_CONFIGURACION,
     ROLES_MEDICION,
 )
@@ -49,12 +50,11 @@ COMPROMISO_REALIZADO = "Realizado"
 # VALIDACIONES GENERALES
 # ---------------------------------------------------------------------------
 
-def _exigir_rol(actor, roles, mensaje):
-    """Valida permisos también en la capa de servicios."""
-    if not tiene_rol(actor, *roles):
+def _exigir_permiso(actor, permiso, mensaje):
+    """Valida permisos granulares también en la capa de servicios."""
+    if not tiene_permiso(actor, permiso):
         raise ReglaNegocioError(mensaje)
-
-
+    
 def _validar_periodo(periodo):
     """Valida fechas, superposición y reglas del modelo."""
     try:
@@ -160,10 +160,10 @@ class CRUDPeriodo:
     @staticmethod
     def actualizar_reglas_periodo(periodo, datos, actor=None):
         """Registra una nueva versión de reglas y recalcula el período abierto."""
-        _exigir_rol(
+        _exigir_permiso(
             actor,
-            ROLES_CONFIGURACION,
-            "Solo un Administrador puede modificar las reglas de cálculo.",
+            "periodos.editar",
+            "No tiene permiso para modificar las reglas de cálculo.",
         )
 
         if not isinstance(datos, dict):
@@ -292,9 +292,9 @@ class CRUDPeriodo:
 
     @staticmethod
     def crear_periodo(periodo, actor=None):
-        _exigir_rol(
+        _exigir_permiso(
             actor,
-            ROLES_MEDICION,
+            "periodos.editar",
             "No tiene permiso para crear períodos.",
         )
 
@@ -323,9 +323,9 @@ class CRUDPeriodo:
 
     @staticmethod
     def modificar_periodo(periodo, actor=None):
-        _exigir_rol(
+        _exigir_permiso(
             actor,
-            ROLES_MEDICION,
+            "periodos.editar",
             "No tiene permiso para modificar períodos.",
         )
 
@@ -371,9 +371,9 @@ class CRUDPeriodo:
     @staticmethod
     def cerrar_periodo(periodo, actor=None):
         """Congela los indicadores y bloquea modificaciones."""
-        _exigir_rol(
+        _exigir_permiso(
             actor,
-            ROLES_MEDICION,
+            "periodos.cerrar",
             "No tiene permiso para cerrar períodos.",
         )
 
@@ -421,10 +421,10 @@ class CRUDPeriodo:
     @staticmethod
     def reabrir_periodo(periodo, motivo, actor=None):
         """Reabre un período y registra una nueva versión de reglas."""
-        _exigir_rol(
+        _exigir_permiso(
             actor,
-            ROLES_CONFIGURACION,
-            "Solo un Administrador puede reabrir períodos.",
+            "periodos.reabrir",
+            "No tiene permiso para reabrir períodos.",
         )
 
         motivo = (motivo or "").strip()
@@ -833,6 +833,12 @@ class CRUDMeta:
 
     @staticmethod
     def crear_meta(meta, actor=None):
+
+        _exigir_permiso(
+            actor,
+            "metas.editar",
+            "No tiene permiso para crear metas.",
+        )
         with transaction.atomic():
             CRUDMeta._preparar(meta)
 
@@ -864,6 +870,12 @@ class CRUDMeta:
 
     @staticmethod
     def crear_meta_para_cargo(meta_base, actor=None):
+
+        _exigir_permiso(
+            actor,
+            "metas.editar",
+            "No tiene permiso para crear metas para el cargo.",
+        )
         creadas = []
         omitidas = []
 
@@ -912,6 +924,11 @@ class CRUDMeta:
         Modifica una meta sin alterar su identidad histórica.
         Conserva los datos anteriores y registra una nueva versión.
         """
+        _exigir_permiso(
+            actor,
+            "metas.editar",
+            "No tiene permiso para modificar metas.",
+        )
         with transaction.atomic():
             original = (
                 Meta.objects
@@ -979,6 +996,11 @@ class CRUDMeta:
 
     @staticmethod
     def eliminar_meta(meta, actor=None):
+        _exigir_permiso(
+            actor,
+            "metas.eliminar",
+            "No tiene permiso para eliminar metas.",
+        )
         _exigir_abierto(
             meta.periodo,
             "eliminar metas",
@@ -999,9 +1021,9 @@ class CRUDAjuste:
 
     @staticmethod
     def crear_ajuste(ajuste, actor=None):
-        _exigir_rol(
+        _exigir_permiso(
             actor,
-            ROLES_MEDICION,
+            "ajustes.editar",
             "No tiene permiso para registrar incentivos o penalizaciones.",
         )
 
@@ -1025,9 +1047,9 @@ class CRUDAjuste:
 
     @staticmethod
     def modificar_ajuste(ajuste, actor=None):
-        _exigir_rol(
+        _exigir_permiso(
             actor,
-            ROLES_MEDICION,
+            "ajustes.editar",
             "No tiene permiso para modificar ajustes.",
         )
 
@@ -1061,9 +1083,9 @@ class CRUDAjuste:
 
     @staticmethod
     def eliminar_ajuste(ajuste, actor=None):
-        _exigir_rol(
+        _exigir_permiso(
             actor,
-            ROLES_MEDICION,
+            "ajustes.editar",
             "No tiene permiso para eliminar ajustes.",
         )
 
@@ -1674,28 +1696,41 @@ class CalculoIndicadores:
 
 
 
-
-@staticmethod
 def resumen_delegacion(
     funcionarios,
     periodo,
     fecha=None,
 ):
     """
-    Consolida resultados de la delegación e indicadores de actividad reciente.
+    RF-029 y RF-030.
 
-    RF-029:
-    - Responsables, resultados, avance, meta esperada y semáforo.
-    - Promedio y resultado global.
-
-    RF-030:
-    - Fecha del último ingreso válido.
-    - Días sin ingreso.
-    - Cantidad de registros válidos.
-    - Promedio diario por funcionario.
+    Consolida resultados de funcionarios y actividad reciente:
+    - Último ingreso válido.
+    - Días sin ingreso, incluso si nunca ha registrado.
+    - Cantidad de actividades validadas.
+    - Promedio diario de actividades validadas.
     """
     from django.db.models import Count, Max
     from activities.models import Actividad
+
+    if periodo is None:
+        return {
+            "filas": [],
+            "promedio": Decimal("0.00"),
+            "resultado_global": Decimal("0.00"),
+            "total_ponderado_delegacion": Decimal("0.00"),
+            "meta_esperada": Decimal("0.00"),
+            "semaforo": "",
+            "conteo": {
+                calc.SEMAFORO_VERDE: 0,
+                calc.SEMAFORO_AMBAR: 0,
+                calc.SEMAFORO_ROJO: 0,
+            },
+            "total_funcionarios": 0,
+            "bajo_umbral": [],
+            "total_registros_validos": 0,
+            "dias_periodo_transcurridos": 0,
+        }
 
     filas = [
         CalculoIndicadores.resumen_funcionario(
@@ -1714,7 +1749,6 @@ def resumen_delegacion(
         else (fecha or timezone.localdate())
     )
 
-    # Mantener la fecha dentro del período seleccionado.
     fecha_calculo = max(
         periodo.fecha_inicio,
         min(fecha_calculo, periodo.fecha_termino),
@@ -1732,7 +1766,6 @@ def resumen_delegacion(
         fecha_calculo,
     )
 
-    # Respetar la convención oficial: el día inicial es día cero.
     dias_transcurridos = calc.calcular_dias_transcurridos(
         periodo.fecha_inicio,
         periodo.fecha_termino,
@@ -1768,7 +1801,7 @@ def resumen_delegacion(
             for registro in registros
         }
 
-    # Indicadores de actividad reciente por funcionario.
+    # RF-030: indicadores individuales de actividad reciente.
     for fila in filas:
         funcionario_id = fila["funcionario"].pk
 
@@ -1780,10 +1813,17 @@ def resumen_delegacion(
         cantidad = registro.get("cantidad", 0)
         ultima_fecha = registro.get("ultima_fecha")
 
-        dias_sin_ingreso = (
-            (fecha_calculo - ultima_fecha).days
+        # Si nunca registró, se cuentan los días desde el inicio
+        # del período seleccionado.
+        fecha_referencia = (
+            ultima_fecha
             if ultima_fecha
-            else None
+            else periodo.fecha_inicio
+        )
+
+        dias_sin_ingreso = max(
+            (fecha_calculo - fecha_referencia).days,
+            0,
         )
 
         promedio_diario = (
@@ -1799,6 +1839,7 @@ def resumen_delegacion(
             "dias_sin_ingreso": dias_sin_ingreso,
             "cantidad_registros": cantidad,
             "promedio_diario": promedio_diario,
+            "sin_registros": cantidad == 0,
         })
 
     cantidad_funcionarios = len(filas)
@@ -1872,3 +1913,9 @@ def resumen_delegacion(
         "total_registros_validos": total_registros_validos,
         "dias_periodo_transcurridos": dias_transcurridos,
     }
+
+
+# La función se expone como método estático de CalculoIndicadores.
+CalculoIndicadores.resumen_delegacion = staticmethod(
+    resumen_delegacion
+)

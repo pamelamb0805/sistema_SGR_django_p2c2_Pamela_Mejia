@@ -5,19 +5,55 @@ from channels.db import database_sync_to_async
 from core.mixins import (
     es_transversal,
     get_delegaciones_autorizadas_ids,
-    get_roles,
-    ROL_ADMINISTRADOR,
-    ROL_COORDINADOR,
-    ROL_DELEGADO,
-    ROL_FUNCIONARIO,
-    ROL_VERIFICADOR,
+    get_permisos,
 )
 from organizations.models import Delegacion
+
+
+# Un usuario solo recibe eventos de módulos que puede consultar.
+# Se usa cualquier permiso de lectura aplicable al módulo.
+PERMISOS_LECTURA_MODULO = {
+    "organizations": {
+        "delegaciones.ver",
+        "cargos.ver",
+        "items.ver",
+        "roles.ver",
+        "funcionarios.ver",
+        "usuarios.ver",
+    },
+    "catalogs": {
+        "catalogos.ver",
+    },
+    "measurement": {
+        "periodos.ver",
+        "metas.ver",
+        "ajustes.ver",
+        "indicadores.ver",
+    },
+    "activities": {
+        "actividades.ver",
+        "evidencias.ver",
+        "validaciones.ver",
+    },
+    "agenda": {
+        "agenda.ver",
+    },
+    "social": {
+        "atenciones.ver",
+    },
+}
+
 
 
 class SGRConsumer(AsyncJsonWebsocketConsumer):
 
     async def connect(self):
+        # Inicializar siempre los atributos antes de cualquier validación.
+        self.permisos = set()
+        self.delegaciones_autorizadas = set()
+        self.transversal = False
+        self.grupos = []
+
         usuario = self.scope.get("user")
 
         if not usuario or not usuario.is_authenticated:
@@ -26,30 +62,30 @@ class SGRConsumer(AsyncJsonWebsocketConsumer):
 
         datos = await self.obtener_ambito(usuario)
 
-        activo = datos["activo"]
-        transversal = datos["transversal"]
-        delegaciones = datos["delegaciones"]
-
-        if not activo:
+        if not datos["activo"]:
             await self.close(code=4403)
             return
 
-        if not transversal and not delegaciones:
+        self.transversal = datos["transversal"]
+        self.delegaciones_autorizadas = set(datos["delegaciones"])
+        self.permisos = set(datos["permisos"])
+
+        if not self.transversal and not self.delegaciones_autorizadas:
             await self.close(code=4403)
             return
 
-        self.delegaciones_autorizadas = set(delegaciones)
-        self.transversal = transversal
-        self.roles = set(datos["roles"])
+        if not self.permisos:
+            await self.close(code=4403)
+            return
 
         self.grupos = ["sgr_usuarios_activos"]
 
-        if transversal:
+        if self.transversal:
             self.grupos.append("sgr_global")
 
         self.grupos.extend(
             f"sgr_delegacion_{delegacion_id}"
-            for delegacion_id in delegaciones
+            for delegacion_id in self.delegaciones_autorizadas
         )
 
         for grupo in set(self.grupos):
@@ -70,56 +106,39 @@ class SGRConsumer(AsyncJsonWebsocketConsumer):
     async def crud_event(self, event):
         payload = event.get("payload", {})
 
-        autorizado = await self.puede_recibir_evento(
-            payload
-        )
-
-        if not autorizado:
-            return
-
-        await self.send_json(payload)
+        if await self.puede_recibir_evento(payload):
+            await self.send_json(payload)
 
     @database_sync_to_async
     def obtener_ambito(self, usuario):
-        activo = usuario.is_active
-
-        if not activo:
+        if not usuario.is_active:
             return {
                 "activo": False,
                 "transversal": False,
                 "delegaciones": [],
-                "roles": [],
+                "permisos": [],
             }
 
-        funcionario = getattr(
-            usuario,
-            "funcionario",
-            None,
-        )
+        funcionario = getattr(usuario, "funcionario", None)
 
         if funcionario is not None and not funcionario.activo:
             return {
                 "activo": False,
                 "transversal": False,
                 "delegaciones": [],
-                "roles": [],
+                "permisos": [],
             }
 
         transversal = es_transversal(usuario)
 
         if transversal:
             delegaciones = list(
-                Delegacion.objects.values_list(
-                    "pk",
-                    flat=True,
-                )
+                Delegacion.objects.values_list("pk", flat=True)
             )
         else:
             delegaciones = [
                 delegacion_id
-                for delegacion_id in get_delegaciones_autorizadas_ids(
-                    usuario
-                )
+                for delegacion_id in get_delegaciones_autorizadas_ids(usuario)
                 if delegacion_id is not None
             ]
 
@@ -127,14 +146,13 @@ class SGRConsumer(AsyncJsonWebsocketConsumer):
             "activo": True,
             "transversal": transversal,
             "delegaciones": delegaciones,
-            "roles": list(get_roles(usuario)),
+            "permisos": list(get_permisos(usuario)),
         }
 
     async def puede_recibir_evento(self, payload):
         modulo = payload.get("module", "")
         delegacion_id = payload.get("delegacion_id")
 
-        # Comprobar primero el ámbito territorial.
         if delegacion_id:
             try:
                 delegacion_id = int(delegacion_id)
@@ -147,42 +165,14 @@ class SGRConsumer(AsyncJsonWebsocketConsumer):
             ):
                 return False
 
-        # Eventos sin delegación: solo roles autorizados.
-        permisos_modulo = {
-            "organizations": {
-                ROL_ADMINISTRADOR,
-            },
-            "catalogs": {
-                ROL_ADMINISTRADOR,
-            },
-            "measurement": {
-                ROL_ADMINISTRADOR,
-                ROL_COORDINADOR,
-            },
-            "activities": {
-                ROL_ADMINISTRADOR,
-                ROL_COORDINADOR,
-                ROL_DELEGADO,
-                ROL_FUNCIONARIO,
-                ROL_VERIFICADOR,
-            },
-            "agenda": {
-                ROL_ADMINISTRADOR,
-                ROL_COORDINADOR,
-                ROL_DELEGADO,
-                ROL_FUNCIONARIO,
-            },
-            "social": {
-                ROL_ADMINISTRADOR,
-                ROL_COORDINADOR,
-                ROL_DELEGADO,
-                ROL_FUNCIONARIO,
-            },
-        }
+        permisos_requeridos = PERMISOS_LECTURA_MODULO.get(modulo)
 
-        roles_permitidos = permisos_modulo.get(modulo)
-
-        if roles_permitidos is None:
+        if not permisos_requeridos:
             return False
 
-        return bool(self.roles.intersection(roles_permitidos))
+        if "*" in self.permisos:
+            return True
+
+        return bool(
+            self.permisos.intersection(permisos_requeridos)
+        )
