@@ -482,6 +482,89 @@
         margin-left: 22px;
     }
 }
+
+/* Ajustes de legibilidad e identidad visual solicitada (última prioridad). */
+.sgr-executive {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+                 Roboto, "Helvetica Neue", Arial, sans-serif !important;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+}
+.sgr-executive .sgr-welcome {
+    background: linear-gradient(110deg, #FFF2F0, #FBE2DF) !important;
+    color: #71312D !important;
+    border: 1px solid #F0C2BD !important;
+    border-left: 5px solid #E85A53 !important;
+}
+.sgr-executive .sgr-welcome-tag,
+.sgr-executive .sgr-welcome h2,
+.sgr-executive .sgr-welcome p,
+.sgr-executive .sgr-welcome-date,
+.sgr-executive .sgr-welcome-date i {
+    color: #71312D !important;
+    opacity: 1 !important;
+}
+.sgr-executive .sgr-welcome-tag { font-size: .72rem !important; }
+.sgr-executive .sgr-welcome h2 { font-size: 1.2rem !important; }
+.sgr-executive .sgr-welcome p { font-size: .88rem !important; }
+.sgr-executive .sgr-welcome-date { font-size: .82rem !important; }
+
+.sgr-executive .sgr-kpi {
+    background: #FFF4F2 !important;
+    color: #71312D !important;
+    border: 1px solid #F0C2BD !important;
+    border-left: 4px solid #E85A53 !important;
+}
+.sgr-executive .sgr-kpi:hover {
+    background: #FCE9E7 !important;
+    color: #71312D !important;
+}
+.sgr-executive .sgr-kpi-label {
+    color: #71312D !important;
+    font-size: .78rem !important;
+}
+.sgr-executive .sgr-kpi-value {
+    color: #A83D37 !important;
+    font-size: 1.2rem !important;
+}
+.sgr-executive .sgr-kpi-icon {
+    color: #E85A53 !important;
+}
+
+.sgr-executive .sgr-section-heading,
+.sgr-executive .sgr-chart-header,
+.sgr-executive .sgr-table-heading {
+    background: #FBE7E5 !important;
+    border-color: #E85A53 !important;
+}
+.sgr-executive .sgr-section-heading h3,
+.sgr-executive .sgr-section-heading h3 i,
+.sgr-executive .sgr-section-heading span,
+.sgr-executive .sgr-chart-title,
+.sgr-executive .sgr-chart-subtitle,
+.sgr-executive .sgr-chart-icon,
+.sgr-executive .sgr-table-heading h3,
+.sgr-executive .sgr-table-heading h3 i,
+.sgr-executive .sgr-table-heading small,
+.sgr-executive .sgr-table-heading > i {
+    color: #853A35 !important;
+}
+.sgr-executive .sgr-section-heading h3 { font-size: 1rem !important; }
+.sgr-executive .sgr-chart-title { font-size: .92rem !important; }
+.sgr-executive .sgr-chart-subtitle { font-size: .76rem !important; }
+.sgr-executive .sgr-table-heading h3 { font-size: .9rem !important; }
+.sgr-executive .sgr-table-heading small { font-size: .74rem !important; }
+
+.sgr-executive .sgr-chart-card,
+.sgr-executive .sgr-table-card {
+    background: #FFFBFA !important;
+    border-color: #F0C2BD !important;
+    border-top-color: #E85A53 !important;
+}
+.sgr-executive .table { font-size: .8rem !important; }
+.sgr-executive .table thead th { font-size: .72rem !important; }
+.sgr-executive .table tbody td { font-size: .8rem !important; }
+
 </style>
 
 <div class="sgr-executive">
@@ -1220,9 +1303,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
             const resultado = await respuesta.json();
 
-            if (!respuesta.ok) {
+            if (!respuesta.ok || resultado.ok === false) {
                 throw new Error(
-                    resultado.error || "Error al consultar los registros."
+                    resultado.mensaje ||
+                    resultado.error ||
+                    "Error al consultar los registros."
                 );
             }
 
@@ -1237,9 +1322,17 @@ document.addEventListener("DOMContentLoaded", function () {
 
                 const tr = document.createElement("tr");
 
+                const registroTexto = fila.codigo
+                    ? [fila.codigo, fila.descripcion].filter(Boolean).join(" · ")
+                    : fila.registro;
+
+                const responsableTexto = fila.delegacion
+                    ? [fila.responsable, fila.delegacion].filter(Boolean).join(" · ")
+                    : fila.responsable;
+
                 [
-                    fila.registro,
-                    fila.responsable,
+                    registroTexto,
+                    responsableTexto,
                     fila.fecha,
                     fila.estado
                 ].forEach(function (valor) {
