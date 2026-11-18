@@ -74,6 +74,40 @@ class Compromiso(models.Model):
     periodo = models.ForeignKey(Periodo, on_delete=models.PROTECT, db_column="id_periodo",
                                 related_name="compromisos", null=True, blank=True, editable=False)
 
+    # Extensión de COMPROMISO para solicitudes vecinales. No crea una entidad
+    # adicional y mantiene las FK del diagrama E-R original.
+    CANAL_PRESENCIAL = "Presencial"
+    CANALES_SOLICITUD = [(CANAL_PRESENCIAL, "Presencial")]
+    TIPO_GENERAL = "General"
+    TIPO_REGALO = "Regalo / evento día festivo"
+    TIPOS_SOLICITUD = [(TIPO_GENERAL, "Solicitud vecinal"), (TIPO_REGALO, TIPO_REGALO)]
+    ESTADO_SOLICITUD_CREADO = "Creado"
+    ESTADO_SOLICITUD_PENDIENTE = "Pendiente"
+    ESTADO_SOLICITUD_PROCESO = "Proceso"
+    ESTADO_SOLICITUD_CONCLUIDO = "Concluido"
+    ESTADOS_SOLICITUD = [(v, v) for v in (ESTADO_SOLICITUD_CREADO, ESTADO_SOLICITUD_PENDIENTE, ESTADO_SOLICITUD_PROCESO, ESTADO_SOLICITUD_CONCLUIDO)]
+    RELACIONES_VECINALES = [
+        ("Delegado", "Delegado"),
+        ("Presidente", "Presidente de junta de vecinos"),
+        ("Secretario", "Secretario de junta de vecinos"),
+        ("Miembro", "Ciudadano miembro de junta de vecinos"),
+    ]
+
+    rut_solicitante = models.CharField(max_length=12, blank=True, default="", db_index=True)
+    relacion_vecinal = models.CharField(max_length=20, choices=RELACIONES_VECINALES, blank=True, default="")
+    canal_solicitud = models.CharField(max_length=20, choices=CANALES_SOLICITUD, default=CANAL_PRESENCIAL)
+    tipo_solicitud = models.CharField(max_length=40, choices=TIPOS_SOLICITUD, blank=True, default="")
+    categoria_solicitud = models.CharField(max_length=80, blank=True, default="", db_index=True)
+    descripcion_solicitud = models.TextField(blank=True, default="")
+    solucion = models.TextField(blank=True, default="")
+    estado_solicitud = models.CharField(max_length=12, choices=ESTADOS_SOLICITUD, default=ESTADO_SOLICITUD_CREADO, db_index=True)
+    fecha_creacion = models.DateTimeField(default=timezone.now, editable=False, db_index=True)
+    fecha_propuesta_solucion = models.DateField(null=True, blank=True)
+    # NULL permite múltiples compromisos que no son regalos; un RUT no nulo
+    # solo puede existir una vez en toda la tabla y, por tanto, en el sistema.
+    rut_menor = models.CharField(max_length=12, unique=True, null=True, blank=True)
+    nombre_menor = models.CharField(max_length=150, blank=True, default="")
+
     objects = CompromisoQuerySet.as_manager()
 
     class Meta:
@@ -81,12 +115,33 @@ class Compromiso(models.Model):
         ordering = ["fecha_comprometida", "id_compromiso"]
         indexes = [models.Index(fields=["funcionario", "item_medible", "periodo", "estado"], name="ix_comp_avance")]
 
+    def save(self, *args, **kwargs):
+        if not self.rut_menor:
+            self.rut_menor = None
+        # La fecha original se conserva incluso si alguien intenta modificarla
+        # desde una instancia del ORM. No confiar solo en el formulario.
+        if self.pk:
+            original = type(self).objects.filter(pk=self.pk).values_list("fecha_creacion", flat=True).first()
+            if original is not None:
+                self.fecha_creacion = original
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"Compromiso {self.pk}: {self.solicitante} ({self.fecha_comprometida:%d/%m/%Y})"
 
     def clean(self):
+        errores = {}
         if self.funcionario_id and self.item_medible_id and self.item_medible.cargo_id != self.funcionario.cargo_id:
-            raise ValidationError({"item_medible": "El ítem no corresponde al cargo del responsable."})
+            errores["item_medible"] = "El ítem no corresponde al cargo del responsable."
+        if self.tipo_solicitud == self.TIPO_REGALO:
+            if not self.rut_solicitante:
+                errores["rut_solicitante"] = "El RUT del adulto/tutor es obligatorio para un regalo."
+            if not self.rut_menor:
+                errores["rut_menor"] = "El RUT del menor es obligatorio para un regalo."
+        elif self.rut_menor:
+            errores["rut_menor"] = "El RUT del menor solo se utiliza en solicitudes de regalo."
+        if errores:
+            raise ValidationError(errores)
 
     @property
     def realizado(self):

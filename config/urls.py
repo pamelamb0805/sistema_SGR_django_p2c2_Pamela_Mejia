@@ -17,6 +17,7 @@ urlpatterns = [
     path("measurement/", include("measurement.urls")),
     path("activities/", include("activities.urls")),
     path("agenda/", include("agenda.urls")),
+    path("solicitudes/", include("agenda.solicitudes_urls")),
     path("social/", include("social.urls")),
     path("audit/", include("audit.urls")),
 ]

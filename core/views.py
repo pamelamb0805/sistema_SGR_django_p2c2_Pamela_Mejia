@@ -993,7 +993,17 @@ def dashboard(request):
             )
 
 
-        datos["alertas_operativas"] = construir_alertas_operativas(
+        datos["solicitudes_creadas"] = None
+    datos["solicitudes_pendientes"] = None
+    datos["solicitudes_cerradas"] = None
+    if funcionario is not None and tiene_rol(user, "Delegado"):
+        from agenda.solicitudes_services import solicitudes_visibles
+        solicitudes = solicitudes_visibles(user)
+        datos["solicitudes_creadas"] = solicitudes.filter(estado_solicitud="Creado").count()
+        datos["solicitudes_pendientes"] = solicitudes.filter(estado_solicitud="Pendiente").count()
+        datos["solicitudes_cerradas"] = solicitudes.filter(estado_solicitud="Concluido").count()
+
+    datos["alertas_operativas"] = construir_alertas_operativas(
         user=user,
         periodo=periodo,
         hoy=hoy,

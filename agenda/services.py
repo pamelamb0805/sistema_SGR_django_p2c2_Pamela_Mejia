@@ -52,7 +52,7 @@ def _exigir_permiso(actor, permiso, mensaje):
 
 def compromisos_visibles(user):
     """Agenda colectiva: todo el equipo de la delegación la ve; Administrador/Coordinador ven todas."""
-    qs = Compromiso.objects.select_related("funcionario", "delegacion", "item_medible", "periodo")
+    qs = Compromiso.objects.select_related("funcionario", "delegacion", "item_medible", "periodo").filter(tipo_solicitud="")
     return filtrar_por_ambito(qs, user, "delegacion_id")
 
 

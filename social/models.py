@@ -38,6 +38,17 @@ class UsuarioSocial(models.Model):
     nombre = models.CharField(max_length=150)
     territorio = models.CharField(max_length=150)
 
+    # Identificación nacional para verificación de tutor y deduplicación.
+    # Es nullable para no alterar los registros históricos existentes; la semilla
+    # deberá completar este campo cuando disponga de RUT validado.
+    rut = models.CharField(
+        max_length=12,
+        unique=True,
+        null=True,
+        blank=True,
+        help_text="RUT chileno normalizado, sin puntos y con guion.",
+    )
+
     fecha_primer_registro = models.DateField(
         default=timezone.localdate,
         editable=False,
