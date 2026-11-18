@@ -1,0 +1,12 @@
+[run]
+branch = True
+source = organizations,catalogs,measurement,activities,agenda,social,audit,core,websocket
+omit =
+    */migrations/*
+    */tests.py
+    */test_*.py
+    manage.py
+
+[report]
+show_missing = True
+skip_covered = False

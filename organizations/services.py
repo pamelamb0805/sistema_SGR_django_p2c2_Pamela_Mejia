@@ -795,6 +795,12 @@ class CRUDFuncionario:
                 actor,
             )
 
+            # RF-002: todo funcionario nuevo queda vinculado a una cuenta.
+            # La contraseña es inutilizable hasta que se establezca por un
+            # canal administrativo seguro; nunca se genera una clave conocida.
+            from .account_utils import crear_cuenta_funcionario
+            crear_cuenta_funcionario(funcionario)
+
         return funcionario
     @staticmethod
     def mostrar_todos_funcionarios():
