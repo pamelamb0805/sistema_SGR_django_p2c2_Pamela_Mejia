@@ -17,13 +17,15 @@
             Exportar Excel
         </a>
 
-        <a
-            class="btn btn-primary"
-            href="{% url 'organizations:cargo_create' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}"
-        >
-            <i class="bi bi-plus-lg me-1"></i>
-            Nuevo cargo
-        </a>
+        {% if puede_editar %}
+            <a
+                class="btn btn-primary"
+                href="{% url 'organizations:cargo_create' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}"
+            >
+                <i class="bi bi-plus-lg me-1"></i>
+                Nuevo cargo
+            </a>
+        {% endif %}
     {% endif %}
 {% endblock %}
 
@@ -49,13 +51,15 @@
                     </div>
 
                     <div class="d-flex flex-wrap gap-2">
-                        <a
-                            class="btn btn-outline-primary"
-                            href="{% url 'organizations:cargo_update' cargo.pk %}"
-                        >
-                            <i class="bi bi-pencil me-1"></i>
-                            Editar cargo
-                        </a>
+                        {% if puede_editar %}
+                            <a
+                                class="btn btn-outline-primary"
+                                href="{% url 'organizations:cargo_update' cargo.pk %}"
+                            >
+                                <i class="bi bi-pencil me-1"></i>
+                                Editar cargo
+                            </a>
+                        {% endif %}
 
                         <a
                             class="btn btn-outline-secondary"
@@ -326,13 +330,15 @@
                                             Ver ítems
                                         </a>
 
-                                        <a
-                                            class="btn btn-sm btn-outline-secondary"
-                                            href="{% url 'organizations:cargo_update' c.pk %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}"
-                                        >
-                                            <i class="bi bi-pencil me-1"></i>
-                                            Editar
-                                        </a>
+                                        {% if puede_editar %}
+                                            <a
+                                                class="btn btn-sm btn-outline-secondary"
+                                                href="{% url 'organizations:cargo_update' c.pk %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}"
+                                            >
+                                                <i class="bi bi-pencil me-1"></i>
+                                                Editar
+                                            </a>
+                                        {% endif %}
                                     </div>
                                 </td>
                             </tr>

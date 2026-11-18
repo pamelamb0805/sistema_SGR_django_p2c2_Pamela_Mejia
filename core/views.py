@@ -66,10 +66,11 @@ class SGRLoginView(LoginView):
 
 
 
+
 @login_required
 @require_POST
 def cambiar_delegacion_activa(request):
-    """Cambia el contexto de trabajo solo a una delegación previamente autorizada."""
+    """Cambia el contexto de trabajo solo a una delegación autorizada."""
     from organizations.models import Delegacion
 
     valor = (request.POST.get("delegacion_id") or "").strip()
@@ -99,7 +100,6 @@ def cambiar_delegacion_activa(request):
     request.session["sgr_delegacion_activa"] = delegacion.pk
     messages.success(request, f"Contexto cambiado a {delegacion.codigo} · {delegacion.nombre}.")
     return redirect("dashboard")
-
 
 
 def _modelo(app_label, nombre):
@@ -480,6 +480,25 @@ def construir_alertas_operativas(user, periodo=None, hoy=None):
             },
         )
 
+    # Evita enlaces obsoletos del dashboard (por ejemplo /agenda/105/)
+    # cuando el compromiso fue eliminado o dejó de estar dentro del ámbito
+    # autorizado del usuario. La alerta antigua se cierra sin ampliar permisos.
+    import re
+    compromisos_activos_ids = set(compromisos.values_list("pk", flat=True))
+    alertas_agenda_pendientes = AlertaOperativa.objects.filter(
+        usuario=user,
+        tipo="vencimiento",
+        estado=AlertaOperativa.ESTADO_PENDIENTE,
+        url__startswith="/agenda/",
+    )
+    for alerta_antigua in alertas_agenda_pendientes.only("pk", "url"):
+        coincidencia = re.match(r"^/agenda/(\d+)/?$", alerta_antigua.url or "")
+        if coincidencia and int(coincidencia.group(1)) not in compromisos_activos_ids:
+            alerta_antigua.estado = AlertaOperativa.ESTADO_ATENDIDA
+            alerta_antigua.fecha_atencion = timezone.now()
+            alerta_antigua.atendida_por = user
+            alerta_antigua.save(update_fields=["estado", "fecha_atencion", "atendida_por"])
+
     # Las alertas pendientes siguen visibles aunque se recargue
     # el dashboard o se cierre y vuelva a iniciar sesión.
     return list(
@@ -545,6 +564,7 @@ def dashboard(request):
         },
         "grafico_delegaciones": {"labels": [], "values": []},
         "grafico_agenda": {"labels": [], "values": []},
+        "grafico_trabajo": {"labels": [], "values": []},
         "grafico_evolucion": {"labels": [], "values": []},
         "grafico_evidencias": {"labels": [], "values": []},
     }
@@ -785,6 +805,21 @@ def dashboard(request):
             ],
         }
 
+        # Compromisos por trabajo: agrupa por ítem medible asociado.
+        # Los compromisos sin ítem también se muestran para no ocultarlos.
+        conteos_trabajo = compromisos.values(
+            "item_medible__nombre_item"
+        ).annotate(total=Count("pk")).order_by(
+            "item_medible__nombre_item"
+        )
+        datos["grafico_trabajo"] = {
+            "labels": [
+                fila["item_medible__nombre_item"] or "Sin trabajo asociado"
+                for fila in conteos_trabajo
+            ],
+            "values": [fila["total"] for fila in conteos_trabajo],
+        }
+
         abiertos = compromisos.exclude(
             estado=Compromiso.ESTADO_REALIZADO
         )
@@ -993,17 +1028,7 @@ def dashboard(request):
             )
 
 
-        datos["solicitudes_creadas"] = None
-    datos["solicitudes_pendientes"] = None
-    datos["solicitudes_cerradas"] = None
-    if funcionario is not None and tiene_rol(user, "Delegado"):
-        from agenda.solicitudes_services import solicitudes_visibles
-        solicitudes = solicitudes_visibles(user)
-        datos["solicitudes_creadas"] = solicitudes.filter(estado_solicitud="Creado").count()
-        datos["solicitudes_pendientes"] = solicitudes.filter(estado_solicitud="Pendiente").count()
-        datos["solicitudes_cerradas"] = solicitudes.filter(estado_solicitud="Concluido").count()
-
-    datos["alertas_operativas"] = construir_alertas_operativas(
+        datos["alertas_operativas"] = construir_alertas_operativas(
         user=user,
         periodo=periodo,
         hoy=hoy,
@@ -1024,10 +1049,10 @@ def dashboard(request):
 # Código de un solo uso, almacenado mediante hash en MySQL.
 # ============================================================
 
-CODIGO_VIGENCIA_SEGUNDOS = settings.SGR_RESET_CODE_LIFETIME_SECONDS
-CODIGO_REENVIO_SEGUNDOS = settings.SGR_RESET_CODE_RESEND_SECONDS
-CODIGO_MAX_INTENTOS = settings.SGR_RESET_CODE_MAX_ATTEMPTS
-CODIGO_MAX_REENVIOS = settings.SGR_RESET_CODE_MAX_RESENDS
+CODIGO_VIGENCIA_SEGUNDOS = 120
+CODIGO_REENVIO_SEGUNDOS = 45
+CODIGO_MAX_INTENTOS = 5
+CODIGO_MAX_REENVIOS = 3
 
 RESET_SESSION_KEY = "recuperacion_sgr"
 
@@ -1213,7 +1238,7 @@ def recuperar_clave(request):
                 message=(
                     f"Hola {usuario.get_username()},\n\n"
                     f"Tu código de recuperación es: {codigo}\n\n"
-                    f"Este código vence en {max(1, CODIGO_VIGENCIA_SEGUNDOS // 60)} minutos.\n\n"
+                    "Este código vence en 2 minutos.\n\n"
                     "Si no solicitaste este cambio, "
                     "puedes ignorar este correo.\n\n"
                     "Sistema de Gestión de Resultados."
@@ -1797,6 +1822,24 @@ def marcar_alerta_atendida(request, pk):
             "fecha_atencion",
             "atendida_por",
         ])
+
+        # La acción del dashboard también queda auditada y notificada.
+        from audit.services import registrar_evento, crear_notificaciones
+        from audit.models import Notificacion
+        evento = registrar_evento(
+            usuario=request.user,
+            evento="ATENDER",
+            entidad="alerta_operativa",
+            id_entidad=alerta.pk,
+            valor_anterior={"estado": AlertaOperativa.ESTADO_PENDIENTE},
+            valor_nuevo={"estado": AlertaOperativa.ESTADO_ATENDIDA, "titulo": alerta.titulo},
+        )
+        crear_notificaciones(evento, usuario_actor=request.user)
+        Notificacion.objects.get_or_create(
+            usuario=request.user,
+            auditoria=evento,
+            defaults={"delegacion_id": None},
+        )
 
         messages.success(
             request,

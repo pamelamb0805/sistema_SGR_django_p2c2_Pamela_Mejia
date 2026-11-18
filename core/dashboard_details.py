@@ -94,7 +94,7 @@ def _actividades_dashboard(user, funcionario):
 
 def _compromisos_dashboard(user, funcionario):
     qs = Compromiso.objects.select_related(
-        "funcionario", "delegacion"
+        "funcionario", "delegacion", "item_medible"
     )
 
     qs = filtrar_por_ambito(qs, user, "delegacion_id")
@@ -267,6 +267,26 @@ def dashboard_detalle(request):
         qs = _compromisos_dashboard(user, funcionario).filter(
             estado=etiqueta
         )
+
+        filas = [
+            _fila(
+                f"COMP-{c.pk}",
+                c.origen,
+                c.funcionario.nombre,
+                c.delegacion.nombre,
+                c.fecha_comprometida,
+                c.estado,
+                reverse("agenda:compromiso_detail", args=[c.pk]),
+            )
+            for c in qs.order_by("-fecha_comprometida")[:100]
+        ]
+
+    elif tipo == "trabajo":
+        qs = _compromisos_dashboard(user, funcionario)
+        if etiqueta == "Sin trabajo asociado":
+            qs = qs.filter(item_medible__isnull=True)
+        else:
+            qs = qs.filter(item_medible__nombre_item=etiqueta)
 
         filas = [
             _fila(

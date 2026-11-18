@@ -26,6 +26,27 @@
     min-width: 0;
 }
 
+/* Paleta solicitada para bienvenida, tarjetas KPI y paneles del dashboard. */
+.sgr-executive .sgr-welcome {
+    background: linear-gradient(110deg, #fbe3e1, #f7c7c3);
+    color: #54201d;
+    border: 1px solid #efaaa4;
+}
+.sgr-executive .sgr-welcome p,
+.sgr-executive .sgr-welcome-tag { color: #54201d; opacity: 1; }
+.sgr-executive .sgr-kpi,
+.sgr-executive .sgr-chart-card,
+.sgr-executive .sgr-table-card {
+    border-color: #efc1bd;
+}
+.sgr-executive .sgr-kpi { background: #fff5f4; border-left-color: #E85A53; }
+.sgr-executive .sgr-kpi-value,
+.sgr-executive .sgr-kpi-icon,
+.sgr-executive .sgr-table-heading h3 { color: #b63f39; }
+.sgr-executive .sgr-section-heading h3 { color: #b63f39; }
+.sgr-executive .sgr-chart-card .sgr-chart-header { border-bottom-color: #f0cfcc; }
+.sgr-executive .sgr-chart-icon { color: #E85A53; }
+
 .sgr-executive .sgr-welcome {
     display: flex;
     justify-content: space-between;
@@ -590,22 +611,6 @@
         </div>
     </section>
 
-    {% if d.solicitudes_creadas is not None %}
-    <section class="card border-0 shadow-sm mb-3" aria-labelledby="solicitudes-kpi-title">
-      <div class="card-body py-3">
-        <div class="d-flex justify-content-between align-items-center mb-2">
-          <h2 id="solicitudes-kpi-title" class="h6 mb-0">Solicitudes vecinales de mi delegación</h2>
-          <a href="{% url 'solicitudes:lista' %}" class="small">Ver todas</a>
-        </div>
-        <div class="row g-2 text-center">
-          <div class="col-4"><div class="border rounded p-2"><div class="small text-muted">Creadas</div><strong class="fs-4">{{ d.solicitudes_creadas }}</strong></div></div>
-          <div class="col-4"><div class="border rounded p-2"><div class="small text-muted">Pendientes</div><strong class="fs-4">{{ d.solicitudes_pendientes }}</strong></div></div>
-          <div class="col-4"><div class="border rounded p-2"><div class="small text-muted">Cerradas</div><strong class="fs-4">{{ d.solicitudes_cerradas }}</strong></div></div>
-        </div>
-      </div>
-    </section>
-    {% endif %}
-
     <!-- KPI -->
 
     <div class="sgr-kpi-strip">
@@ -805,6 +810,29 @@
                         <i class="bi bi-calendar2-check"></i>
                         <strong>Sin datos disponibles</strong>
                         <p>Aún no hay compromisos registrados.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </section>
+        {% endif %}
+
+        {% if d.grafico_trabajo.labels or user.is_superuser %}
+        <section class="sgr-chart-card">
+            <div class="sgr-chart-header">
+                <div>
+                    <h3 class="sgr-chart-title">Compromisos por trabajo</h3>
+                    <div class="sgr-chart-subtitle">Distribución por ítem medible · Seleccionable</div>
+                </div>
+                <i class="bi bi-briefcase sgr-chart-icon"></i>
+            </div>
+            <div class="sgr-chart-body">
+                {% if d.grafico_trabajo.labels %}
+                    <canvas id="graficoTrabajo"></canvas>
+                {% else %}
+                    <div class="sgr-empty">
+                        <i class="bi bi-briefcase"></i>
+                        <strong>Sin datos disponibles</strong>
+                        <p>Aún no hay compromisos asociados a trabajos o ítems medibles.</p>
                     </div>
                 {% endif %}
             </div>
@@ -1042,6 +1070,7 @@
 {{ d.grafico_semaforo|json_script:"datosSemaforo" }}
 {{ d.grafico_delegaciones|json_script:"datosDelegaciones" }}
 {{ d.grafico_agenda|json_script:"datosAgenda" }}
+{{ d.grafico_trabajo|json_script:"datosTrabajo" }}
 {{ d.grafico_evolucion|json_script:"datosEvolucion" }}
 {{ d.grafico_evidencias|json_script:"datosEvidencias" }}
 
@@ -1103,6 +1132,13 @@ document.addEventListener("DOMContentLoaded", function () {
             interaction: {
                 mode: "nearest",
                 intersect: true
+            },
+            onHover: function(event, elementos, grafico) {
+                if (grafico && grafico.canvas) {
+                    grafico.canvas.style.cursor = elementos && elementos.length
+                        ? "pointer"
+                        : "default";
+                }
             },
             plugins: {
                 legend: {
@@ -1278,7 +1314,7 @@ document.addEventListener("DOMContentLoaded", function () {
             data: {
                 labels: datos.labels,
                 datasets: [{
-                    label: "Cumplimiento",
+                    label: tipo === "trabajo" ? "Compromisos" : "Cumplimiento",
                     data: datos.values,
                     backgroundColor: COLORES,
                     borderRadius: 3,
@@ -1291,6 +1327,8 @@ document.addEventListener("DOMContentLoaded", function () {
                 indexAxis: horizontal ? "y" : "x",
 
                 onClick: eventoSeleccion(tipo),
+                onHover: function(evento, elementos) { canvas.style.cursor = elementos.length ? "pointer" : "default"; },
+                interaction: { mode: "nearest", intersect: true },
 
                 plugins: {
                     ...opcionesBase().plugins,
@@ -1298,7 +1336,9 @@ document.addEventListener("DOMContentLoaded", function () {
                     tooltip: {
                         callbacks: {
                             label: function(context) {
-                                return " " + context.raw + "%";
+                                return tipo === "trabajo"
+                                    ? " " + context.raw + " compromisos"
+                                    : " " + context.raw + "%";
                             }
                         }
                     }
@@ -1307,11 +1347,11 @@ document.addEventListener("DOMContentLoaded", function () {
                 scales: horizontal ? {
                     x: {
                         beginAtZero: true,
-                        max: 100,
+                        ...(tipo === "trabajo" ? {} : { max: 100 }),
                         grid: { color: "rgba(0,0,0,.06)" },
                         ticks: {
                             font: { size: 7 },
-                            callback: value => value + "%"
+                            callback: value => tipo === "trabajo" ? value : value + "%"
                         }
                     },
                     y: {
@@ -1358,7 +1398,9 @@ document.addEventListener("DOMContentLoaded", function () {
             options: {
                 ...opcionesBase(),
                 cutout: "65%",
-                onClick: eventoSeleccion(tipo)
+                onClick: eventoSeleccion(tipo),
+                onHover: function(evento, elementos) { canvas.style.cursor = elementos.length ? "pointer" : "default"; },
+                interaction: { mode: "nearest", intersect: true }
             }
         });
     }
@@ -1419,7 +1461,7 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
-    /* INICIALIZACIÓN DE LOS SEIS GRÁFICOS */
+    /* INICIALIZACIÓN DE LOS SIETE GRÁFICOS */
 
     crearBarras(
         "graficoPersonal",
@@ -1447,6 +1489,13 @@ document.addEventListener("DOMContentLoaded", function () {
         obtenerDatos("datosAgenda"),
         COLORES,
         "agenda"
+    );
+
+    crearBarras(
+        "graficoTrabajo",
+        obtenerDatos("datosTrabajo"),
+        true,
+        "trabajo"
     );
 
     crearLinea(

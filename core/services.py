@@ -188,6 +188,7 @@ def _registrar_operacion(
     crear_notificaciones(
         auditoria,
         delegacion_id=delegacion_id,
+        usuario_actor=actor,
     )
 
     return auditoria
