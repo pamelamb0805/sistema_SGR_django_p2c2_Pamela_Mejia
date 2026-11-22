@@ -1634,6 +1634,11 @@ document.addEventListener("DOMContentLoaded", function () {
        GRÁFICOS DE DONA
     ===================================================== */
 
+
+/* =====================================================
+   GRÁFICOS DE DONA
+===================================================== */
+
     function crearDona(
         id,
         datos,
@@ -1684,6 +1689,36 @@ document.addEventListener("DOMContentLoaded", function () {
                             ? "pointer"
                             : "default"
                     );
+                },
+
+                plugins: {
+                    ...opcionesBase().plugins,
+
+                    legend: {
+                        ...opcionesBase().plugins.legend,
+
+                        onClick: function (
+                            evento,
+                            elementoLeyenda,
+                            leyenda
+                        ) {
+                            const grafico = leyenda.chart;
+                            const indice = elementoLeyenda.index;
+
+                            if (
+                                indice === undefined ||
+                                indice === null
+                            ) {
+                                return;
+                            }
+
+                            // Oculta o vuelve a mostrar el segmento.
+                            grafico.toggleDataVisibility(indice);
+
+                            // Actualiza el gráfico y la leyenda.
+                            grafico.update();
+                        }
+                    }
                 }
             }
         });
