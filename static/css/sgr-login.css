@@ -1,0 +1,683 @@
+
+/* ==========================================================
+   SGR - LOGIN
+   Diseño dividido en dos paneles
+   Color institucional: #4A0000
+========================================================== */
+
+:root {
+    --sgr-login-burdeo: #4A0000;
+    --sgr-login-burdeo-light: #680D0D;
+    --sgr-login-burdeo-dark: #350000;
+    --sgr-login-text: #292929;
+    --sgr-login-muted: #777777;
+    --sgr-login-border: #E5E5E5;
+    --sgr-login-background: #FFFFFF;
+}
+
+/* ==========================================================
+   ESTRUCTURA GENERAL
+========================================================== */
+
+body.sgr-guest {
+    min-height: 100vh;
+    margin: 0;
+    padding: 0;
+    background: #FFFFFF !important;
+    overflow-x: hidden;
+}
+
+body.sgr-guest #contenido {
+    width: 100%;
+    max-width: none;
+    min-height: 100vh;
+    margin: 0;
+    padding: 0 !important;
+}
+
+.sgr-login-page {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    width: 100%;
+    min-height: 100vh;
+    background: #FFFFFF;
+}
+
+/* ==========================================================
+   PANEL IZQUIERDO
+========================================================== */
+
+.sgr-login-welcome {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 4rem;
+    overflow: hidden;
+    color: #FFFFFF;
+    background: var(--sgr-login-burdeo);
+}
+
+.sgr-login-welcome-content {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    width: 100%;
+    max-width: 510px;
+    min-height: 620px;
+}
+
+.sgr-login-brand {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    color: #FFFFFF;
+    font-size: 1.6rem;
+    font-weight: 800;
+    letter-spacing: .12em;
+}
+
+.sgr-login-brand-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 54px;
+    height: 54px;
+    border: 1px solid rgba(255,255,255,.45);
+    border-radius: 14px;
+    font-size: 1.7rem;
+}
+
+.sgr-login-welcome-text {
+    margin: auto 0;
+    padding: 4rem 0;
+}
+
+.sgr-login-eyebrow {
+    display: inline-block;
+    margin-bottom: 1.4rem;
+    color: rgba(255,255,255,.75);
+    font-size: .76rem;
+    font-weight: 700;
+    letter-spacing: .18em;
+}
+
+.sgr-login-welcome-text h1 {
+    max-width: 480px;
+    margin: 0;
+    color: #FFFFFF;
+    font-size: clamp(2.4rem, 4vw, 3.6rem);
+    font-weight: 800;
+    line-height: 1.13;
+    letter-spacing: -.045em;
+}
+
+.sgr-login-separator {
+    width: 68px;
+    height: 4px;
+    margin: 2rem 0;
+    border-radius: 5px;
+    background: #FFFFFF;
+}
+
+.sgr-login-welcome-text p {
+    max-width: 430px;
+    margin: 0;
+    color: rgba(255,255,255,.82);
+    font-size: 1.05rem;
+    line-height: 1.8;
+}
+
+.sgr-login-welcome-footer {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: rgba(255,255,255,.78);
+    font-size: .84rem;
+}
+
+.sgr-login-welcome-footer i {
+    font-size: 1.05rem;
+}
+
+/* Decoración */
+
+.sgr-login-decoration {
+    position: absolute;
+    z-index: 1;
+    border: 1px solid rgba(255,255,255,.09);
+    border-radius: 50%;
+    pointer-events: none;
+}
+
+.sgr-login-decoration-one {
+    width: 430px;
+    height: 430px;
+    right: -180px;
+    top: -150px;
+}
+
+.sgr-login-decoration-two {
+    width: 560px;
+    height: 560px;
+    right: -250px;
+    top: -215px;
+}
+
+/* ==========================================================
+   PANEL DERECHO
+========================================================== */
+
+.sgr-login-access {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 3.5rem 2.5rem;
+    background: #FFFFFF;
+}
+
+.sgr-login-access-content {
+    width: 100%;
+    max-width: 440px;
+}
+
+.sgr-login-heading {
+    margin-bottom: 2rem;
+}
+
+.sgr-login-heading-label {
+    display: block;
+    margin-bottom: .8rem;
+    color: var(--sgr-login-burdeo);
+    font-size: .72rem;
+    font-weight: 800;
+    letter-spacing: .17em;
+}
+
+.sgr-login-heading h2 {
+    margin: 0 0 .7rem;
+    color: var(--sgr-login-burdeo);
+    font-size: 2.2rem;
+    font-weight: 800;
+    letter-spacing: -.045em;
+}
+
+.sgr-login-heading p {
+    margin: 0;
+    color: var(--sgr-login-muted);
+    font-size: .94rem;
+    line-height: 1.6;
+}
+
+/* ==========================================================
+   TARJETA Y FORMULARIO
+========================================================== */
+
+.sgr-login-form-card {
+    width: 100%;
+    padding: 2rem;
+    border: 1px solid #EEEEEE;
+    border-radius: 16px;
+    background: #FFFFFF;
+    box-shadow: 0 12px 40px rgba(0,0,0,.055);
+}
+
+.sgr-login-form-card .form-label {
+    display: block;
+    margin-bottom: .65rem;
+    color: #3C3C3C;
+    font-size: .84rem;
+    font-weight: 700;
+}
+
+.sgr-login-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.sgr-login-input-wrapper > i:first-child {
+    position: absolute;
+    left: 15px;
+    z-index: 2;
+    color: #888888;
+    font-size: 1.05rem;
+    pointer-events: none;
+}
+
+.sgr-login-input-wrapper .form-control {
+    width: 100%;
+    min-height: 52px;
+    padding: .8rem 2.8rem;
+    border: 1px solid var(--sgr-login-border);
+    border-radius: 9px;
+    background: #FFFFFF;
+    color: #292929;
+    font-size: .91rem;
+    box-shadow: none;
+    transition: border-color .2s ease, box-shadow .2s ease;
+}
+
+.sgr-login-input-wrapper .form-control:focus {
+    border-color: var(--sgr-login-burdeo);
+    box-shadow: 0 0 0 3px rgba(74,0,0,.09);
+}
+
+.sgr-login-input-wrapper .form-control::placeholder {
+    color: #AAAAAA;
+}
+
+.sgr-login-password .form-control {
+    padding-right: 3.3rem;
+}
+
+.sgr-login-toggle-password {
+    position: absolute;
+    right: 12px;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 35px;
+    height: 35px;
+    border: 0;
+    border-radius: 7px;
+    color: #777777;
+    background: transparent;
+    font-size: 1.05rem;
+    cursor: pointer;
+}
+
+.sgr-login-toggle-password:hover {
+    color: var(--sgr-login-burdeo);
+    background: #F7F1F1;
+}
+
+.sgr-login-forgot {
+    margin-top: .8rem;
+    margin-bottom: 1.6rem;
+    text-align: right;
+}
+
+.sgr-login-forgot a {
+    color: var(--sgr-login-burdeo);
+    font-size: .82rem;
+    font-weight: 650;
+    text-decoration: none;
+}
+
+.sgr-login-forgot a:hover {
+    color: #850000;
+    text-decoration: underline;
+}
+
+/* ==========================================================
+   BOTÓN INGRESAR
+========================================================== */
+
+.sgr-login-submit {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    min-height: 53px;
+    padding: .85rem 1.2rem;
+    border: 1px solid var(--sgr-login-burdeo);
+    border-radius: 9px;
+    color: #FFFFFF;
+    background: var(--sgr-login-burdeo);
+    font-size: .92rem;
+    font-weight: 750;
+    cursor: pointer;
+    transition: background .2s ease, transform .2s ease, box-shadow .2s ease;
+}
+
+.sgr-login-submit i {
+    font-size: 1.15rem;
+    transition: transform .2s ease;
+}
+
+.sgr-login-submit:hover {
+    border-color: var(--sgr-login-burdeo-light);
+    background: var(--sgr-login-burdeo-light);
+    box-shadow: 0 6px 16px rgba(74,0,0,.18);
+    transform: translateY(-1px);
+}
+
+.sgr-login-submit:hover i {
+    transform: translateX(4px);
+}
+
+.sgr-login-submit:active {
+    transform: translateY(0);
+}
+
+/* ==========================================================
+   SOLICITUD VECINAL
+========================================================== */
+
+.sgr-login-divider {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    margin: 1.6rem 0;
+    color: #999999;
+    font-size: .68rem;
+    font-weight: 750;
+    letter-spacing: .12em;
+}
+
+.sgr-login-divider::before,
+.sgr-login-divider::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: #EAEAEA;
+}
+
+.sgr-login-citizen {
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    width: 100%;
+    padding: 1rem;
+    border: 1px solid #E9E1E1;
+    border-radius: 10px;
+    color: var(--sgr-login-burdeo);
+    background: #FFFFFF;
+    text-decoration: none;
+    transition: border-color .2s ease, background .2s ease, transform .2s ease;
+}
+
+.sgr-login-citizen:hover {
+    border-color: var(--sgr-login-burdeo);
+    color: var(--sgr-login-burdeo);
+    background: #FCF8F8;
+    transform: translateY(-2px);
+}
+
+.sgr-login-citizen-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 43px;
+    width: 43px;
+    height: 43px;
+    border-radius: 10px;
+    color: #FFFFFF;
+    background: var(--sgr-login-burdeo);
+    font-size: 1.2rem;
+}
+
+.sgr-login-citizen-text {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.sgr-login-citizen-text strong {
+    color: #3C3030;
+    font-size: .83rem;
+    font-weight: 750;
+}
+
+.sgr-login-citizen-text small {
+    color: #858585;
+    font-size: .72rem;
+    line-height: 1.4;
+}
+
+.sgr-login-citizen-arrow {
+    color: var(--sgr-login-burdeo);
+    font-size: .9rem;
+}
+
+/* ==========================================================
+   PIE DEL LOGIN
+========================================================== */
+
+.sgr-login-access-footer {
+    margin-top: 2rem;
+    text-align: center;
+}
+
+.sgr-login-access-footer p {
+    margin-bottom: .9rem;
+    color: #777777;
+    font-size: .8rem;
+    line-height: 1.6;
+}
+
+.sgr-login-access-footer p br {
+    display: none;
+}
+
+.sgr-login-access-footer span {
+    color: #AAAAAA;
+    font-size: .7rem;
+}
+
+/* ==========================================================
+   VALIDACIONES
+========================================================== */
+
+.sgr-login-form-card .invalid-feedback {
+    margin-top: .4rem;
+    font-size: .78rem;
+}
+
+.sgr-login-form-card .alert {
+    border-radius: 9px;
+    font-size: .85rem;
+}
+
+/* ==========================================================
+   RESPONSIVE: TABLET
+========================================================== */
+
+@media (max-width: 991.98px) {
+
+    .sgr-login-welcome {
+        padding: 2.5rem;
+    }
+
+    .sgr-login-access {
+        padding: 2.5rem 1.8rem;
+    }
+
+    .sgr-login-welcome-content {
+        min-height: 570px;
+    }
+
+    .sgr-login-welcome-text h1 {
+        font-size: 2.5rem;
+    }
+
+    .sgr-login-form-card {
+        padding: 1.6rem;
+    }
+
+}
+
+/* ==========================================================
+   RESPONSIVE: MÓVIL
+========================================================== */
+
+@media (max-width: 767.98px) {
+
+    .sgr-login-page {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .sgr-login-welcome {
+        min-height: auto;
+        padding: 2rem 1.5rem;
+    }
+
+    .sgr-login-welcome-content {
+        min-height: auto;
+        gap: 2rem;
+    }
+
+    .sgr-login-brand {
+        font-size: 1.25rem;
+    }
+
+    .sgr-login-brand-icon {
+        width: 43px;
+        height: 43px;
+        font-size: 1.35rem;
+    }
+
+    .sgr-login-welcome-text {
+        padding: 1rem 0;
+    }
+
+    .sgr-login-welcome-text h1 {
+        max-width: 420px;
+        font-size: 2rem;
+    }
+
+    .sgr-login-welcome-text p {
+        font-size: .9rem;
+    }
+
+    .sgr-login-separator {
+        margin: 1.3rem 0;
+    }
+
+    .sgr-login-welcome-footer {
+        font-size: .75rem;
+    }
+
+    .sgr-login-access {
+        min-height: auto;
+        padding: 2.5rem 1.3rem 2rem;
+    }
+
+    .sgr-login-access-content {
+        max-width: 480px;
+    }
+
+    .sgr-login-heading h2 {
+        font-size: 1.9rem;
+    }
+
+    .sgr-login-form-card {
+        padding: 1.35rem;
+    }
+
+    .sgr-login-decoration-one {
+        width: 250px;
+        height: 250px;
+        right: -140px;
+        top: -100px;
+    }
+
+    .sgr-login-decoration-two {
+        width: 350px;
+        height: 350px;
+        right: -190px;
+        top: -150px;
+    }
+
+}
+
+/* ==========================================================
+   RESPONSIVE: MÓVILES PEQUEÑOS
+========================================================== */
+
+@media (max-width: 380px) {
+
+    .sgr-login-welcome {
+        padding: 1.5rem 1.1rem;
+    }
+
+    .sgr-login-access {
+        padding-right: 1rem;
+        padding-left: 1rem;
+    }
+
+    .sgr-login-welcome-text h1 {
+        font-size: 1.75rem;
+    }
+
+    .sgr-login-form-card {
+        padding: 1.1rem;
+    }
+
+    .sgr-login-citizen {
+        gap: 9px;
+        padding: .8rem;
+    }
+
+}
+
+/* ==========================================================
+   ACCESIBILIDAD
+========================================================== */
+
+.sgr-login-page :focus-visible {
+    outline: 3px solid #A66B6B;
+    outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+    .sgr-login-page *,
+    .sgr-login-page *::before,
+    .sgr-login-page *::after {
+        scroll-behavior: auto !important;
+        transition: none !important;
+        animation: none !important;
+    }
+
+}
+
+/* Ilustración institucional de La Serena */
+.sgr-login-illustration {
+    position: relative;
+    z-index: 2;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-top: auto;
+    padding: 25px 0 12px;
+    overflow: hidden;
+}
+
+.sgr-login-illustration img {
+    display: block;
+    width: auto;
+    max-width: min(78%, 390px);
+    max-height: 38vh;
+    height: auto;
+    object-fit: contain;
+    border: 0;
+    box-shadow: none;
+}
+
+/* Ajustes para pantallas pequeñas */
+@media (max-width: 768px) {
+    .sgr-login-illustration {
+        padding-top: 18px;
+    }
+
+    .sgr-login-illustration img {
+        max-width: 210px;
+        max-height: 25vh;
+    }
+}
+
+@media (max-height: 700px) and (min-width: 769px) {
+    .sgr-login-illustration img {
+        max-height: 29vh;
+    }
+}
