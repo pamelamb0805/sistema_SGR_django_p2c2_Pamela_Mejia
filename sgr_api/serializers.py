@@ -4,10 +4,6 @@ from organizations.models import Delegacion
 
 
 class DelegacionSerializer(serializers.ModelSerializer):
-    """
-    Representación JSON de una delegación.
-    En esta primera etapa se utiliza para consultas.
-    """
 
     class Meta:
         model = Delegacion
@@ -20,4 +16,4 @@ class DelegacionSerializer(serializers.ModelSerializer):
             "estado",
             "ambito",
         ]
-        read_only_fields = fields
+        read_only_fields = ["id_delegacion"]
