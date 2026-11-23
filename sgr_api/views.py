@@ -166,3 +166,42 @@ def delegacion_detail(request, pk):
         DelegacionSerializer(delegacion).data,
         status=status.HTTP_200_OK,
     )
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def delegacion_estado(request, pk):
+
+    if not _puede_editar(request.user):
+        return Response(
+            {"detail": "No tienes permiso para administrar delegaciones."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    delegacion = _delegaciones_autorizadas(
+        request.user
+    ).filter(
+        id_delegacion=pk
+    ).first()
+
+    if delegacion is None:
+        return Response(
+            {"detail": "Delegación no encontrada."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    try:
+        delegacion = CRUDDelegacion.activar_desactivar_delegacion(
+            delegacion,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        DelegacionSerializer(delegacion).data,
+        status=status.HTTP_200_OK,
+    )

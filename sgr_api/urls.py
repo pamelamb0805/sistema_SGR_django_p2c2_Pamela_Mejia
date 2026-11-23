@@ -14,4 +14,10 @@ urlpatterns = [
         views.delegacion_detail,
         name="api_delegacion_detail",
     ),
+
+    path(
+    "delegaciones/<int:pk>/estado/",
+    views.delegacion_estado,
+    name="api_delegacion_estado",
+    )
 ]
