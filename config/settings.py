@@ -37,6 +37,7 @@ ALLOWED_HOSTS = [h.strip() for h in os.getenv("ALLOWED_HOSTS", "127.0.0.1,localh
 # ---------------------------------------------------------------------------
 # Aplicaciones (carpetas en inglés, según estructura del proyecto)
 # ---------------------------------------------------------------------------
+
 INSTALLED_APPS = [
     "daphne",
     "channels",
@@ -46,18 +47,22 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+
+    # API REST
+    "rest_framework",
+    "sgr_api",
     # Apps del SGR
     "core",
-    "organizations",   # Delegacion, Cargo, ItemMedible, Funcionario, Rol, FuncionarioRol, Usuario
-    "catalogs",        # Catalogo
-    "measurement",     # Periodo, Meta, Indicador, Ajuste
-    "activities",      # Actividad, Evidencia, Validacion
-    "agenda",          # Compromiso, HistorialTransiciones
-    "social",          # UsuarioSocial, AtencionSocial
-    "audit",           # Auditoria
+    "organizations",
+    "catalogs",
+    "measurement",
+    "activities",
+    "agenda",
+    "social",
+    "audit",
     "websocket",
-
 ]
+
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
