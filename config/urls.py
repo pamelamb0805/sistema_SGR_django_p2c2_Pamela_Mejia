@@ -20,6 +20,22 @@ urlpatterns = [
     path("solicitudes/", include("agenda.solicitudes_urls")),
     path("social/", include("social.urls")),
     path("audit/", include("audit.urls")),
+
+
+        # API REST
+    path("api/", include("sgr_api.urls")),
+
+    # Aplicaciones del SGR
+    path("", include("core.urls")),
+    path("organizations/", include("organizations.urls")),
+    path("catalogs/", include("catalogs.urls")),
+    path("measurement/", include("measurement.urls")),
+    path("activities/", include("activities.urls")),
+    path("agenda/", include("agenda.urls")),
+    path("solicitudes/", include("agenda.solicitudes_urls")),
+    path("social/", include("social.urls")),
+    path("audit/", include("audit.urls")),
+
 ]
 
 # Servir fotografías y otros archivos multimedia durante desarrollo.
