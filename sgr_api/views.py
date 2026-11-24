@@ -4,12 +4,25 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from organizations.models import Delegacion, Rol, Funcionario
+
+from organizations.models import (
+    Delegacion,
+    Rol,
+    Funcionario,
+)
+
 from organizations.services import (
     CRUDDelegacion,
     CRUDRol,
     CRUDFuncionario,
 )
+
+from .serializers import (
+    DelegacionSerializer,
+    RolSerializer,
+    FuncionarioSerializer,
+)
+
 
 from core.exceptions import ReglaNegocioError
 from core.mixins import (
@@ -20,7 +33,7 @@ from core.mixins import (
     ROLES_CONFIGURACION,
 )
 
-from .serializers import DelegacionSerializer, RolSerializer
+
 
 
 # ---------------------------------------------------------------------
@@ -458,5 +471,315 @@ def rol_detail(request, pk):
 
     return Response(
         RolSerializer(rol).data,
+        status=status.HTTP_200_OK,
+    )
+
+
+# ---------------------------------------------------------------------
+# AUTORIZACIÓN DE FUNCIONARIOS
+# ---------------------------------------------------------------------
+
+def _puede_consultar_funcionarios(user):
+    return (
+        tiene_rol(user, *ROLES_SUPERVISION)
+        and tiene_permiso(user, "funcionarios.ver")
+    )
+
+
+def _puede_editar_funcionarios(user):
+    return (
+        tiene_rol(user, *ROLES_CONFIGURACION)
+        and tiene_permiso(user, "funcionarios.editar")
+    )
+
+
+def _funcionarios_autorizados(user):
+    queryset = (
+        CRUDFuncionario.mostrar_todos_funcionarios()
+        .select_related("cargo", "delegacion", "usuario")
+        .prefetch_related("roles")
+    )
+
+    return filtrar_por_ambito(
+        queryset,
+        user,
+        campo="delegacion_id",
+    )
+
+
+def _obtener_funcionario_autorizado(user, pk):
+    return _funcionarios_autorizados(user).filter(
+        pk=pk
+    ).first()
+
+
+# ---------------------------------------------------------------------
+# LISTAR Y CREAR FUNCIONARIOS
+# GET  /api/funcionarios/
+# POST /api/funcionarios/
+# ---------------------------------------------------------------------
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def funcionario_list(request):
+
+    if request.method == "GET":
+
+        if not _puede_consultar_funcionarios(request.user):
+            return Response(
+                {
+                    "detail": (
+                        "No tienes permiso para consultar funcionarios."
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        funcionarios = _funcionarios_autorizados(request.user)
+
+        serializer = FuncionarioSerializer(
+            funcionarios,
+            many=True,
+        )
+
+        return Response(
+            serializer.data,
+            status=status.HTTP_200_OK,
+        )
+
+    if not _puede_editar_funcionarios(request.user):
+        return Response(
+            {
+                "detail": (
+                    "No tienes permiso para administrar funcionarios."
+                )
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    serializer = FuncionarioSerializer(data=request.data)
+
+    if not serializer.is_valid():
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    datos = dict(serializer.validated_data)
+    roles = datos.pop("roles_ids")
+
+    try:
+        funcionario = Funcionario(**datos)
+
+        funcionario = CRUDFuncionario.crear_funcionario(
+            funcionario,
+            roles,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    funcionario = _obtener_funcionario_autorizado(
+        request.user,
+        funcionario.pk,
+    )
+
+    return Response(
+        FuncionarioSerializer(funcionario).data,
+        status=status.HTTP_201_CREATED,
+    )
+
+
+# ---------------------------------------------------------------------
+# CONSULTAR, MODIFICAR Y ELIMINAR FUNCIONARIOS
+# GET    /api/funcionarios/<pk>/
+# PUT    /api/funcionarios/<pk>/
+# PATCH  /api/funcionarios/<pk>/
+# DELETE /api/funcionarios/<pk>/
+# ---------------------------------------------------------------------
+
+@api_view(["GET", "PUT", "PATCH", "DELETE"])
+@permission_classes([IsAuthenticated])
+def funcionario_detail(request, pk):
+
+    if request.method == "GET":
+
+        if not _puede_consultar_funcionarios(request.user):
+            return Response(
+                {
+                    "detail": (
+                        "No tienes permiso para consultar funcionarios."
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+    elif not _puede_editar_funcionarios(request.user):
+        return Response(
+            {
+                "detail": (
+                    "No tienes permiso para administrar funcionarios."
+                )
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    funcionario = _obtener_funcionario_autorizado(
+        request.user,
+        pk,
+    )
+
+    if funcionario is None:
+        return Response(
+            {"detail": "Funcionario no encontrado."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == "GET":
+        return Response(
+            FuncionarioSerializer(funcionario).data,
+            status=status.HTTP_200_OK,
+        )
+
+    if request.method == "DELETE":
+
+        try:
+            CRUDFuncionario.eliminar_funcionario(
+                funcionario,
+                request.user,
+            )
+
+        except ReglaNegocioError as exc:
+            return Response(
+                {"detail": str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            status=status.HTTP_204_NO_CONTENT,
+        )
+
+    serializer = FuncionarioSerializer(
+        funcionario,
+        data=request.data,
+        partial=(request.method == "PATCH"),
+    )
+
+    if not serializer.is_valid():
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    datos = dict(serializer.validated_data)
+
+    roles = datos.pop(
+        "roles_ids",
+        list(funcionario.roles.all()),
+    )
+
+    try:
+        for campo, valor in datos.items():
+            setattr(funcionario, campo, valor)
+
+        funcionario = CRUDFuncionario.modificar_funcionario(
+            funcionario,
+            roles,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    funcionario = _obtener_funcionario_autorizado(
+        request.user,
+        funcionario.pk,
+    )
+
+    return Response(
+        FuncionarioSerializer(funcionario).data,
+        status=status.HTTP_200_OK,
+    )
+
+
+# ---------------------------------------------------------------------
+# CONSULTAR Y CAMBIAR ESTADO DEL FUNCIONARIO
+# GET  /api/funcionarios/<pk>/estado/
+# POST /api/funcionarios/<pk>/estado/
+# ---------------------------------------------------------------------
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def funcionario_estado(request, pk):
+
+    if request.method == "GET":
+
+        if not _puede_consultar_funcionarios(request.user):
+            return Response(
+                {
+                    "detail": (
+                        "No tienes permiso para consultar funcionarios."
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+    elif not _puede_editar_funcionarios(request.user):
+        return Response(
+            {
+                "detail": (
+                    "No tienes permiso para modificar funcionarios."
+                )
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    funcionario = _obtener_funcionario_autorizado(
+        request.user,
+        pk,
+    )
+
+    if funcionario is None:
+        return Response(
+            {"detail": "Funcionario no encontrado."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == "GET":
+        return Response(
+            {
+                "id_funcionario": funcionario.pk,
+                "estado": funcionario.estado,
+                "activo": funcionario.activo,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    try:
+        funcionario = CRUDFuncionario.cambiar_estado(
+            funcionario,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    funcionario = _obtener_funcionario_autorizado(
+        request.user,
+        funcionario.pk,
+    )
+
+    return Response(
+        FuncionarioSerializer(funcionario).data,
         status=status.HTTP_200_OK,
     )

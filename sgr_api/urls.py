@@ -33,4 +33,21 @@ urlpatterns = [
         views.rol_detail,
         name="api_rol_detail",
     ),
+
+    # Funcionarios.
+    path(
+        "funcionarios/",
+        views.funcionario_list,
+        name="api_funcionarios",
+    ),
+    path(
+        "funcionarios/<int:pk>/",
+        views.funcionario_detail,
+        name="api_funcionario_detail",
+    ),
+    path(
+        "funcionarios/<int:pk>/estado/",
+        views.funcionario_estado,
+        name="api_funcionario_estado",
+    ),
 ]
