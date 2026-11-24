@@ -219,4 +219,46 @@ urlpatterns = [
     ),
 
 
+    # -------------------------------------------------------------
+    # AGENDA COLECTIVA - COMPROMISOS
+    # -------------------------------------------------------------
+
+    path(
+        "compromisos/",
+        views.compromiso_list,
+        name="api_compromisos",
+    ),
+
+    path(
+        "compromisos/resumen/",
+        views.compromiso_resumen,
+        name="api_compromisos_resumen",
+    ),
+
+    path(
+        "compromisos/<int:pk>/",
+        views.compromiso_detail,
+        name="api_compromiso_detail",
+    ),
+
+    path(
+        "compromisos/<int:pk>/estado/",
+        views.compromiso_estado,
+        name="api_compromiso_estado",
+    ),
+
+    path(
+        "compromisos/<int:pk>/reasignar/",
+        views.compromiso_reasignar,
+        name="api_compromiso_reasignar",
+    ),
+
+    path(
+        "compromisos/<int:pk>/historial/",
+        views.compromiso_historial,
+        name="api_compromiso_historial",
+    ),
+
+
+
 ]
