@@ -23,6 +23,11 @@ from activities.models import (
     Validacion,
 )
 
+from agenda.models import Compromiso, HistorialTransiciones
+from agenda.services import funcionarios_asignables
+from organizations.models import Funcionario
+from django.db.models import Q
+
 class DelegacionSerializer(serializers.ModelSerializer):
 
     class Meta:
@@ -663,6 +668,217 @@ class ValidacionSerializer(serializers.ModelSerializer):
             "version",
             "evidencia",
             "codigo_evidencia",
+            "funcionario",
+            "funcionario_nombre",
+        ]
+
+        read_only_fields = fields
+
+class CompromisoSerializer(serializers.ModelSerializer):
+
+    funcionario_nombre = serializers.CharField(
+        source="funcionario.nombre",
+        read_only=True,
+    )
+
+    delegacion_nombre = serializers.CharField(
+        source="delegacion.nombre",
+        read_only=True,
+    )
+
+    item_medible_nombre = serializers.CharField(
+        source="item_medible.nombre_item",
+        read_only=True,
+        allow_null=True,
+    )
+
+    periodo_descripcion = serializers.SerializerMethodField()
+
+    plazo = serializers.ReadOnlyField()
+
+    fecha_cierre = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Compromiso
+
+        fields = [
+            "id_compromiso",
+            "origen",
+            "solicitante",
+            "territorio",
+            "fecha_comprometida",
+            "area_apoyo",
+            "estado",
+            "observacion",
+            "funcionario",
+            "funcionario_nombre",
+            "delegacion",
+            "delegacion_nombre",
+            "item_medible",
+            "item_medible_nombre",
+            "periodo",
+            "periodo_descripcion",
+            "fecha_creacion",
+            "plazo",
+            "fecha_cierre",
+        ]
+
+        read_only_fields = [
+            "id_compromiso",
+            "estado",
+            "delegacion",
+            "delegacion_nombre",
+            "periodo",
+            "periodo_descripcion",
+            "fecha_creacion",
+            "plazo",
+            "fecha_cierre",
+            "funcionario_nombre",
+            "item_medible_nombre",
+        ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        request = self.context.get("request")
+
+        if request is None:
+            return
+
+        # El responsable solo puede elegirse entre los funcionarios
+        # que el usuario autenticado está autorizado a asignar.
+        asignables = funcionarios_asignables(request.user)
+
+        if self.instance is not None:
+            asignables = (
+                asignables
+                | Funcionario.objects.filter(
+                    pk=self.instance.funcionario_id
+                )
+            )
+
+        self.fields["funcionario"].queryset = asignables.distinct()
+
+        # Solo se permiten ítems vigentes, salvo que se conserve
+        # el ítem que ya tenía el compromiso.
+        items = ItemMedible.objects.filter(
+            vigencia=True
+        ).select_related("cargo")
+
+        if (
+            self.instance is not None
+            and self.instance.item_medible_id
+        ):
+            items = (
+                items
+                | ItemMedible.objects.filter(
+                    pk=self.instance.item_medible_id
+                )
+            )
+
+        self.fields["item_medible"].queryset = items.distinct()
+
+    def get_periodo_descripcion(self, obj):
+        return str(obj.periodo) if obj.periodo_id else None
+
+    def get_fecha_cierre(self, obj):
+        fecha = obj.fecha_cierre
+
+        return fecha.isoformat() if fecha else None
+
+    def validate_origen(self, value):
+        value = value.strip()
+
+        if not value:
+            raise serializers.ValidationError(
+                "El origen es obligatorio."
+            )
+
+        return value
+
+    def validate_solicitante(self, value):
+        value = value.strip()
+
+        if not value:
+            raise serializers.ValidationError(
+                "El solicitante es obligatorio."
+            )
+
+        return value
+
+    def validate_territorio(self, value):
+        value = value.strip()
+
+        if not value:
+            raise serializers.ValidationError(
+                "El territorio es obligatorio."
+            )
+
+        return value
+
+    def validate(self, attrs):
+        funcionario = attrs.get(
+            "funcionario",
+            getattr(self.instance, "funcionario", None),
+        )
+
+        item = attrs.get(
+            "item_medible",
+            getattr(self.instance, "item_medible", None),
+        )
+
+        if funcionario is None:
+            raise serializers.ValidationError({
+                "funcionario": "Debe seleccionar un responsable."
+            })
+
+        if item is not None:
+            if item.cargo_id != funcionario.cargo_id:
+                raise serializers.ValidationError({
+                    "item_medible": (
+                        "El ítem medible no corresponde "
+                        "al cargo del responsable."
+                    )
+                })
+
+            item_original_id = (
+                self.instance.item_medible_id
+                if self.instance is not None
+                else None
+            )
+
+            if (
+                not item.vigencia
+                and item.pk != item_original_id
+            ):
+                raise serializers.ValidationError({
+                    "item_medible": (
+                        "No se puede asignar un ítem medible inactivo."
+                    )
+                })
+
+        return attrs
+
+
+class HistorialTransicionesSerializer(
+    serializers.ModelSerializer
+):
+
+    funcionario_nombre = serializers.CharField(
+        source="funcionario.nombre",
+        read_only=True,
+    )
+
+    class Meta:
+        model = HistorialTransiciones
+
+        fields = [
+            "id_cambio",
+            "estado_anterior",
+            "estado_nuevo",
+            "fecha",
+            "observacion",
+            "compromiso",
             "funcionario",
             "funcionario_nombre",
         ]

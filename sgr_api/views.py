@@ -83,6 +83,22 @@ from activities.services import (
     actividades_visibles,
     evidencias_visibles,
 )
+
+from django.utils.dateparse import parse_date
+
+from agenda.models import Compromiso
+from agenda.services import (
+    CRUDCompromiso,
+    CRUDHistorialTransiciones,
+    compromisos_visibles,
+    puede_gestionar,
+    supervisa,
+)
+
+from .serializers import (
+    CompromisoSerializer,
+    HistorialTransicionesSerializer,
+)
 # ---------------------------------------------------------------------
 # AUTORIZACIÓN
 # ---------------------------------------------------------------------
@@ -3348,6 +3364,661 @@ def evidencia_validar(request, pk):
                 validacion,
                 context={"request": request},
             ).data,
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+# =====================================================================
+# API AGENDA COLECTIVA - COMPROMISOS
+# =====================================================================
+
+
+def _puede_consultar_compromisos(user):
+    return tiene_permiso(user, "agenda.ver")
+
+
+def _compromisos_autorizados(user):
+    return (
+        compromisos_visibles(user)
+        .select_related(
+            "funcionario",
+            "funcionario__cargo",
+            "delegacion",
+            "item_medible",
+            "periodo",
+        )
+        .prefetch_related("historial")
+    )
+
+
+def _obtener_compromiso_autorizado(user, pk):
+    return _compromisos_autorizados(user).filter(
+        pk=pk
+    ).first()
+
+
+def _filtrar_compromisos_api(queryset, filtros):
+    """
+    Aplica los mismos criterios de búsqueda de la agenda web.
+    Devuelve (queryset, error).
+    """
+
+    for campo, filtro in (
+        ("funcionario", "funcionario_id"),
+        ("periodo", "periodo_id"),
+        ("delegacion", "delegacion_id"),
+    ):
+        valor = filtros.get(campo)
+
+        if valor:
+            if not valor.isdigit():
+                return None, {
+                    campo: "Debe ingresar un identificador numérico."
+                }
+
+            queryset = queryset.filter(
+                **{filtro: valor}
+            )
+
+    estado = filtros.get("estado")
+
+    if estado:
+        estados_validos = dict(Compromiso.ESTADOS)
+
+        if estado not in estados_validos:
+            return None, {
+                "estado": "El estado indicado no es válido."
+            }
+
+        queryset = queryset.filter(estado=estado)
+
+    fecha_desde_texto = filtros.get("fecha_desde", "").strip()
+    fecha_hasta_texto = filtros.get("fecha_hasta", "").strip()
+
+    fecha_desde = (
+        parse_date(fecha_desde_texto)
+        if fecha_desde_texto
+        else None
+    )
+
+    fecha_hasta = (
+        parse_date(fecha_hasta_texto)
+        if fecha_hasta_texto
+        else None
+    )
+
+    if fecha_desde_texto and fecha_desde is None:
+        return None, {
+            "fecha_desde": "Formato inválido. Utiliza YYYY-MM-DD."
+        }
+
+    if fecha_hasta_texto and fecha_hasta is None:
+        return None, {
+            "fecha_hasta": "Formato inválido. Utiliza YYYY-MM-DD."
+        }
+
+    if fecha_desde and fecha_hasta and fecha_desde > fecha_hasta:
+        return None, {
+            "detail": (
+                "La fecha desde no puede ser posterior "
+                "a la fecha hasta."
+            )
+        }
+
+    if fecha_desde:
+        queryset = queryset.filter(
+            fecha_comprometida__gte=fecha_desde
+        )
+
+    if fecha_hasta:
+        queryset = queryset.filter(
+            fecha_comprometida__lte=fecha_hasta
+        )
+
+    territorio = filtros.get("territorio", "").strip()
+
+    if territorio:
+        queryset = queryset.filter(
+            territorio__icontains=territorio
+        )
+
+    termino = filtros.get("q", "").strip()
+
+    if termino:
+        from django.db.models import Q
+
+        queryset = queryset.filter(
+            Q(solicitante__icontains=termino)
+            | Q(origen__icontains=termino)
+            | Q(territorio__icontains=termino)
+            | Q(funcionario__nombre__icontains=termino)
+        )
+
+    plazo = filtros.get("plazo", "").strip()
+
+    if plazo == "vencido":
+        queryset = queryset.vencidos()
+
+    elif plazo == "por_vencer":
+        queryset = queryset.por_vencer()
+
+    elif plazo == "abiertos":
+        queryset = queryset.abiertos()
+
+    elif plazo:
+        return None, {
+            "plazo": (
+                "Utiliza vencido, por_vencer o abiertos."
+            )
+        }
+
+    return queryset.order_by(
+        "fecha_comprometida",
+        "id_compromiso",
+    ), None
+
+
+# ---------------------------------------------------------------------
+# LISTAR Y REGISTRAR COMPROMISOS
+#
+# GET  /api/compromisos/
+# POST /api/compromisos/
+# ---------------------------------------------------------------------
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def compromiso_list(request):
+
+    if request.method == "GET":
+
+        if not _puede_consultar_compromisos(request.user):
+            return Response(
+                {
+                    "detail": (
+                        "No tienes permiso para consultar "
+                        "la agenda colectiva."
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        queryset, error = _filtrar_compromisos_api(
+            _compromisos_autorizados(request.user),
+            request.query_params,
+        )
+
+        if error:
+            return Response(
+                error,
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            CompromisoSerializer(
+                queryset,
+                many=True,
+                context={"request": request},
+            ).data,
+            status=status.HTTP_200_OK,
+        )
+
+    # POST: registrar compromiso.
+
+    if not tiene_permiso(request.user, "agenda.registrar"):
+        return Response(
+            {
+                "detail": (
+                    "No tienes permiso para registrar compromisos."
+                )
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    serializer = CompromisoSerializer(
+        data=request.data,
+        context={"request": request},
+    )
+
+    if not serializer.is_valid():
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        compromiso = Compromiso(
+            **serializer.validated_data
+        )
+
+        compromiso = CRUDCompromiso.crear_compromiso(
+            compromiso,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        CompromisoSerializer(
+            compromiso,
+            context={"request": request},
+        ).data,
+        status=status.HTTP_201_CREATED,
+    )
+
+
+# ---------------------------------------------------------------------
+# CONSULTAR Y MODIFICAR COMPROMISO
+#
+# GET   /api/compromisos/<pk>/
+# PUT   /api/compromisos/<pk>/
+# PATCH /api/compromisos/<pk>/
+# ---------------------------------------------------------------------
+
+@api_view(["GET", "PUT", "PATCH"])
+@permission_classes([IsAuthenticated])
+def compromiso_detail(request, pk):
+
+    if request.method == "GET":
+
+        if not _puede_consultar_compromisos(request.user):
+            return Response(
+                {
+                    "detail": (
+                        "No tienes permiso para consultar compromisos."
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+    elif not tiene_permiso(request.user, "agenda.editar"):
+        return Response(
+            {
+                "detail": (
+                    "No tienes permiso para editar compromisos."
+                )
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    compromiso = _obtener_compromiso_autorizado(
+        request.user,
+        pk,
+    )
+
+    if compromiso is None:
+        return Response(
+            {"detail": "Compromiso no encontrado."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == "GET":
+        return Response(
+            CompromisoSerializer(
+                compromiso,
+                context={"request": request},
+            ).data,
+            status=status.HTTP_200_OK,
+        )
+
+    if not puede_gestionar(request.user, compromiso):
+        return Response(
+            {
+                "detail": (
+                    "No tienes autorización para modificar "
+                    "este compromiso."
+                )
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    if compromiso.realizado:
+        return Response(
+            {
+                "detail": (
+                    "Un compromiso realizado no puede modificarse."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    serializer = CompromisoSerializer(
+        compromiso,
+        data=request.data,
+        partial=(request.method == "PATCH"),
+        context={"request": request},
+    )
+
+    if not serializer.is_valid():
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        for campo, valor in serializer.validated_data.items():
+            setattr(compromiso, campo, valor)
+
+        compromiso = CRUDCompromiso.modificar_compromiso(
+            compromiso,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        CompromisoSerializer(
+            compromiso,
+            context={"request": request},
+        ).data,
+        status=status.HTTP_200_OK,
+    )
+
+
+# ---------------------------------------------------------------------
+# CAMBIAR ESTADO DEL COMPROMISO
+#
+# POST /api/compromisos/<pk>/estado/
+# ---------------------------------------------------------------------
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def compromiso_estado(request, pk):
+
+    if not tiene_permiso(request.user, "agenda.estado"):
+        return Response(
+            {
+                "detail": (
+                    "No tienes permiso para cambiar estados."
+                )
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    compromiso = _obtener_compromiso_autorizado(
+        request.user,
+        pk,
+    )
+
+    if compromiso is None:
+        return Response(
+            {"detail": "Compromiso no encontrado."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    nuevo_estado = request.data.get(
+        "estado",
+        request.data.get("nuevo_estado"),
+    )
+
+    observacion = request.data.get("observacion", "")
+
+    if nuevo_estado not in dict(Compromiso.ESTADOS):
+        return Response(
+            {
+                "estado": "Debe seleccionar un estado válido."
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not isinstance(observacion, str):
+        return Response(
+            {
+                "observacion": "La observación debe ser texto."
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        compromiso = CRUDCompromiso.actualizar_estado(
+            compromiso,
+            nuevo_estado,
+            observacion,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        CompromisoSerializer(
+            compromiso,
+            context={"request": request},
+        ).data,
+        status=status.HTTP_200_OK,
+    )
+
+
+# ---------------------------------------------------------------------
+# REASIGNAR RESPONSABLE
+#
+# POST /api/compromisos/<pk>/reasignar/
+# ---------------------------------------------------------------------
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def compromiso_reasignar(request, pk):
+
+    if not tiene_permiso(request.user, "agenda.reasignar"):
+        return Response(
+            {
+                "detail": (
+                    "No tienes permiso para reasignar compromisos."
+                )
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    compromiso = _obtener_compromiso_autorizado(
+        request.user,
+        pk,
+    )
+
+    if compromiso is None:
+        return Response(
+            {"detail": "Compromiso no encontrado."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if not supervisa(
+        request.user,
+        compromiso.delegacion_id,
+    ):
+        return Response(
+            {
+                "detail": (
+                    "Solo la supervisión autorizada puede "
+                    "reasignar este compromiso."
+                )
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    funcionario_id = request.data.get(
+        "funcionario",
+        request.data.get("nuevo_responsable"),
+    )
+
+    motivo = request.data.get("motivo", "")
+
+    if not str(funcionario_id or "").isdigit():
+        return Response(
+            {
+                "funcionario": (
+                    "Debe indicar el identificador del nuevo responsable."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not isinstance(motivo, str) or not motivo.strip():
+        return Response(
+            {
+                "motivo": (
+                    "Debe indicar el motivo de la reasignación."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    from agenda.services import funcionarios_asignables
+
+    nuevo_responsable = (
+        funcionarios_asignables(request.user)
+        .filter(pk=funcionario_id)
+        .first()
+    )
+
+    if nuevo_responsable is None:
+        return Response(
+            {
+                "funcionario": (
+                    "El funcionario no está disponible "
+                    "para esta reasignación."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        compromiso = CRUDCompromiso.reasignar_responsable(
+            compromiso,
+            nuevo_responsable,
+            motivo,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        CompromisoSerializer(
+            compromiso,
+            context={"request": request},
+        ).data,
+        status=status.HTTP_200_OK,
+    )
+
+
+# ---------------------------------------------------------------------
+# HISTORIAL DE TRANSICIONES
+#
+# GET /api/compromisos/<pk>/historial/
+# ---------------------------------------------------------------------
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def compromiso_historial(request, pk):
+
+    if not _puede_consultar_compromisos(request.user):
+        return Response(
+            {
+                "detail": (
+                    "No tienes permiso para consultar el historial."
+                )
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    compromiso = _obtener_compromiso_autorizado(
+        request.user,
+        pk,
+    )
+
+    if compromiso is None:
+        return Response(
+            {"detail": "Compromiso no encontrado."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    historial = CRUDHistorialTransiciones.mostrar_historial_por_compromiso(
+        compromiso.pk
+    )
+
+    return Response(
+        HistorialTransicionesSerializer(
+            historial,
+            many=True,
+            context={"request": request},
+        ).data,
+        status=status.HTTP_200_OK,
+    )
+
+
+# ---------------------------------------------------------------------
+# RESUMEN COLECTIVO Y CONTROL DE PLAZOS
+#
+# GET /api/compromisos/resumen/
+# ---------------------------------------------------------------------
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def compromiso_resumen(request):
+
+    if not _puede_consultar_compromisos(request.user):
+        return Response(
+            {
+                "detail": (
+                    "No tienes permiso para consultar el resumen."
+                )
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    queryset, error = _filtrar_compromisos_api(
+        _compromisos_autorizados(request.user),
+        request.query_params,
+    )
+
+    if error:
+        return Response(
+            error,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    resumen = CRUDCompromiso.resumen_colectivo(queryset)
+
+    plazos = CRUDCompromiso.controlar_plazos(
+        queryset=queryset
+    )
+
+    contexto = {"request": request}
+
+    return Response(
+        {
+            "resumen": resumen,
+            "plazos": {
+                "dias_alerta": plazos["dias_alerta"],
+                "vencidos": CompromisoSerializer(
+                    plazos["vencidos"],
+                    many=True,
+                    context=contexto,
+                ).data,
+                "por_vencer": CompromisoSerializer(
+                    plazos["por_vencer"],
+                    many=True,
+                    context=contexto,
+                ).data,
+                "realizados_fuera_de_plazo": CompromisoSerializer(
+                    plazos["realizados_fuera_de_plazo"],
+                    many=True,
+                    context=contexto,
+                ).data,
+            },
         },
         status=status.HTTP_200_OK,
     )
