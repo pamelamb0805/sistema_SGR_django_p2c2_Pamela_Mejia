@@ -4,8 +4,8 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from organizations.models import Delegacion
-from organizations.services import CRUDDelegacion
+from organizations.models import Delegacion, Rol
+from organizations.services import CRUDDelegacion, CRUDRol
 
 from core.exceptions import ReglaNegocioError
 from core.mixins import (
@@ -17,7 +17,7 @@ from core.mixins import (
 )
 
 from .serializers import DelegacionSerializer
-
+from .serializers import DelegacionSerializer, RolSerializer
 
 # ---------------------------------------------------------------------
 # AUTORIZACIÓN
@@ -279,5 +279,180 @@ def delegacion_estado(request, pk):
 
     return Response(
         DelegacionSerializer(delegacion).data,
+        status=status.HTTP_200_OK,
+    )
+
+
+# ---------------------------------------------------------------------
+# AUTORIZACIÓN DE ROLES
+# ---------------------------------------------------------------------
+
+def _puede_consultar_roles(user):
+    return (
+        tiene_rol(user, *ROLES_SUPERVISION)
+        and tiene_permiso(user, "roles.ver")
+    )
+
+
+def _puede_editar_roles(user):
+    return (
+        tiene_rol(user, *ROLES_CONFIGURACION)
+        and tiene_permiso(user, "roles.editar")
+    )
+
+
+# ---------------------------------------------------------------------
+# LISTAR Y CREAR ROLES
+# GET  /api/roles/
+# POST /api/roles/
+# ---------------------------------------------------------------------
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def rol_list(request):
+
+    if request.method == "GET":
+
+        if not _puede_consultar_roles(request.user):
+            return Response(
+                {"detail": "No tienes permiso para consultar roles."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        roles = CRUDRol.mostrar_roles()
+
+        serializer = RolSerializer(
+            roles,
+            many=True,
+        )
+
+        return Response(
+            serializer.data,
+            status=status.HTTP_200_OK,
+        )
+
+    if not _puede_editar_roles(request.user):
+        return Response(
+            {"detail": "No tienes permiso para administrar roles."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    serializer = RolSerializer(data=request.data)
+
+    if not serializer.is_valid():
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        rol = Rol(**serializer.validated_data)
+
+        rol = CRUDRol.crear_rol(
+            rol,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        RolSerializer(rol).data,
+        status=status.HTTP_201_CREATED,
+    )
+
+
+# ---------------------------------------------------------------------
+# CONSULTAR, MODIFICAR Y ELIMINAR ROLES
+# GET    /api/roles/<pk>/
+# PUT    /api/roles/<pk>/
+# PATCH  /api/roles/<pk>/
+# DELETE /api/roles/<pk>/
+# ---------------------------------------------------------------------
+
+@api_view(["GET", "PUT", "PATCH", "DELETE"])
+@permission_classes([IsAuthenticated])
+def rol_detail(request, pk):
+
+    if request.method == "GET":
+
+        if not _puede_consultar_roles(request.user):
+            return Response(
+                {"detail": "No tienes permiso para consultar roles."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+    else:
+
+        if not _puede_editar_roles(request.user):
+            return Response(
+                {"detail": "No tienes permiso para administrar roles."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+    rol = Rol.objects.filter(pk=pk).first()
+
+    if rol is None:
+        return Response(
+            {"detail": "Rol no encontrado."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == "GET":
+        return Response(
+            RolSerializer(rol).data,
+            status=status.HTTP_200_OK,
+        )
+
+    if request.method == "DELETE":
+
+        try:
+            CRUDRol.eliminar_rol(
+                rol,
+                request.user,
+            )
+
+        except ReglaNegocioError as exc:
+            return Response(
+                {"detail": str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            status=status.HTTP_204_NO_CONTENT,
+        )
+
+    serializer = RolSerializer(
+        rol,
+        data=request.data,
+        partial=(request.method == "PATCH"),
+    )
+
+    if not serializer.is_valid():
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        for campo, valor in serializer.validated_data.items():
+            setattr(rol, campo, valor)
+
+        rol = CRUDRol.modificar_rol(
+            rol,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        RolSerializer(rol).data,
         status=status.HTTP_200_OK,
     )
