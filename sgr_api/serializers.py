@@ -27,6 +27,8 @@ from agenda.models import Compromiso, HistorialTransiciones
 from agenda.services import funcionarios_asignables
 from organizations.models import Funcionario
 from django.db.models import Q
+from catalogs.models import Catalogo
+from social.models import UsuarioSocial, AtencionSocial
 
 class DelegacionSerializer(serializers.ModelSerializer):
 
@@ -889,3 +891,272 @@ class HistorialTransicionesSerializer(
         ]
 
         read_only_fields = fields
+
+class AtencionSocialSerializer(serializers.ModelSerializer):
+    tipo_atencion_nombre = serializers.CharField(read_only=True)
+    subatencion_nombre = serializers.CharField(read_only=True)
+    funcionario_nombre = serializers.CharField(
+        source="funcionario.nombre",
+        read_only=True,
+    )
+    delegacion_nombre = serializers.CharField(
+        source="delegacion.nombre",
+        read_only=True,
+    )
+    usuario_nombre = serializers.CharField(
+        source="usuario.nombre",
+        read_only=True,
+    )
+
+    class Meta:
+        model = AtencionSocial
+        fields = [
+            "id_atencion_social",
+            "numero_gestion",
+            "tipo_atencion",
+            "tipo_atencion_nombre",
+            "subatencion",
+            "subatencion_nombre",
+            "descripcion",
+            "fecha",
+            "fecha_registro",
+            "resultado",
+            "estado",
+            "usuario",
+            "usuario_nombre",
+            "funcionario",
+            "funcionario_nombre",
+            "delegacion",
+            "delegacion_nombre",
+        ]
+        read_only_fields = [
+            "id_atencion_social",
+            "numero_gestion",
+            "tipo_atencion_nombre",
+            "subatencion_nombre",
+            "fecha_registro",
+            "usuario",
+            "usuario_nombre",
+            "funcionario",
+            "funcionario_nombre",
+            "delegacion",
+            "delegacion_nombre",
+        ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        request = self.context.get("request")
+        caso = self.context.get("caso")
+
+        area = self.context.get("area")
+
+        if area is None and caso is not None and caso.delegacion_id:
+            area = caso.delegacion.ambito
+        elif area is None and isinstance(self.instance, AtencionSocial):
+            area = self.instance.delegacion.ambito
+
+        tipos = Catalogo.objects.disponibles(
+            area=area,
+            tipo=Catalogo.TIPO_ATENCION,
+        )
+
+        subatenciones = Catalogo.objects.disponibles(
+            area=area,
+            tipo=Catalogo.TIPO_SUBATENCION,
+        )
+
+        if isinstance(self.instance, AtencionSocial):
+            tipos = (
+                tipos
+                | Catalogo.objects.filter(
+                    pk=self.instance.tipo_atencion_id
+                )
+            ).distinct()
+
+            subatenciones = (
+                subatenciones
+                | Catalogo.objects.filter(
+                    pk=self.instance.subatencion_id
+                )
+            ).distinct()
+
+        self.fields["tipo_atencion"].queryset = tipos
+        self.fields["subatencion"].queryset = subatenciones
+
+    def validate_descripcion(self, value):
+        value = value.strip()
+
+        if not value:
+            raise serializers.ValidationError(
+                "La descripción de la atención es obligatoria."
+            )
+
+        return value
+
+    def validate_resultado(self, value):
+        return value.strip()
+
+    def validate(self, attrs):
+        tipo = attrs.get(
+            "tipo_atencion",
+            getattr(self.instance, "tipo_atencion", None),
+        )
+        subatencion = attrs.get(
+            "subatencion",
+            getattr(self.instance, "subatencion", None),
+        )
+        estado = attrs.get(
+            "estado",
+            getattr(
+                self.instance,
+                "estado",
+                AtencionSocial.ESTADO_REALIZADA,
+            ),
+        )
+        resultado = attrs.get(
+            "resultado",
+            getattr(self.instance, "resultado", ""),
+        )
+
+        if tipo is None or subatencion is None:
+            raise serializers.ValidationError({
+                "tipo_atencion": (
+                    "Debe seleccionar el Tipo de Atención "
+                    "y la Subatención."
+                )
+            })
+
+        if tipo.tipo_catalogo != Catalogo.TIPO_ATENCION:
+            raise serializers.ValidationError({
+                "tipo_atencion": "El catálogo seleccionado no es un Tipo de Atención."
+            })
+
+        if subatencion.tipo_catalogo != Catalogo.TIPO_SUBATENCION:
+            raise serializers.ValidationError({
+                "subatencion": "El catálogo seleccionado no es una Subatención."
+            })
+
+        if subatencion.tipo_atencion_padre_id != tipo.pk:
+            raise serializers.ValidationError({
+                "subatencion": (
+                    "La Subatención no corresponde al Tipo de Atención."
+                )
+            })
+
+        tipo_original_id = (
+            self.instance.tipo_atencion_id
+            if isinstance(self.instance, AtencionSocial)
+            else None
+        )
+        subatencion_original_id = (
+            self.instance.subatencion_id
+            if isinstance(self.instance, AtencionSocial)
+            else None
+        )
+
+        if not tipo.activo and tipo.pk != tipo_original_id:
+            raise serializers.ValidationError({
+                "tipo_atencion": "El Tipo de Atención está inactivo."
+            })
+
+        if (
+            not subatencion.activo
+            and subatencion.pk != subatencion_original_id
+        ):
+            raise serializers.ValidationError({
+                "subatencion": "La Subatención está inactiva."
+            })
+
+        if (
+            estado == AtencionSocial.ESTADO_REALIZADA
+            and not resultado.strip()
+        ):
+            raise serializers.ValidationError({
+                "resultado": (
+                    "Indique el resultado de la gestión realizada."
+                )
+            })
+
+        return attrs
+
+
+class UsuarioSocialSerializer(serializers.ModelSerializer):
+    delegacion_nombre = serializers.CharField(
+        source="delegacion.nombre",
+        read_only=True,
+    )
+
+    gestiones = AtencionSocialSerializer(
+        many=True,
+        read_only=True,
+    )
+
+    total_gestiones = serializers.SerializerMethodField()
+
+    primera_gestion = serializers.DictField(
+        write_only=True,
+        required=False,
+    )
+
+    class Meta:
+        model = UsuarioSocial
+        fields = [
+            "id_usuario",
+            "nombre",
+            "territorio",
+            "rut",
+            "fecha_primer_registro",
+            "estado_caso",
+            "delegacion",
+            "delegacion_nombre",
+            "total_gestiones",
+            "gestiones",
+            "primera_gestion",
+        ]
+        read_only_fields = [
+            "id_usuario",
+            "fecha_primer_registro",
+            "estado_caso",
+            "delegacion",
+            "delegacion_nombre",
+            "total_gestiones",
+            "gestiones",
+        ]
+
+    def get_total_gestiones(self, obj):
+        return obj.gestiones.count()
+
+    def validate_nombre(self, value):
+        value = value.strip()
+
+        if not value:
+            raise serializers.ValidationError(
+                "El nombre de la persona atendida es obligatorio."
+            )
+
+        return value
+
+    def validate_territorio(self, value):
+        value = value.strip()
+
+        if not value:
+            raise serializers.ValidationError(
+                "El territorio es obligatorio."
+            )
+
+        return value
+
+    def validate_rut(self, value):
+        value = value.strip()
+        return value or None
+
+    def validate(self, attrs):
+        if self.instance is None and not attrs.get("primera_gestion"):
+            raise serializers.ValidationError({
+                "primera_gestion": (
+                    "Para crear un caso debes incluir su primera gestión."
+                )
+            })
+
+        return attrs

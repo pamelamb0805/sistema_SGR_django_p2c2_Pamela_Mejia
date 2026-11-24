@@ -99,6 +99,19 @@ from .serializers import (
     CompromisoSerializer,
     HistorialTransicionesSerializer,
 )
+from social.models import UsuarioSocial, AtencionSocial
+from social.services import (
+    CRUDUsuarioSocial,
+    CRUDAtencionSocial,
+    casos_visibles,
+    gestiones_visibles,
+    puede_escribir,
+    estadisticas_atenciones,
+)
+from .serializers import (
+    UsuarioSocialSerializer,
+    AtencionSocialSerializer,
+)
 # ---------------------------------------------------------------------
 # AUTORIZACIÓN
 # ---------------------------------------------------------------------
@@ -4020,5 +4033,722 @@ def compromiso_resumen(request):
                 ).data,
             },
         },
+        status=status.HTTP_200_OK,
+    )
+
+# =====================================================================
+# API DE ATENCIÓN SOCIAL
+# CASOS Y GESTIONES
+# =====================================================================
+
+
+def _puede_consultar_social(user):
+    return tiene_permiso(user, "atenciones.ver")
+
+
+def _casos_sociales_autorizados(user):
+    return (
+        casos_visibles(user)
+        .select_related("delegacion")
+        .prefetch_related(
+            "gestiones",
+            "gestiones__tipo_atencion",
+            "gestiones__subatencion",
+            "gestiones__funcionario",
+            "gestiones__delegacion",
+        )
+    )
+
+
+def _obtener_caso_social_autorizado(user, pk):
+    return _casos_sociales_autorizados(user).filter(
+        pk=pk
+    ).first()
+
+
+def _filtrar_casos_sociales(queryset, filtros):
+    q = filtros.get("q", "").strip()
+
+    if q:
+        from django.db.models import Q
+
+        queryset = queryset.filter(
+            Q(nombre__icontains=q)
+            | Q(territorio__icontains=q)
+            | Q(rut__icontains=q)
+        )
+
+    territorio = filtros.get("territorio", "").strip()
+
+    if territorio:
+        queryset = queryset.filter(
+            territorio__icontains=territorio
+        )
+
+    estado = filtros.get("estado_caso", "").strip()
+
+    if estado:
+        if estado not in dict(UsuarioSocial.ESTADOS):
+            return None, {
+                "estado_caso": "El estado indicado no es válido."
+            }
+
+        queryset = queryset.filter(
+            estado_caso=estado
+        )
+
+    delegacion = filtros.get("delegacion", "").strip()
+
+    if delegacion:
+        if not delegacion.isdigit():
+            return None, {
+                "delegacion": "Debe ingresar un identificador numérico."
+            }
+
+        queryset = queryset.filter(
+            delegacion_id=delegacion
+        )
+
+    fecha_desde_texto = filtros.get(
+        "fecha_desde",
+        "",
+    ).strip()
+
+    fecha_hasta_texto = filtros.get(
+        "fecha_hasta",
+        "",
+    ).strip()
+
+    fecha_desde = (
+        parse_date(fecha_desde_texto)
+        if fecha_desde_texto
+        else None
+    )
+
+    fecha_hasta = (
+        parse_date(fecha_hasta_texto)
+        if fecha_hasta_texto
+        else None
+    )
+
+    if fecha_desde_texto and fecha_desde is None:
+        return None, {
+            "fecha_desde": "Formato inválido. Utiliza YYYY-MM-DD."
+        }
+
+    if fecha_hasta_texto and fecha_hasta is None:
+        return None, {
+            "fecha_hasta": "Formato inválido. Utiliza YYYY-MM-DD."
+        }
+
+    if fecha_desde and fecha_hasta and fecha_desde > fecha_hasta:
+        return None, {
+            "detail": (
+                "La fecha desde no puede ser posterior "
+                "a la fecha hasta."
+            )
+        }
+
+    if fecha_desde:
+        queryset = queryset.filter(
+            fecha_primer_registro__gte=fecha_desde
+        )
+
+    if fecha_hasta:
+        queryset = queryset.filter(
+            fecha_primer_registro__lte=fecha_hasta
+        )
+
+    return queryset.order_by(
+        "-fecha_primer_registro",
+        "nombre",
+    ), None
+
+
+# ---------------------------------------------------------------------
+# LISTAR Y CREAR CASOS
+#
+# GET  /api/casos/
+# POST /api/casos/
+# ---------------------------------------------------------------------
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def caso_social_list(request):
+
+    if request.method == "GET":
+
+        if not _puede_consultar_social(request.user):
+            return Response(
+                {"detail": "No tienes permiso para consultar casos sociales."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        queryset, error = _filtrar_casos_sociales(
+            _casos_sociales_autorizados(request.user),
+            request.query_params,
+        )
+
+        if error:
+            return Response(
+                error,
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            UsuarioSocialSerializer(
+                queryset,
+                many=True,
+                context={"request": request},
+            ).data,
+            status=status.HTTP_200_OK,
+        )
+
+    if not tiene_permiso(request.user, "atenciones.registrar"):
+        return Response(
+            {"detail": "No tienes permiso para registrar casos sociales."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    serializer = UsuarioSocialSerializer(
+        data=request.data,
+        context={"request": request},
+    )
+
+    if not serializer.is_valid():
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    delegacion_id = get_delegacion_activa(request.user)
+
+    if not delegacion_id:
+        return Response(
+            {
+                "detail": (
+                    "Debes tener una delegación activa para "
+                    "registrar un caso social."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    delegacion = Delegacion.objects.filter(
+        pk=delegacion_id
+    ).first()
+
+    if delegacion is None:
+        return Response(
+            {"detail": "La delegación activa no existe."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    datos = dict(serializer.validated_data)
+    primera_gestion_data = datos.pop("primera_gestion")
+
+    caso = UsuarioSocial(**datos)
+
+    gestion_serializer = AtencionSocialSerializer(
+        data=primera_gestion_data,
+        context={
+            "request": request,
+            "caso": caso,
+            "area": delegacion.ambito,
+        },
+    )
+
+    if not gestion_serializer.is_valid():
+        return Response(
+            {"primera_gestion": gestion_serializer.errors},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        primera_gestion = AtencionSocial(
+            **gestion_serializer.validated_data
+        )
+
+        caso = CRUDUsuarioSocial.crear_caso(
+            caso,
+            primera_gestion,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    caso = _obtener_caso_social_autorizado(
+        request.user,
+        caso.pk,
+    )
+
+    return Response(
+        UsuarioSocialSerializer(
+            caso,
+            context={"request": request},
+        ).data,
+        status=status.HTTP_201_CREATED,
+    )
+
+
+# ---------------------------------------------------------------------
+# CONSULTAR Y EDITAR UN CASO
+#
+# GET   /api/casos/<pk>/
+# PUT   /api/casos/<pk>/
+# PATCH /api/casos/<pk>/
+# ---------------------------------------------------------------------
+
+@api_view(["GET", "PUT", "PATCH"])
+@permission_classes([IsAuthenticated])
+def caso_social_detail(request, pk):
+
+    if request.method == "GET":
+
+        if not _puede_consultar_social(request.user):
+            return Response(
+                {"detail": "No tienes permiso para consultar casos sociales."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+    elif not tiene_permiso(request.user, "atenciones.editar"):
+        return Response(
+            {"detail": "No tienes permiso para editar casos sociales."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    caso = _obtener_caso_social_autorizado(
+        request.user,
+        pk,
+    )
+
+    if caso is None:
+        return Response(
+            {"detail": "Caso social no encontrado."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == "GET":
+        return Response(
+            UsuarioSocialSerializer(
+                caso,
+                context={"request": request},
+            ).data,
+            status=status.HTTP_200_OK,
+        )
+
+    if caso.cerrado:
+        return Response(
+            {
+                "detail": (
+                    "El caso está cerrado. Debes reabrirlo "
+                    "antes de modificar sus datos."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not puede_escribir(
+        request.user,
+        caso.delegacion_id,
+    ):
+        return Response(
+            {"detail": "No tienes autorización sobre este caso."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    serializer = UsuarioSocialSerializer(
+        caso,
+        data=request.data,
+        partial=(request.method == "PATCH"),
+        context={"request": request},
+    )
+
+    if not serializer.is_valid():
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        for campo, valor in serializer.validated_data.items():
+            setattr(caso, campo, valor)
+
+        caso = CRUDUsuarioSocial.modificar_caso(
+            caso,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        UsuarioSocialSerializer(
+            caso,
+            context={"request": request},
+        ).data,
+        status=status.HTTP_200_OK,
+    )
+
+
+# ---------------------------------------------------------------------
+# CAMBIAR ESTADO DE UN CASO
+#
+# POST /api/casos/<pk>/estado/
+# ---------------------------------------------------------------------
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def caso_social_estado(request, pk):
+
+    if not tiene_permiso(request.user, "atenciones.estado"):
+        return Response(
+            {"detail": "No tienes permiso para cambiar estados de casos."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    caso = _obtener_caso_social_autorizado(
+        request.user,
+        pk,
+    )
+
+    if caso is None:
+        return Response(
+            {"detail": "Caso social no encontrado."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    nuevo_estado = request.data.get("estado_caso")
+
+    if nuevo_estado not in dict(UsuarioSocial.ESTADOS):
+        return Response(
+            {"estado_caso": "Debes seleccionar un estado válido."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        caso = CRUDUsuarioSocial.cambiar_estado_caso(
+            caso,
+            nuevo_estado,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        UsuarioSocialSerializer(
+            caso,
+            context={"request": request},
+        ).data,
+        status=status.HTTP_200_OK,
+    )
+
+
+# ---------------------------------------------------------------------
+# LISTAR Y REGISTRAR GESTIONES DE UN CASO
+#
+# GET  /api/casos/<pk>/gestiones/
+# POST /api/casos/<pk>/gestiones/
+# ---------------------------------------------------------------------
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def caso_social_gestiones(request, pk):
+
+    caso = _obtener_caso_social_autorizado(
+        request.user,
+        pk,
+    )
+
+    if caso is None:
+        return Response(
+            {"detail": "Caso social no encontrado."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == "GET":
+
+        if not _puede_consultar_social(request.user):
+            return Response(
+                {"detail": "No tienes permiso para consultar gestiones."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        gestiones = CRUDAtencionSocial.mostrar_gestiones_por_caso(
+            caso.pk
+        )
+
+        return Response(
+            AtencionSocialSerializer(
+                gestiones,
+                many=True,
+                context={
+                    "request": request,
+                    "caso": caso,
+                },
+            ).data,
+            status=status.HTTP_200_OK,
+        )
+
+    if not tiene_permiso(request.user, "atenciones.gestionar"):
+        return Response(
+            {"detail": "No tienes permiso para registrar gestiones."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    if not puede_escribir(
+        request.user,
+        caso.delegacion_id,
+    ):
+        return Response(
+            {"detail": "No tienes autorización sobre este caso."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    serializer = AtencionSocialSerializer(
+        data=request.data,
+        context={
+            "request": request,
+            "caso": caso,
+        },
+    )
+
+    if not serializer.is_valid():
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        gestion = AtencionSocial(
+            usuario=caso,
+            **serializer.validated_data,
+        )
+
+        gestion = CRUDAtencionSocial.registrar_gestion(
+            gestion,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        AtencionSocialSerializer(
+            gestion,
+            context={
+                "request": request,
+                "caso": caso,
+            },
+        ).data,
+        status=status.HTTP_201_CREATED,
+    )
+
+
+# ---------------------------------------------------------------------
+# CONSULTAR Y CORREGIR UNA GESTIÓN
+#
+# GET   /api/gestiones/<pk>/
+# PUT   /api/gestiones/<pk>/
+# PATCH /api/gestiones/<pk>/
+# ---------------------------------------------------------------------
+
+@api_view(["GET", "PUT", "PATCH"])
+@permission_classes([IsAuthenticated])
+def gestion_social_detail(request, pk):
+
+    if request.method == "GET":
+
+        if not _puede_consultar_social(request.user):
+            return Response(
+                {"detail": "No tienes permiso para consultar gestiones."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+    elif not tiene_permiso(request.user, "atenciones.gestionar"):
+        return Response(
+            {"detail": "No tienes permiso para corregir gestiones."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    gestion = (
+        gestiones_visibles(request.user)
+        .filter(pk=pk)
+        .select_related(
+            "usuario",
+            "usuario__delegacion",
+            "tipo_atencion",
+            "subatencion",
+            "funcionario",
+            "delegacion",
+        )
+        .first()
+    )
+
+    if gestion is None:
+        return Response(
+            {"detail": "Gestión social no encontrada."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    caso = gestion.usuario
+
+    if request.method == "GET":
+        return Response(
+            AtencionSocialSerializer(
+                gestion,
+                context={
+                    "request": request,
+                    "caso": caso,
+                },
+            ).data,
+            status=status.HTTP_200_OK,
+        )
+
+    if caso.cerrado:
+        return Response(
+            {"detail": "No se pueden modificar gestiones de un caso cerrado."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not puede_escribir(
+        request.user,
+        caso.delegacion_id,
+    ):
+        return Response(
+            {"detail": "No tienes autorización sobre esta gestión."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    serializer = AtencionSocialSerializer(
+        gestion,
+        data=request.data,
+        partial=(request.method == "PATCH"),
+        context={
+            "request": request,
+            "caso": caso,
+        },
+    )
+
+    if not serializer.is_valid():
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        for campo, valor in serializer.validated_data.items():
+            setattr(gestion, campo, valor)
+
+        gestion = CRUDAtencionSocial.modificar_gestion(
+            gestion,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        AtencionSocialSerializer(
+            gestion,
+            context={
+                "request": request,
+                "caso": caso,
+            },
+        ).data,
+        status=status.HTTP_200_OK,
+    )
+
+
+# ---------------------------------------------------------------------
+# ESTADÍSTICAS DE ATENCIÓN SOCIAL
+#
+# GET /api/atenciones/estadisticas/
+# ---------------------------------------------------------------------
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def atencion_social_estadisticas(request):
+
+    if not _puede_consultar_social(request.user):
+        return Response(
+            {"detail": "No tienes permiso para consultar estadísticas sociales."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    queryset = gestiones_visibles(request.user)
+
+    fecha_desde_texto = request.query_params.get(
+        "fecha_desde",
+        "",
+    ).strip()
+
+    fecha_hasta_texto = request.query_params.get(
+        "fecha_hasta",
+        "",
+    ).strip()
+
+    fecha_desde = (
+        parse_date(fecha_desde_texto)
+        if fecha_desde_texto
+        else None
+    )
+
+    fecha_hasta = (
+        parse_date(fecha_hasta_texto)
+        if fecha_hasta_texto
+        else None
+    )
+
+    if fecha_desde_texto and fecha_desde is None:
+        return Response(
+            {"fecha_desde": "Formato inválido. Utiliza YYYY-MM-DD."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if fecha_hasta_texto and fecha_hasta is None:
+        return Response(
+            {"fecha_hasta": "Formato inválido. Utiliza YYYY-MM-DD."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if fecha_desde and fecha_hasta and fecha_desde > fecha_hasta:
+        return Response(
+            {
+                "detail": (
+                    "La fecha desde no puede ser posterior "
+                    "a la fecha hasta."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if fecha_desde:
+        queryset = queryset.filter(fecha__gte=fecha_desde)
+
+    if fecha_hasta:
+        queryset = queryset.filter(fecha__lte=fecha_hasta)
+
+    estadisticas = estadisticas_atenciones(queryset)
+
+    return Response(
+        estadisticas,
         status=status.HTTP_200_OK,
     )

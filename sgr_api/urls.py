@@ -259,6 +259,54 @@ urlpatterns = [
         name="api_compromiso_historial",
     ),
 
+        # -------------------------------------------------------------
+    # ATENCIÓN SOCIAL - CASOS
+    # -------------------------------------------------------------
+
+    path(
+        "casos/",
+        views.caso_social_list,
+        name="api_casos_sociales",
+    ),
+
+    path(
+        "casos/<int:pk>/",
+        views.caso_social_detail,
+        name="api_caso_social_detail",
+    ),
+
+    path(
+        "casos/<int:pk>/estado/",
+        views.caso_social_estado,
+        name="api_caso_social_estado",
+    ),
+
+    path(
+        "casos/<int:pk>/gestiones/",
+        views.caso_social_gestiones,
+        name="api_caso_social_gestiones",
+    ),
+
+    # -------------------------------------------------------------
+    # ATENCIÓN SOCIAL - GESTIONES
+    # -------------------------------------------------------------
+
+    path(
+        "gestiones/<int:pk>/",
+        views.gestion_social_detail,
+        name="api_gestion_social_detail",
+    ),
+
+    # -------------------------------------------------------------
+    # ESTADÍSTICAS SOCIALES
+    # -------------------------------------------------------------
+
+    path(
+        "atenciones/estadisticas/",
+        views.atencion_social_estadisticas,
+        name="api_atencion_social_estadisticas",
+    ),
+
 
 
 ]
