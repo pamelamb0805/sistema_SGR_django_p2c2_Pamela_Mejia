@@ -32,17 +32,18 @@ from .serializers import (
     UsuarioSerializer,
     ItemMedibleSerializer,
     MetaSerializer,
-    PeriodoSerializer
+    PeriodoSerializer,
+    AjusteSerializer,
 )
-
 
 from core.exceptions import ReglaNegocioError
 from core.mixins import (
-    filtrar_por_ambito,
-    tiene_permiso,
-    tiene_rol,
     ROLES_SUPERVISION,
     ROLES_CONFIGURACION,
+    ROLES_MEDICION,
+    tiene_rol,
+    tiene_permiso,
+    filtrar_por_ambito,
 )
 
 from measurement.models import (
