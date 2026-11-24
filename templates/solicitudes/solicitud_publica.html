@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% load ui_extras %}
+
 {% block title %}Solicitud vecinal · SGR{% endblock %}
 {% block page_title %}Ingresar solicitud vecinal{% endblock %}
+
 {% block content %}
 <div class="container py-3" style="max-width: 900px">
   {% if folio %}
@@ -10,44 +12,141 @@
       <p class="mb-1">Su número de seguimiento es <strong>#{{ folio }}</strong>.</p>
       <p class="mb-0">Guarde este número para futuras consultas. La fecha y hora de creación fueron asignadas automáticamente.</p>
     </div>
-    <a class="btn btn-primary" href="{% url 'solicitudes:publica' %}">Ingresar otra solicitud</a>
+
+    <a class="btn btn-primary" href="{% url 'solicitudes:publica' %}">
+      Ingresar otra solicitud
+    </a>
   {% else %}
     <div class="card shadow-sm">
       <div class="card-body p-4">
-        <p class="text-muted">Este formulario puede completarse sin crear una cuenta ni iniciar sesión. Los datos se utilizarán para gestionar el requerimiento municipal.</p>
-        {% if error_seguridad %}<div class="alert alert-warning">{{ error_seguridad }}</div>{% endif %}
+
+        <p class="text-muted">
+          Este formulario puede completarse sin crear una cuenta ni iniciar sesión.
+          Los datos se utilizarán para gestionar el requerimiento municipal.
+        </p>
+
+        {% if error_seguridad %}
+          <div class="alert alert-warning">{{ error_seguridad }}</div>
+        {% endif %}
+
         <form method="post" id="form-solicitud">
           {% csrf_token %}
-          {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+
+          {% if form.non_field_errors %}
+            <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+          {% endif %}
+
           <div class="row g-3">
             {% for field in form %}
               {% if field.name != "rut_menor" and field.name != "nombre_menor" %}
-                <div class="col-12 {% if field.name == 'descripcion_solicitud' %}col-md-12{% else %}col-md-6{% endif %}" data-solicitud-field="{{ field.name }}">
-                  <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                <div
+                  class="col-12 {% if field.name == 'descripcion_solicitud' %}col-md-12{% else %}col-md-6{% endif %}"
+                  data-solicitud-field="{{ field.name }}"
+                >
+                  <label class="form-label" for="{{ field.id_for_label }}">
+                    {{ field.label }}
+                  </label>
+
                   {{ field|bs_campo }}
-                  {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
-                  {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+
+                  {% if field.help_text %}
+                    <div class="form-text">{{ field.help_text }}</div>
+                  {% endif %}
+
+                  {% for error in field.errors %}
+                    <div class="invalid-feedback d-block">{{ error }}</div>
+                  {% endfor %}
                 </div>
               {% endif %}
             {% endfor %}
           </div>
+
+          <!-- Verificación del adulto o tutor -->
           <div id="verificacion-tutor" class="border rounded p-3 mt-3" hidden>
             <h2 class="h6">Verificación del adulto/tutor</h2>
-            <p class="small text-muted">Para continuar con una solicitud de regalo, el RUT del adulto debe existir en el registro social del sistema.</p>
-            <button type="button" id="btn-verificar-tutor" class="btn btn-outline-primary">Verificar RUT del adulto</button>
-            <span id="resultado-tutor" class="small ms-2" aria-live="polite"></span>
+
+            <p class="small text-muted">
+              Para continuar con una solicitud de regalo, el RUT del adulto
+              debe existir en el registro social del sistema.
+            </p>
+
+            <button
+              type="button"
+              id="btn-verificar-tutor"
+              class="btn btn-outline-primary"
+            >
+              Verificar RUT del adulto
+            </button>
+
+            <span
+              id="resultado-tutor"
+              class="small ms-2"
+              aria-live="polite"
+            ></span>
           </div>
-          <div id="datos-menor" class="border rounded p-3 mt-3" {% if not tutor_verificado %}hidden{% endif %}>
+
+          <!-- Datos del menor -->
+          <div
+            id="datos-menor"
+            class="border rounded p-3 mt-3"
+            {% if not tutor_verificado %}hidden{% endif %}
+          >
             <h2 class="h6">Datos del menor</h2>
+
             <div class="row g-3">
-              <div class="col-md-6"><label class="form-label" for="id_rut_menor">RUT del menor</label>{{ form.rut_menor|bs_campo }}{% for e in form.rut_menor.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}<button type="button" id="btn-verificar-menor" class="btn btn-sm btn-outline-primary mt-2">Consultar inscripción del menor</button><div id="resultado-menor" class="small mt-2" aria-live="polite"></div></div>
-              <div class="col-md-6"><label class="form-label" for="id_nombre_menor">Nombre del menor</label>{{ form.nombre_menor|bs_campo }}{% for e in form.nombre_menor.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}</div>
+              <div class="col-md-6">
+                <label class="form-label" for="id_rut_menor">
+                  RUT del menor
+                </label>
+
+                {{ form.rut_menor|bs_campo }}
+
+                {% for error in form.rut_menor.errors %}
+                  <div class="invalid-feedback d-block">{{ error }}</div>
+                {% endfor %}
+
+                <button
+                  type="button"
+                  id="btn-verificar-menor"
+                  class="btn btn-sm btn-outline-primary mt-2"
+                >
+                  Consultar inscripción del menor
+                </button>
+
+                <div
+                  id="resultado-menor"
+                  class="small mt-2"
+                  aria-live="polite"
+                ></div>
+              </div>
+
+              <div class="col-md-6">
+                <label class="form-label" for="id_nombre_menor">
+                  Nombre del menor
+                </label>
+
+                {{ form.nombre_menor|bs_campo }}
+
+                {% for error in form.nombre_menor.errors %}
+                  <div class="invalid-feedback d-block">{{ error }}</div>
+                {% endfor %}
+              </div>
             </div>
-            <div class="form-text mt-2">Cada menor puede quedar inscrito una sola vez en todo el sistema, aunque el adulto pertenezca a otra delegación.</div>
+
+            <div class="form-text mt-2">
+              Cada menor puede quedar inscrito una sola vez en todo el sistema,
+              aunque el adulto pertenezca a otra delegación.
+            </div>
           </div>
+
           <div class="d-flex gap-2 mt-4">
-            <button type="submit" class="btn btn-primary">Enviar solicitud</button>
-            <a href="{% url 'login' %}" class="btn btn-outline-secondary">Volver</a>
+            <button type="submit" class="btn btn-primary">
+              Enviar solicitud
+            </button>
+
+            <a href="{% url 'login' %}" class="btn btn-outline-secondary">
+              Volver
+            </a>
           </div>
         </form>
       </div>
@@ -55,53 +154,230 @@
   {% endif %}
 </div>
 {% endblock %}
+
 {% block extra_js %}
 <script>
 (function () {
   const tipo = document.getElementById("id_tipo_solicitud");
+
   const verify = document.getElementById("verificacion-tutor");
   const child = document.getElementById("datos-menor");
+
   const button = document.getElementById("btn-verificar-tutor");
   const result = document.getElementById("resultado-tutor");
+
   const rut = document.getElementById("id_rut_solicitante");
-  const csrf = document.querySelector("[name=csrfmiddlewaretoken]");
-  const delegacionField = document.querySelector('[data-solicitud-field="delegacion"]');
-  const nombreField = document.querySelector('[data-solicitud-field="nombre_solicitante"]');
-  const territorioField = document.querySelector('[data-solicitud-field="territorio"]');
   const rutMenor = document.getElementById("id_rut_menor");
+
+  const csrf = document.querySelector("[name=csrfmiddlewaretoken]");
+
+  const delegacionField = document.querySelector(
+    '[data-solicitud-field="delegacion"]'
+  );
+
+  const nombreField = document.querySelector(
+    '[data-solicitud-field="nombre_solicitante"]'
+  );
+
+  const territorioField = document.querySelector(
+    '[data-solicitud-field="territorio"]'
+  );
+
   const btnMenor = document.getElementById("btn-verificar-menor");
   const resultadoMenor = document.getElementById("resultado-menor");
+
+
+  /*
+   * FORMATO AUTOMÁTICO DE RUT
+   *
+   * Ejemplo:
+   * 123456785  -> 12.345.678-5
+   * 12345678k  -> 12.345.678-K
+   *
+   * Este formato es visual. La validación real del RUT
+   * continúa realizándose en el servidor.
+   */
+  function formatearRut(valor) {
+    const limpio = valor
+      .replace(/[.\-\s]/g, "")
+      .toUpperCase();
+
+    // No modificar caracteres que no correspondan a un RUT.
+    if (!/^[0-9K]*$/.test(limpio)) {
+      return valor;
+    }
+
+    // Mientras no exista cuerpo y dígito verificador,
+    // mostrar solamente los números ingresados.
+    if (limpio.length < 2) {
+      return limpio;
+    }
+
+    const cuerpo = limpio.slice(0, -1);
+    const dv = limpio.slice(-1);
+
+    const cuerpoFormateado = cuerpo.replace(
+      /\B(?=(\d{3})+(?!\d))/g,
+      "."
+    );
+
+    return `${cuerpoFormateado}-${dv}`;
+  }
+
+
+  /*
+   * ACTIVAR FORMATO EN UN CAMPO RUT
+   */
+  function activarFormatoRut(campo) {
+    if (!campo) return;
+
+    campo.setAttribute("maxlength", "12");
+    campo.setAttribute("placeholder", "12.345.678-5");
+    campo.setAttribute("autocomplete", "off");
+
+    campo.addEventListener("input", function () {
+      const valor = formatearRut(campo.value);
+
+      if (valor !== campo.value) {
+        campo.value = valor;
+
+        // Mantener el cursor al final del texto.
+        campo.setSelectionRange(
+          campo.value.length,
+          campo.value.length
+        );
+      }
+    });
+
+    campo.addEventListener("blur", function () {
+      campo.value = formatearRut(campo.value);
+    });
+  }
+
+
+  // Aplicar formato a los dos campos RUT.
+  activarFormatoRut(rut);
+  activarFormatoRut(rutMenor);
+
+
+  /*
+   * VISIBILIDAD DE CAMPOS SEGÚN TIPO DE SOLICITUD
+   */
   if (!tipo || !verify || !child) return;
+
   function sync() {
     const gift = tipo.value === "Regalo / evento día festivo";
+
     verify.hidden = !gift;
-    if (delegacionField) delegacionField.hidden = gift;
-    if (nombreField) nombreField.hidden = gift;
-    if (territorioField) territorioField.hidden = gift;
-    if (!gift) child.hidden = true;
+
+    if (delegacionField) {
+      delegacionField.hidden = gift;
+    }
+
+    if (nombreField) {
+      nombreField.hidden = gift;
+    }
+
+    if (territorioField) {
+      territorioField.hidden = gift;
+    }
+
+    if (!gift) {
+      child.hidden = true;
+    }
   }
-  tipo.addEventListener("change", sync); sync();
-  if (button) button.addEventListener("click", async function () {
-    result.textContent = "Verificando…";
-    try {
-      const body = new URLSearchParams({rut: rut.value, csrfmiddlewaretoken: csrf.value});
-      const response = await fetch("{% url 'solicitudes:verificar_tutor' %}", {method: "POST", headers: {"X-CSRFToken": csrf.value, "Content-Type": "application/x-www-form-urlencoded"}, body: body.toString(), credentials: "same-origin"});
-      const data = await response.json();
-      result.textContent = data.mensaje;
-      result.className = data.ok ? "small ms-2 text-success" : "small ms-2 text-danger";
-      child.hidden = !data.ok;
-    } catch (e) { result.textContent = "No fue posible verificar. Intente nuevamente."; child.hidden = true; }
-  });
-  if (btnMenor) btnMenor.addEventListener("click", async function () {
-    resultadoMenor.textContent = "Consultando inscripción…";
-    try {
-      const body = new URLSearchParams({rut: rutMenor.value, csrfmiddlewaretoken: csrf.value});
-      const response = await fetch("{% url 'solicitudes:verificar_menor' %}", {method: "POST", headers: {"X-CSRFToken": csrf.value, "Content-Type": "application/x-www-form-urlencoded"}, body: body.toString(), credentials: "same-origin"});
-      const data = await response.json();
-      resultadoMenor.textContent = data.mensaje;
-      resultadoMenor.className = data.ok ? "small mt-2 text-success" : "small mt-2 text-danger";
-    } catch (e) { resultadoMenor.textContent = "No fue posible consultar. Intente nuevamente."; }
-  });
+
+  tipo.addEventListener("change", sync);
+  sync();
+
+
+  /*
+   * VERIFICAR RUT DEL ADULTO/TUTOR
+   */
+  if (button) {
+    button.addEventListener("click", async function () {
+      result.textContent = "Verificando…";
+
+      try {
+        const body = new URLSearchParams({
+          rut: rut.value,
+          csrfmiddlewaretoken: csrf.value
+        });
+
+        const response = await fetch(
+          "{% url 'solicitudes:verificar_tutor' %}",
+          {
+            method: "POST",
+            headers: {
+              "X-CSRFToken": csrf.value,
+              "Content-Type": "application/x-www-form-urlencoded"
+            },
+            body: body.toString(),
+            credentials: "same-origin"
+          }
+        );
+
+        const data = await response.json();
+
+        result.textContent = data.mensaje;
+
+        result.className = data.ok
+          ? "small ms-2 text-success"
+          : "small ms-2 text-danger";
+
+        child.hidden = !data.ok;
+
+      } catch (e) {
+        result.textContent =
+          "No fue posible verificar. Intente nuevamente.";
+
+        child.hidden = true;
+      }
+    });
+  }
+
+
+  /*
+   * VERIFICAR INSCRIPCIÓN DEL MENOR
+   */
+  if (btnMenor) {
+    btnMenor.addEventListener("click", async function () {
+      resultadoMenor.textContent = "Consultando inscripción…";
+
+      try {
+        const body = new URLSearchParams({
+          rut: rutMenor.value,
+          csrfmiddlewaretoken: csrf.value
+        });
+
+        const response = await fetch(
+          "{% url 'solicitudes:verificar_menor' %}",
+          {
+            method: "POST",
+            headers: {
+              "X-CSRFToken": csrf.value,
+              "Content-Type": "application/x-www-form-urlencoded"
+            },
+            body: body.toString(),
+            credentials: "same-origin"
+          }
+        );
+
+        const data = await response.json();
+
+        resultadoMenor.textContent = data.mensaje;
+
+        resultadoMenor.className = data.ok
+          ? "small mt-2 text-success"
+          : "small mt-2 text-danger";
+
+      } catch (e) {
+        resultadoMenor.textContent =
+          "No fue posible consultar. Intente nuevamente.";
+      }
+    });
+  }
+
 })();
 </script>
 {% endblock %}
