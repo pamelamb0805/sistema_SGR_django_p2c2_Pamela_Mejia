@@ -152,5 +152,71 @@ urlpatterns = [
         name="api_ajuste_detail",
     ),
 
+        # -------------------------------------------------------------
+    # Actividades
+    # -------------------------------------------------------------
+
+    path(
+        "actividades/",
+        views.actividad_list,
+        name="api_actividades",
+    ),
+
+    path(
+        "actividades/<int:pk>/",
+        views.actividad_detail,
+        name="api_actividad_detail",
+    ),
+
+    path(
+        "actividades/<int:pk>/anular/",
+        views.actividad_anular,
+        name="api_actividad_anular",
+    ),
+
+    # -------------------------------------------------------------
+    # Evidencias
+    # -------------------------------------------------------------
+
+    path(
+        "actividades/<int:pk>/evidencias/",
+        views.actividad_evidencias,
+        name="api_actividad_evidencias",
+    ),
+
+    path(
+        "evidencias/<int:pk>/",
+        views.evidencia_detail,
+        name="api_evidencia_detail",
+    ),
+
+    path(
+        "evidencias/<int:pk>/archivo/",
+        views.evidencia_archivo,
+        name="api_evidencia_archivo",
+    ),
+
+    # -------------------------------------------------------------
+    # Validaciones
+    # -------------------------------------------------------------
+
+    path(
+        "validaciones/",
+        views.validacion_list,
+        name="api_validaciones",
+    ),
+
+    path(
+        "evidencias/<int:pk>/validaciones/",
+        views.evidencia_validaciones,
+        name="api_evidencia_validaciones",
+    ),
+
+    path(
+        "evidencias/<int:pk>/validar/",
+        views.evidencia_validar,
+        name="api_evidencia_validar",
+    ),
+
 
 ]

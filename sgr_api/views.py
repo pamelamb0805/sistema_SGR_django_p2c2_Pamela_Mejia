@@ -34,6 +34,9 @@ from .serializers import (
     MetaSerializer,
     PeriodoSerializer,
     AjusteSerializer,
+    ActividadSerializer,
+    EvidenciaSerializer,
+    ValidacionSerializer,
 )
 
 from core.exceptions import ReglaNegocioError
@@ -59,7 +62,24 @@ from measurement.services import (
     CalculoIndicadores,
     CRUDAjuste,
 )
+from django.http import FileResponse
+from django.urls import reverse
 
+from rest_framework.decorators import parser_classes
+from rest_framework.parsers import MultiPartParser, FormParser
+from activities.models import (
+    Actividad,
+    Evidencia,
+    Validacion,
+)
+
+from activities.services import (
+    CRUDActividad,
+    CRUDEvidencia,
+    CRUDValidacion,
+    actividades_visibles,
+    evidencias_visibles,
+)
 # ---------------------------------------------------------------------
 # AUTORIZACIÓN
 # ---------------------------------------------------------------------
@@ -2348,5 +2368,939 @@ def ajuste_detail(request, pk):
 
     return Response(
         AjusteSerializer(ajuste).data,
+        status=status.HTTP_200_OK,
+    )
+
+# =====================================================================
+# API DE ACTIVIDADES, EVIDENCIAS Y VALIDACIONES
+# RF-009 a RF-014
+# =====================================================================
+
+
+# ---------------------------------------------------------------------
+# AUTORIZACIÓN DE ACTIVIDADES
+# ---------------------------------------------------------------------
+
+def _puede_consultar_actividades(user):
+    return tiene_permiso(
+        user,
+        "actividades.ver",
+    )
+
+
+def _puede_registrar_actividades(user):
+    return (
+        tiene_rol(user, *ROLES_OPERATIVOS)
+        and tiene_permiso(user, "actividades.registrar")
+    )
+
+
+def _puede_editar_actividades(user):
+    return (
+        tiene_rol(user, *ROLES_OPERATIVOS)
+        and tiene_permiso(user, "actividades.editar")
+    )
+
+
+def _puede_consultar_evidencias(user):
+    return tiene_permiso(
+        user,
+        "evidencias.ver",
+    )
+
+
+def _puede_registrar_evidencias(user):
+    return (
+        tiene_rol(user, *ROLES_OPERATIVOS)
+        and tiene_permiso(user, "evidencias.registrar")
+    )
+
+
+def _puede_consultar_validaciones(user):
+    return (
+        tiene_rol(user, *ROLES_VALIDACION)
+        and tiene_permiso(user, "validaciones.ver")
+    )
+
+
+def _puede_gestionar_validaciones(user):
+    return (
+        tiene_rol(user, *ROLES_VALIDACION)
+        and tiene_permiso(user, "validaciones.gestionar")
+    )
+
+
+def _actividades_autorizadas(user):
+    return (
+        actividades_visibles(user)
+        .select_related(
+            "funcionario",
+            "funcionario__delegacion",
+            "funcionario__cargo",
+            "item",
+            "catalogo",
+            "periodo",
+        )
+        .prefetch_related("evidencias")
+    )
+
+
+def _evidencias_autorizadas(user):
+    return (
+        evidencias_visibles(user)
+        .select_related(
+            "actividad",
+            "actividad__funcionario",
+            "actividad__item",
+            "actividad__catalogo",
+            "actividad__periodo",
+            "funcionario",
+        )
+        .prefetch_related("validaciones")
+    )
+
+
+def _obtener_actividad_autorizada(user, pk):
+    return _actividades_autorizadas(user).filter(
+        pk=pk,
+    ).first()
+
+
+def _obtener_evidencia_autorizada(user, pk):
+    return _evidencias_autorizadas(user).filter(
+        pk=pk,
+    ).first()
+
+
+def _es_autor_actividad(user, actividad):
+    funcionario = get_funcionario(user)
+
+    return (
+        funcionario is not None
+        and funcionario.pk == actividad.funcionario_id
+    )
+
+
+def _puede_anular_actividad(user, actividad):
+    if actividad.estado == Actividad.ESTADO_ANULADA:
+        return False
+
+    if not tiene_permiso(user, "actividades.anular"):
+        return False
+
+    if tiene_rol(user, *ROLES_SUPERVISION):
+        return True
+
+    return (
+        _es_autor_actividad(user, actividad)
+        and actividad.estado != Actividad.ESTADO_VALIDADA
+    )
+
+
+# ---------------------------------------------------------------------
+# LISTAR Y REGISTRAR ACTIVIDADES
+#
+# GET  /api/actividades/
+# POST /api/actividades/
+# ---------------------------------------------------------------------
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def actividad_list(request):
+
+    if request.method == "GET":
+
+        if not _puede_consultar_actividades(request.user):
+            return Response(
+                {
+                    "detail": (
+                        "No tienes permiso para consultar actividades."
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        actividades = _actividades_autorizadas(request.user)
+
+        filtros = request.query_params
+
+        for campo in (
+            "estado",
+            "tipo_registro",
+        ):
+            valor = filtros.get(campo)
+
+            if valor:
+                actividades = actividades.filter(
+                    **{campo: valor}
+                )
+
+        for campo, filtro in (
+            ("item", "item_id"),
+            ("periodo", "periodo_id"),
+            ("funcionario", "funcionario_id"),
+            ("delegacion", "funcionario__delegacion_id"),
+        ):
+            valor = filtros.get(campo)
+
+            if valor and valor.isdigit():
+                actividades = actividades.filter(
+                    **{filtro: valor}
+                )
+
+        fecha_desde = filtros.get("fecha_desde")
+        fecha_hasta = filtros.get("fecha_hasta")
+
+        if fecha_desde:
+            actividades = actividades.filter(
+                fecha__gte=fecha_desde,
+            )
+
+        if fecha_hasta:
+            actividades = actividades.filter(
+                fecha__lte=fecha_hasta,
+            )
+
+        termino = filtros.get("q", "").strip()
+
+        if termino:
+            from django.db.models import Q
+
+            actividades = actividades.filter(
+                Q(codigo__icontains=termino)
+                | Q(accion__icontains=termino)
+                | Q(contacto__icontains=termino)
+                | Q(funcionario__nombre__icontains=termino)
+                | Q(item__nombre_item__icontains=termino)
+                | Q(catalogo_nombre__icontains=termino)
+            )
+
+        actividades = actividades.order_by(
+            "-fecha",
+            "-id_actividad",
+        )
+
+        return Response(
+            ActividadSerializer(
+                actividades,
+                many=True,
+                context={"request": request},
+            ).data,
+            status=status.HTTP_200_OK,
+        )
+
+    # POST: crear actividad.
+
+    if not _puede_registrar_actividades(request.user):
+        return Response(
+            {
+                "detail": (
+                    "No tienes permiso para registrar actividades."
+                )
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    funcionario = get_funcionario(request.user)
+
+    if funcionario is None:
+        return Response(
+            {
+                "detail": (
+                    "Tu usuario no tiene un funcionario asociado."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    serializer = ActividadSerializer(
+        data=request.data,
+    )
+
+    if not serializer.is_valid():
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        actividad = Actividad(
+            funcionario=funcionario,
+            **serializer.validated_data,
+        )
+
+        actividad = CRUDActividad.crear_actividad(
+            actividad,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        ActividadSerializer(
+            actividad,
+            context={"request": request},
+        ).data,
+        status=status.HTTP_201_CREATED,
+    )
+
+
+# ---------------------------------------------------------------------
+# CONSULTAR Y MODIFICAR ACTIVIDAD
+#
+# GET   /api/actividades/<pk>/
+# PUT   /api/actividades/<pk>/
+# PATCH /api/actividades/<pk>/
+# ---------------------------------------------------------------------
+
+@api_view(["GET", "PUT", "PATCH"])
+@permission_classes([IsAuthenticated])
+def actividad_detail(request, pk):
+
+    if request.method == "GET":
+
+        if not _puede_consultar_actividades(request.user):
+            return Response(
+                {
+                    "detail": (
+                        "No tienes permiso para consultar actividades."
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+    elif not _puede_editar_actividades(request.user):
+        return Response(
+            {
+                "detail": (
+                    "No tienes permiso para editar actividades."
+                )
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    actividad = _obtener_actividad_autorizada(
+        request.user,
+        pk,
+    )
+
+    if actividad is None:
+        return Response(
+            {"detail": "Actividad no encontrada."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == "GET":
+        return Response(
+            ActividadSerializer(
+                actividad,
+                context={"request": request},
+            ).data,
+            status=status.HTTP_200_OK,
+        )
+
+    if not _es_autor_actividad(request.user, actividad):
+        return Response(
+            {
+                "detail": (
+                    "Solo el funcionario autor puede modificar "
+                    "esta actividad."
+                )
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    serializer = ActividadSerializer(
+        actividad,
+        data=request.data,
+        partial=(request.method == "PATCH"),
+    )
+
+    if not serializer.is_valid():
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        for campo, valor in serializer.validated_data.items():
+            setattr(actividad, campo, valor)
+
+        actividad = CRUDActividad.modificar_actividad(
+            actividad,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        ActividadSerializer(
+            actividad,
+            context={"request": request},
+        ).data,
+        status=status.HTTP_200_OK,
+    )
+
+
+# ---------------------------------------------------------------------
+# ANULAR ACTIVIDAD
+#
+# POST /api/actividades/<pk>/anular/
+# ---------------------------------------------------------------------
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def actividad_anular(request, pk):
+
+    actividad = _obtener_actividad_autorizada(
+        request.user,
+        pk,
+    )
+
+    if actividad is None:
+        return Response(
+            {"detail": "Actividad no encontrada."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if not _puede_anular_actividad(
+        request.user,
+        actividad,
+    ):
+        return Response(
+            {
+                "detail": (
+                    "No tienes permiso para anular esta actividad."
+                )
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    motivo = request.data.get("motivo", "")
+
+    if not isinstance(motivo, str) or not motivo.strip():
+        return Response(
+            {
+                "detail": (
+                    "Debes indicar el motivo de la anulación."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        actividad = CRUDActividad.anular_actividad(
+            actividad,
+            motivo,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        ActividadSerializer(
+            actividad,
+            context={"request": request},
+        ).data,
+        status=status.HTTP_200_OK,
+    )
+
+
+# ---------------------------------------------------------------------
+# LISTAR Y ADJUNTAR EVIDENCIAS A UNA ACTIVIDAD
+#
+# GET  /api/actividades/<pk>/evidencias/
+# POST /api/actividades/<pk>/evidencias/
+# ---------------------------------------------------------------------
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
+def actividad_evidencias(request, pk):
+
+    actividad = _obtener_actividad_autorizada(
+        request.user,
+        pk,
+    )
+
+    if actividad is None:
+        return Response(
+            {"detail": "Actividad no encontrada."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == "GET":
+
+        if not _puede_consultar_evidencias(request.user):
+            return Response(
+                {
+                    "detail": (
+                        "No tienes permiso para consultar evidencias."
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        evidencias = (
+            _evidencias_autorizadas(request.user)
+            .filter(actividad=actividad)
+            .order_by("id_evidencia")
+        )
+
+        return Response(
+            EvidenciaSerializer(
+                evidencias,
+                many=True,
+                context={"request": request},
+            ).data,
+            status=status.HTTP_200_OK,
+        )
+
+    if not _puede_registrar_evidencias(request.user):
+        return Response(
+            {
+                "detail": (
+                    "No tienes permiso para adjuntar evidencias."
+                )
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    if not _es_autor_actividad(request.user, actividad):
+        return Response(
+            {
+                "detail": (
+                    "Solo el funcionario autor puede adjuntar "
+                    "evidencias a esta actividad."
+                )
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    archivo = (
+        request.FILES.get("archivo")
+        or request.FILES.get("archivo_vinculo")
+    )
+
+    if archivo is None:
+        return Response(
+            {
+                "detail": (
+                    "Debes adjuntar un archivo en el campo archivo."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        evidencia = CRUDEvidencia.adjuntar_evidencia(
+            actividad,
+            archivo,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        EvidenciaSerializer(
+            evidencia,
+            context={"request": request},
+        ).data,
+        status=status.HTTP_201_CREATED,
+    )
+
+
+# ---------------------------------------------------------------------
+# CONSULTAR UNA EVIDENCIA
+#
+# GET /api/evidencias/<pk>/
+# ---------------------------------------------------------------------
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def evidencia_detail(request, pk):
+
+    if not _puede_consultar_evidencias(request.user):
+        return Response(
+            {
+                "detail": (
+                    "No tienes permiso para consultar evidencias."
+                )
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    evidencia = _obtener_evidencia_autorizada(
+        request.user,
+        pk,
+    )
+
+    if evidencia is None:
+        return Response(
+            {"detail": "Evidencia no encontrada."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    return Response(
+        EvidenciaSerializer(
+            evidencia,
+            context={"request": request},
+        ).data,
+        status=status.HTTP_200_OK,
+    )
+
+
+# ---------------------------------------------------------------------
+# DESCARGAR O VISUALIZAR ARCHIVO DE EVIDENCIA
+#
+# GET /api/evidencias/<pk>/archivo/
+# ---------------------------------------------------------------------
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def evidencia_archivo(request, pk):
+
+    if not _puede_consultar_evidencias(request.user):
+        return Response(
+            {
+                "detail": (
+                    "No tienes permiso para consultar archivos."
+                )
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    evidencia = _obtener_evidencia_autorizada(
+        request.user,
+        pk,
+    )
+
+    if evidencia is None or not evidencia.archivo_vinculo:
+        return Response(
+            {"detail": "Archivo no encontrado."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    tipos_mime = {
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "png": "image/png",
+        "pdf": "application/pdf",
+    }
+
+    extension = evidencia.extension
+
+    respuesta = FileResponse(
+        evidencia.archivo_vinculo.open("rb"),
+        content_type=tipos_mime.get(
+            extension,
+            "application/octet-stream",
+        ),
+    )
+
+    modo = (
+        "attachment"
+        if request.query_params.get("descargar")
+        else "inline"
+    )
+
+    respuesta["Content-Disposition"] = (
+        f'{modo}; filename="{evidencia.codigo_evidencia}.{extension}"'
+    )
+
+    respuesta["X-Content-Type-Options"] = "nosniff"
+    respuesta["Cache-Control"] = "private, no-store"
+
+    return respuesta
+
+
+# ---------------------------------------------------------------------
+# LISTAR EVIDENCIAS PENDIENTES DE VALIDACIÓN
+#
+# GET /api/validaciones/
+# ---------------------------------------------------------------------
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def validacion_list(request):
+
+    if not _puede_consultar_validaciones(request.user):
+        return Response(
+            {
+                "detail": (
+                    "No tienes permiso para consultar validaciones."
+                )
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    funcionario = get_funcionario(request.user)
+
+    evidencias = (
+        _evidencias_autorizadas(request.user)
+        .filter(
+            estado_revision=Evidencia.ESTADO_PENDIENTE,
+        )
+        .exclude(
+            actividad__funcionario=funcionario,
+        )
+    )
+
+    filtros = request.query_params
+
+    funcionario_id = filtros.get("funcionario")
+    item_id = filtros.get("item")
+
+    if funcionario_id and funcionario_id.isdigit():
+        evidencias = evidencias.filter(
+            actividad__funcionario_id=funcionario_id,
+        )
+
+    if item_id and item_id.isdigit():
+        evidencias = evidencias.filter(
+            actividad__item_id=item_id,
+        )
+
+    fecha_desde = filtros.get("fecha_desde")
+    fecha_hasta = filtros.get("fecha_hasta")
+
+    if fecha_desde:
+        evidencias = evidencias.filter(
+            fecha_carga__date__gte=fecha_desde,
+        )
+
+    if fecha_hasta:
+        evidencias = evidencias.filter(
+            fecha_carga__date__lte=fecha_hasta,
+        )
+
+    termino = filtros.get("q", "").strip()
+
+    if termino:
+        from django.db.models import Q
+
+        evidencias = evidencias.filter(
+            Q(codigo_evidencia__icontains=termino)
+            | Q(actividad__accion__icontains=termino)
+            | Q(actividad__funcionario__nombre__icontains=termino)
+            | Q(actividad__item__nombre_item__icontains=termino)
+        )
+
+    evidencias = evidencias.order_by(
+        "fecha_carga",
+        "id_evidencia",
+    )
+
+    return Response(
+        EvidenciaSerializer(
+            evidencias,
+            many=True,
+            context={"request": request},
+        ).data,
+        status=status.HTTP_200_OK,
+    )
+
+
+# ---------------------------------------------------------------------
+# HISTORIAL DE VALIDACIONES DE UNA EVIDENCIA
+#
+# GET /api/evidencias/<pk>/validaciones/
+# ---------------------------------------------------------------------
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def evidencia_validaciones(request, pk):
+
+    if not _puede_consultar_validaciones(request.user):
+        return Response(
+            {
+                "detail": (
+                    "No tienes permiso para consultar "
+                    "el historial de validaciones."
+                )
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    evidencia = _obtener_evidencia_autorizada(
+        request.user,
+        pk,
+    )
+
+    if evidencia is None:
+        return Response(
+            {"detail": "Evidencia no encontrada."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    historial = (
+        CRUDValidacion.mostrar_historial_validacion(
+            evidencia.codigo_evidencia,
+        )
+    )
+
+    return Response(
+        ValidacionSerializer(
+            historial,
+            many=True,
+            context={"request": request},
+        ).data,
+        status=status.HTTP_200_OK,
+    )
+
+
+# ---------------------------------------------------------------------
+# APROBAR, RECHAZAR O SOLICITAR CORRECCIÓN
+#
+# POST /api/evidencias/<pk>/validar/
+# ---------------------------------------------------------------------
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def evidencia_validar(request, pk):
+
+    if not _puede_gestionar_validaciones(request.user):
+        return Response(
+            {
+                "detail": (
+                    "No tienes permiso para validar evidencias."
+                )
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    evidencia = _obtener_evidencia_autorizada(
+        request.user,
+        pk,
+    )
+
+    if evidencia is None:
+        return Response(
+            {"detail": "Evidencia no encontrada."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if evidencia.estado_revision != Evidencia.ESTADO_PENDIENTE:
+        return Response(
+            {
+                "detail": (
+                    "Esta evidencia ya fue revisada."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if _es_autor_actividad(
+        request.user,
+        evidencia.actividad,
+    ):
+        return Response(
+            {
+                "detail": (
+                    "No puedes validar evidencias de tus "
+                    "propias actividades."
+                )
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    decision = request.data.get("decision")
+    observacion = request.data.get("observacion", "")
+
+    if decision not in dict(Validacion.DECISIONES):
+        return Response(
+            {
+                "decision": (
+                    "Debes seleccionar Aprobar, Rechazar "
+                    "o Corrección."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not isinstance(observacion, str):
+        return Response(
+            {
+                "observacion": (
+                    "La observación debe ser texto."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    observacion = observacion.strip()
+
+    if (
+        decision != Validacion.DECISION_APROBADA
+        and not observacion
+    ):
+        return Response(
+            {
+                "observacion": (
+                    "La observación es obligatoria para "
+                    "rechazar o solicitar corrección."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    acciones = {
+        Validacion.DECISION_APROBADA:
+            CRUDValidacion.aprobar_evidencia,
+
+        Validacion.DECISION_RECHAZADA:
+            CRUDValidacion.rechazar_evidencia,
+
+        Validacion.DECISION_CORRECCION:
+            CRUDValidacion.solicitar_correccion,
+    }
+
+    try:
+        evidencia = acciones[decision](
+            evidencia,
+            observacion,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    validacion = (
+        Validacion.objects
+        .filter(evidencia=evidencia)
+        .order_by("-version")
+        .first()
+    )
+
+    return Response(
+        {
+            "evidencia": EvidenciaSerializer(
+                evidencia,
+                context={"request": request},
+            ).data,
+            "validacion": ValidacionSerializer(
+                validacion,
+                context={"request": request},
+            ).data,
+        },
         status=status.HTTP_200_OK,
     )

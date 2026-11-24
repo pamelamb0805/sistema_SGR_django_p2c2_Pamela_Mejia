@@ -15,6 +15,14 @@ from measurement.models import (
     ReglaCalculoVersion,
     Ajuste,
 )
+from django.urls import reverse
+
+from activities.models import (
+    Actividad,
+    Evidencia,
+    Validacion,
+)
+
 class DelegacionSerializer(serializers.ModelSerializer):
 
     class Meta:
@@ -472,3 +480,191 @@ class AjusteSerializer(serializers.ModelSerializer):
             )
 
         return value
+
+    # ---------------------------------------------------------------------
+# ACTIVIDADES
+# ---------------------------------------------------------------------
+
+class ActividadSerializer(serializers.ModelSerializer):
+
+    codigo = serializers.ReadOnlyField()
+
+    funcionario_nombre = serializers.CharField(
+        source="funcionario.nombre",
+        read_only=True,
+    )
+
+    item_nombre = serializers.CharField(
+        source="item.nombre_item",
+        read_only=True,
+    )
+
+    periodo_descripcion = serializers.SerializerMethodField()
+
+    evidencias_count = serializers.SerializerMethodField()
+
+    editable = serializers.BooleanField(read_only=True)
+
+    admite_evidencia = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = Actividad
+
+        fields = [
+            "id_actividad",
+            "codigo",
+            "fecha",
+            "tipo_registro",
+            "accion",
+            "contacto",
+            "telefono",
+            "ingreso_agenda_colectiva",
+            "estado",
+            "funcionario",
+            "funcionario_nombre",
+            "item",
+            "item_nombre",
+            "catalogo",
+            "catalogo_nombre",
+            "periodo",
+            "periodo_descripcion",
+            "evidencias_count",
+            "editable",
+            "admite_evidencia",
+        ]
+
+        read_only_fields = [
+            "id_actividad",
+            "codigo",
+            "estado",
+            "funcionario",
+            "funcionario_nombre",
+            "catalogo_nombre",
+            "periodo",
+            "periodo_descripcion",
+            "item_nombre",
+            "evidencias_count",
+            "editable",
+            "admite_evidencia",
+        ]
+
+    def get_periodo_descripcion(self, obj):
+        return str(obj.periodo)
+
+    def get_evidencias_count(self, obj):
+        return obj.evidencias.count()
+
+    def validate_accion(self, value):
+        value = value.strip()
+
+        if not value:
+            raise serializers.ValidationError(
+                "La acción ejecutada es obligatoria."
+            )
+
+        return value
+
+    def validate_contacto(self, value):
+        return value.strip()
+
+    def validate_telefono(self, value):
+        return value.strip()
+
+
+# ---------------------------------------------------------------------
+# EVIDENCIAS
+# ---------------------------------------------------------------------
+
+class EvidenciaSerializer(serializers.ModelSerializer):
+
+    actividad_codigo = serializers.CharField(
+        source="actividad.codigo",
+        read_only=True,
+    )
+
+    funcionario_nombre = serializers.CharField(
+        source="funcionario.nombre",
+        read_only=True,
+    )
+
+    archivo_nombre = serializers.SerializerMethodField()
+
+    archivo_url = serializers.SerializerMethodField()
+
+    extension = serializers.ReadOnlyField()
+
+    es_imagen = serializers.ReadOnlyField()
+
+    class Meta:
+        model = Evidencia
+
+        fields = [
+            "id_evidencia",
+            "codigo_evidencia",
+            "actividad",
+            "actividad_codigo",
+            "funcionario",
+            "funcionario_nombre",
+            "archivo_nombre",
+            "archivo_url",
+            "fecha_carga",
+            "metadatos",
+            "estado_revision",
+            "extension",
+            "es_imagen",
+        ]
+
+        read_only_fields = fields
+
+    def get_archivo_nombre(self, obj):
+        return (
+            obj.metadatos.get("nombre_original")
+            or obj.codigo_evidencia
+        )
+
+    def get_archivo_url(self, obj):
+        request = self.context.get("request")
+
+        url = reverse(
+            "api_evidencia_archivo",
+            kwargs={"pk": obj.pk},
+        )
+
+        if request:
+            return request.build_absolute_uri(url)
+
+        return url
+
+
+# ---------------------------------------------------------------------
+# VALIDACIONES
+# ---------------------------------------------------------------------
+
+class ValidacionSerializer(serializers.ModelSerializer):
+
+    codigo_evidencia = serializers.CharField(
+        source="evidencia.codigo_evidencia",
+        read_only=True,
+    )
+
+    funcionario_nombre = serializers.CharField(
+        source="funcionario.nombre",
+        read_only=True,
+    )
+
+    class Meta:
+        model = Validacion
+
+        fields = [
+            "id_validacion",
+            "decision",
+            "fecha",
+            "observacion",
+            "version",
+            "evidencia",
+            "codigo_evidencia",
+            "funcionario",
+            "funcionario_nombre",
+        ]
+
+        read_only_fields = fields
