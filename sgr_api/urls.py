@@ -308,5 +308,41 @@ urlpatterns = [
     ),
 
 
+    # -------------------------------------------------------------
+    # CATÁLOGOS
+    # -------------------------------------------------------------
+
+    path(
+        "catalogos/",
+        views.catalogo_list,
+        name="api_catalogos",
+    ),
+
+    path(
+        "catalogos/por-area/",
+        views.catalogo_por_area_api,
+        name="api_catalogos_por_area",
+    ),
+
+    path(
+        "catalogos/<int:pk>/",
+        views.catalogo_detail,
+        name="api_catalogo_detail",
+    ),
+
+    path(
+        "catalogos/<int:pk>/estado/",
+        views.catalogo_estado,
+        name="api_catalogo_estado",
+    ),
+
+    path(
+        "catalogos/<int:pk>/historial/",
+        views.catalogo_historial,
+        name="api_catalogo_historial",
+    ),
+
+
+
 
 ]

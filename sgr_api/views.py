@@ -112,6 +112,13 @@ from .serializers import (
     UsuarioSocialSerializer,
     AtencionSocialSerializer,
 )
+
+
+from catalogs.models import Catalogo, CatalogoVersion
+from catalogs.services import CRUDCatalogo
+
+from .serializers import CatalogoSerializer
+
 # ---------------------------------------------------------------------
 # AUTORIZACIÓN
 # ---------------------------------------------------------------------
@@ -4750,5 +4757,345 @@ def atencion_social_estadisticas(request):
 
     return Response(
         estadisticas,
+        status=status.HTTP_200_OK,
+    )
+
+
+# ---------------------------------------------------------------------
+# CATÁLOGOS
+# ---------------------------------------------------------------------
+
+def _puede_consultar_catalogos(user):
+    return tiene_permiso(user, "catalogos.ver")
+
+
+def _puede_editar_catalogos(user):
+    return tiene_permiso(user, "catalogos.editar")
+
+
+def _catalogos_autorizados():
+    return Catalogo.objects.select_related(
+        "tipo_atencion_padre"
+    ).all()
+
+
+def _filtrar_catalogos_api(queryset, filtros):
+    termino = filtros.get("q", "").strip()
+
+    if termino:
+        from django.db.models import Q
+
+        queryset = queryset.filter(
+            Q(nombre__icontains=termino)
+            | Q(codigo__icontains=termino)
+            | Q(descripcion__icontains=termino)
+        )
+
+    for campo in ("tipo_catalogo", "area", "estado"):
+        valor = filtros.get(campo, "").strip()
+
+        if not valor:
+            continue
+
+        if campo == "tipo_catalogo":
+            if valor not in dict(Catalogo.TIPOS):
+                return None, {
+                    campo: "El tipo de catálogo indicado no es válido."
+                }
+
+        elif campo == "estado":
+            if valor not in dict(Catalogo.ESTADOS):
+                return None, {
+                    campo: "El estado indicado no es válido."
+                }
+
+        queryset = queryset.filter(**{campo: valor})
+
+    return queryset, None
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def catalogo_list(request):
+    """
+    GET  /api/catalogos/
+    POST /api/catalogos/
+    """
+
+    if request.method == "GET":
+        if not _puede_consultar_catalogos(request.user):
+            return Response(
+                {"detail": "No tienes permiso para consultar catálogos."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        queryset, error = _filtrar_catalogos_api(
+            _catalogos_autorizados(),
+            request.query_params,
+        )
+
+        if error:
+            return Response(
+                error,
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            CatalogoSerializer(queryset, many=True).data,
+            status=status.HTTP_200_OK,
+        )
+
+    if not _puede_editar_catalogos(request.user):
+        return Response(
+            {"detail": "No tienes permiso para administrar catálogos."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    serializer = CatalogoSerializer(data=request.data)
+
+    if not serializer.is_valid():
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        elemento = Catalogo(**serializer.validated_data)
+
+        elemento = CRUDCatalogo.crear_elemento_catalogo(
+            elemento,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        CatalogoSerializer(elemento).data,
+        status=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(["GET", "PUT", "PATCH"])
+@permission_classes([IsAuthenticated])
+def catalogo_detail(request, pk):
+    """
+    GET   /api/catalogos/<pk>/
+    PUT   /api/catalogos/<pk>/
+    PATCH /api/catalogos/<pk>/
+    """
+
+    if request.method == "GET":
+        if not _puede_consultar_catalogos(request.user):
+            return Response(
+                {"detail": "No tienes permiso para consultar catálogos."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+    elif not _puede_editar_catalogos(request.user):
+        return Response(
+            {"detail": "No tienes permiso para administrar catálogos."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    elemento = _catalogos_autorizados().filter(
+        pk=pk
+    ).first()
+
+    if elemento is None:
+        return Response(
+            {"detail": "Elemento de catálogo no encontrado."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == "GET":
+        return Response(
+            CatalogoSerializer(elemento).data,
+            status=status.HTTP_200_OK,
+        )
+
+    serializer = CatalogoSerializer(
+        elemento,
+        data=request.data,
+        partial=(request.method == "PATCH"),
+    )
+
+    if not serializer.is_valid():
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        for campo, valor in serializer.validated_data.items():
+            setattr(elemento, campo, valor)
+
+        elemento = CRUDCatalogo.modificar_elemento_catalogo(
+            elemento,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        CatalogoSerializer(elemento).data,
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def catalogo_estado(request, pk):
+    """
+    GET  /api/catalogos/<pk>/estado/
+    POST /api/catalogos/<pk>/estado/
+
+    POST alterna entre Activo e Inactivo utilizando el servicio existente.
+    """
+
+    if request.method == "GET":
+        if not _puede_consultar_catalogos(request.user):
+            return Response(
+                {"detail": "No tienes permiso para consultar catálogos."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+    elif not _puede_editar_catalogos(request.user):
+        return Response(
+            {"detail": "No tienes permiso para administrar catálogos."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    elemento = _catalogos_autorizados().filter(
+        pk=pk
+    ).first()
+
+    if elemento is None:
+        return Response(
+            {"detail": "Elemento de catálogo no encontrado."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == "GET":
+        return Response(
+            CatalogoSerializer(elemento).data,
+            status=status.HTTP_200_OK,
+        )
+
+    try:
+        if elemento.activo:
+            elemento = CRUDCatalogo.desactivar_elemento_catalogo(
+                elemento,
+                request.user,
+            )
+        else:
+            elemento = CRUDCatalogo.activar_elemento_catalogo(
+                elemento,
+                request.user,
+            )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        CatalogoSerializer(elemento).data,
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def catalogo_historial(request, pk):
+    """
+    GET /api/catalogos/<pk>/historial/
+    """
+
+    if not _puede_consultar_catalogos(request.user):
+        return Response(
+            {"detail": "No tienes permiso para consultar catálogos."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    elemento = _catalogos_autorizados().filter(
+        pk=pk
+    ).first()
+
+    if elemento is None:
+        return Response(
+            {"detail": "Elemento de catálogo no encontrado."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    versiones = (
+        CatalogoVersion.objects
+        .filter(objeto_id=elemento.pk)
+        .select_related("creado_por")
+        .order_by("-numero_version")
+    )
+
+    resultados = []
+
+    for version in versiones:
+        resultados.append({
+            "id": version.pk,
+            "numero_version": version.numero_version,
+            "vigente_desde": version.vigente_desde,
+            "vigente_hasta": version.vigente_hasta,
+            "datos": version.datos,
+            "creado_por": (
+                version.creado_por.username
+                if version.creado_por_id
+                else None
+            ),
+        })
+
+    return Response(
+        {
+            "catalogo": CatalogoSerializer(elemento).data,
+            "total_versiones": len(resultados),
+            "versiones": resultados,
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def catalogo_por_area_api(request):
+    """
+    GET /api/catalogos/por-area/?area=...&tipo=...
+    Devuelve solo elementos activos y compatibles con el área.
+    """
+
+    if not _puede_consultar_catalogos(request.user):
+        return Response(
+            {"detail": "No tienes permiso para consultar catálogos."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    area = request.query_params.get("area") or None
+    tipo = request.query_params.get("tipo") or None
+
+    if tipo and tipo not in dict(Catalogo.TIPOS):
+        return Response(
+            {"tipo": "El tipo de catálogo indicado no es válido."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    elementos = CRUDCatalogo.mostrar_catalogo_por_area(
+        area,
+        tipo,
+    ).select_related("tipo_atencion_padre")
+
+    return Response(
+        CatalogoSerializer(elementos, many=True).data,
         status=status.HTTP_200_OK,
     )

@@ -1160,3 +1160,60 @@ class UsuarioSocialSerializer(serializers.ModelSerializer):
             })
 
         return attrs
+
+
+class CatalogoSerializer(serializers.ModelSerializer):
+    tipo_atencion_padre_nombre = serializers.CharField(
+        source="tipo_atencion_padre.nombre",
+        read_only=True,
+        allow_null=True,
+    )
+
+    activo = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = Catalogo
+        fields = [
+            "id_catalogo",
+            "codigo",
+            "tipo_catalogo",
+            "nombre",
+            "descripcion",
+            "tipo_atencion_padre",
+            "tipo_atencion_padre_nombre",
+            "area",
+            "estado",
+            "activo",
+        ]
+        read_only_fields = [
+            "id_catalogo",
+            "tipo_atencion_padre_nombre",
+            "activo",
+        ]
+
+    def validate_codigo(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError(
+                "El código del catálogo es obligatorio."
+            )
+        return value
+
+    def validate_nombre(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError(
+                "El nombre del catálogo es obligatorio."
+            )
+        return value
+
+    def validate_area(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError(
+                "El área del catálogo es obligatoria."
+            )
+        return value
+
+    def validate_descripcion(self, value):
+        return value.strip()
