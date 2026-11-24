@@ -2551,18 +2551,50 @@ def actividad_list(request):
                     **{filtro: valor}
                 )
 
-        fecha_desde = filtros.get("fecha_desde")
-        fecha_hasta = filtros.get("fecha_hasta")
+        from django.utils.dateparse import parse_date
+
+        fecha_desde_texto = filtros.get("fecha_desde", "").strip()
+        fecha_hasta_texto = filtros.get("fecha_hasta", "").strip()
+
+        fecha_desde = (
+            parse_date(fecha_desde_texto)
+            if fecha_desde_texto
+            else None
+        )
+        fecha_hasta = (
+            parse_date(fecha_hasta_texto)
+            if fecha_hasta_texto
+            else None
+        )
+
+        if fecha_desde_texto and fecha_desde is None:
+            return Response(
+                {"fecha_desde": "Formato inválido. Utiliza YYYY-MM-DD."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if fecha_hasta_texto and fecha_hasta is None:
+            return Response(
+                {"fecha_hasta": "Formato inválido. Utiliza YYYY-MM-DD."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if fecha_desde and fecha_hasta and fecha_desde > fecha_hasta:
+            return Response(
+                {
+                    "detail": (
+                        "La fecha desde no puede ser posterior "
+                        "a la fecha hasta."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         if fecha_desde:
-            actividades = actividades.filter(
-                fecha__gte=fecha_desde,
-            )
+            actividades = actividades.filter(fecha__gte=fecha_desde)
 
         if fecha_hasta:
-            actividades = actividades.filter(
-                fecha__lte=fecha_hasta,
-            )
+            actividades = actividades.filter(fecha__lte=fecha_hasta)
 
         termino = filtros.get("q", "").strip()
 
