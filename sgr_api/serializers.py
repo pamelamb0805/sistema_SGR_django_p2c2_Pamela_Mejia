@@ -2,10 +2,12 @@
 from rest_framework import serializers
 
 from organizations.models import (
+    Usuario,
     Delegacion,
     Rol,
     Funcionario,
     Cargo,
+    ItemMedible,
 )
 
 
@@ -164,3 +166,111 @@ class FuncionarioSerializer(serializers.ModelSerializer):
             "activo_acceso": usuario.activo_acceso,
             "is_active": usuario.is_active,
         }
+class UsuarioSerializer(serializers.ModelSerializer):
+
+    funcionario_nombre = serializers.CharField(
+        source="funcionario.nombre",
+        read_only=True,
+    )
+
+    funcionario_identificador = serializers.CharField(
+        source="funcionario.identificador_institucional",
+        read_only=True,
+    )
+
+    delegaciones_autorizadas = serializers.SerializerMethodField()
+    roles = serializers.SerializerMethodField()
+
+    is_active = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = Usuario
+        fields = [
+            "id",
+            "username",
+            "email",
+            "funcionario",
+            "funcionario_nombre",
+            "funcionario_identificador",
+            "delegaciones_autorizadas",
+            "roles",
+            "activo_acceso",
+            "is_active",
+            "fecha_creacion",
+        ]
+
+        read_only_fields = [
+            "id",
+            "funcionario_nombre",
+            "funcionario_identificador",
+            "roles",
+            "is_active",
+            "fecha_creacion",
+        ]
+
+    def get_delegaciones_autorizadas(self, obj):
+        return [
+            {
+                "id_delegacion": delegacion.pk,
+                "nombre": delegacion.nombre,
+            }
+            for delegacion in obj.delegaciones_autorizadas.all()
+        ]
+
+    def get_roles(self, obj):
+        if not obj.funcionario_id:
+            return []
+
+        return [
+            {
+                "id_rol": rol.pk,
+                "nombre_rol": rol.nombre_rol,
+            }
+            for rol in obj.funcionario.roles.all().order_by(
+                "nombre_rol"
+            )
+        ]
+
+class ItemMedibleSerializer(serializers.ModelSerializer):
+    cargo_nombre = serializers.CharField(
+        source="cargo.nombre_cargo",
+        read_only=True,
+    )
+
+    class Meta:
+        model = ItemMedible
+        fields = [
+            "id_item",
+            "codigo",
+            "nombre_item",
+            "descripcion",
+            "tipo",
+            "vigencia",
+            "contabiliza_compromisos",
+            "cargo",
+            "cargo_nombre",
+        ]
+        read_only_fields = [
+            "id_item",
+            "cargo_nombre",
+        ]
+
+    def validate_codigo(self, value):
+        value = value.strip()
+
+        if not value:
+            raise serializers.ValidationError(
+                "El código del ítem es obligatorio."
+            )
+
+        return value
+
+    def validate_nombre_item(self, value):
+        value = value.strip()
+
+        if not value:
+            raise serializers.ValidationError(
+                "El nombre del ítem es obligatorio."
+            )
+
+        return value

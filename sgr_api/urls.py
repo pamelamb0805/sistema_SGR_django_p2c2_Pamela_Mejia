@@ -1,4 +1,3 @@
-
 from django.urls import path
 
 from . import views
@@ -49,5 +48,44 @@ urlpatterns = [
         "funcionarios/<int:pk>/estado/",
         views.funcionario_estado,
         name="api_funcionario_estado",
+    ),
+
+    # Usuarios y accesos.
+    path(
+        "usuarios/",
+        views.usuario_list,
+        name="api_usuarios",
+    ),
+    path(
+        "usuarios/<int:pk>/",
+        views.usuario_detail,
+        name="api_usuario_detail",
+    ),
+    path(
+        "usuarios/<int:pk>/estado/",
+        views.usuario_estado,
+        name="api_usuario_estado",
+    ),
+    path(
+        "usuarios/<int:pk>/contrasenia/",
+        views.usuario_contrasenia,
+        name="api_usuario_contrasenia",
+    ),
+
+        # Ítems medibles.
+    path(
+        "items/",
+        views.item_list,
+        name="api_items",
+    ),
+    path(
+        "items/<int:pk>/",
+        views.item_detail,
+        name="api_item_detail",
+    ),
+    path(
+        "items/<int:pk>/vigencia/",
+        views.item_vigencia,
+        name="api_item_vigencia",
     ),
 ]

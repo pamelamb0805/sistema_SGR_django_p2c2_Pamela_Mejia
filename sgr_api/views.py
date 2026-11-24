@@ -4,23 +4,32 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from organizations.models import (
+    Delegacion,
+    Rol,
+    Funcionario,
+    Usuario,
+)
 
 from organizations.models import (
     Delegacion,
     Rol,
     Funcionario,
+    ItemMedible,
 )
 
 from organizations.services import (
     CRUDDelegacion,
     CRUDRol,
     CRUDFuncionario,
+    CRUDCargo,
 )
 
 from .serializers import (
     DelegacionSerializer,
     RolSerializer,
     FuncionarioSerializer,
+    ItemMedibleSerializer,
 )
 
 
@@ -781,5 +790,529 @@ def funcionario_estado(request, pk):
 
     return Response(
         FuncionarioSerializer(funcionario).data,
+        status=status.HTTP_200_OK,
+    )
+
+# ---------------------------------------------------------------------
+# AUTORIZACIÓN DE USUARIOS
+# ---------------------------------------------------------------------
+
+def _puede_consultar_usuarios(user):
+    return tiene_permiso(user, "usuarios.ver")
+
+
+def _puede_editar_usuarios(user):
+    return tiene_permiso(user, "usuarios.editar")
+
+
+def _usuarios_autorizados(user):
+    queryset = (
+        Usuario.objects
+        .select_related(
+            "funcionario",
+            "funcionario__delegacion",
+        )
+        .prefetch_related(
+            "delegaciones_autorizadas",
+            "funcionario__roles",
+        )
+        .filter(funcionario__isnull=False)
+    )
+
+    return filtrar_por_ambito(
+        queryset,
+        user,
+        campo="funcionario__delegacion_id",
+    )
+
+
+def _obtener_usuario_autorizado(user, pk):
+    return _usuarios_autorizados(user).filter(pk=pk).first()
+
+
+# ---------------------------------------------------------------------
+# LISTAR Y CREAR USUARIOS
+# GET  /api/usuarios/
+# POST /api/usuarios/
+# ---------------------------------------------------------------------
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def usuario_list(request):
+
+    if request.method == "GET":
+
+        if not _puede_consultar_usuarios(request.user):
+            return Response(
+                {"detail": "No tienes permiso para consultar usuarios."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        usuarios = _usuarios_autorizados(request.user)
+
+        return Response(
+            UsuarioSerializer(usuarios, many=True).data,
+            status=status.HTTP_200_OK,
+        )
+
+    if not _puede_editar_usuarios(request.user):
+        return Response(
+            {"detail": "No tienes permiso para administrar usuarios."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    from organizations.forms import UsuarioAdminForm
+
+    form = UsuarioAdminForm(
+        data=request.data,
+        instance=Usuario(),
+        actor=request.user,
+    )
+
+    if not form.is_valid():
+        return Response(
+            {"errors": form.errors},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        usuario = Seguridad.guardar_usuario(
+            form,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    usuario = _obtener_usuario_autorizado(
+        request.user,
+        usuario.pk,
+    )
+
+    return Response(
+        UsuarioSerializer(usuario).data,
+        status=status.HTTP_201_CREATED,
+    )
+
+
+# ---------------------------------------------------------------------
+# CONSULTAR Y MODIFICAR USUARIOS
+# GET /api/usuarios/<pk>/
+# PUT /api/usuarios/<pk>/
+# ---------------------------------------------------------------------
+
+@api_view(["GET", "PUT"])
+@permission_classes([IsAuthenticated])
+def usuario_detail(request, pk):
+
+    if request.method == "GET":
+
+        if not _puede_consultar_usuarios(request.user):
+            return Response(
+                {"detail": "No tienes permiso para consultar usuarios."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+    elif not _puede_editar_usuarios(request.user):
+        return Response(
+            {"detail": "No tienes permiso para administrar usuarios."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    usuario = _obtener_usuario_autorizado(
+        request.user,
+        pk,
+    )
+
+    if usuario is None:
+        return Response(
+            {"detail": "Usuario no encontrado."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == "GET":
+        return Response(
+            UsuarioSerializer(usuario).data,
+            status=status.HTTP_200_OK,
+        )
+
+    from organizations.forms import UsuarioAdminForm
+
+    form = UsuarioAdminForm(
+        data=request.data,
+        instance=usuario,
+        actor=request.user,
+    )
+
+    if not form.is_valid():
+        return Response(
+            {"errors": form.errors},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        usuario = Seguridad.guardar_usuario(
+            form,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    usuario = _obtener_usuario_autorizado(
+        request.user,
+        usuario.pk,
+    )
+
+    return Response(
+        UsuarioSerializer(usuario).data,
+        status=status.HTTP_200_OK,
+    )
+
+
+# ---------------------------------------------------------------------
+# CONSULTAR Y CAMBIAR ESTADO DEL ACCESO
+# GET  /api/usuarios/<pk>/estado/
+# POST /api/usuarios/<pk>/estado/
+# ---------------------------------------------------------------------
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def usuario_estado(request, pk):
+
+    if request.method == "GET":
+
+        if not _puede_consultar_usuarios(request.user):
+            return Response(
+                {"detail": "No tienes permiso para consultar usuarios."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+    elif not _puede_editar_usuarios(request.user):
+        return Response(
+            {"detail": "No tienes permiso para modificar accesos."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    usuario = _obtener_usuario_autorizado(
+        request.user,
+        pk,
+    )
+
+    if usuario is None:
+        return Response(
+            {"detail": "Usuario no encontrado."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == "GET":
+        return Response(
+            {
+                "id_usuario": usuario.pk,
+                "activo_acceso": usuario.activo_acceso,
+                "is_active": usuario.is_active,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    try:
+        usuario = Seguridad.cambiar_estado_acceso(
+            usuario,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        UsuarioSerializer(usuario).data,
+        status=status.HTTP_200_OK,
+    )
+
+
+# ---------------------------------------------------------------------
+# CAMBIAR CONTRASEÑA
+# POST /api/usuarios/<pk>/contrasenia/
+# ---------------------------------------------------------------------
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def usuario_contrasenia(request, pk):
+
+    if not _puede_editar_usuarios(request.user):
+        return Response(
+            {"detail": "No tienes permiso para cambiar contraseñas."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    usuario = _obtener_usuario_autorizado(
+        request.user,
+        pk,
+    )
+
+    if usuario is None:
+        return Response(
+            {"detail": "Usuario no encontrado."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    password = request.data.get("password")
+
+    if not isinstance(password, str) or not password:
+        return Response(
+            {"detail": "Debes proporcionar una contraseña."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        Seguridad.cambiar_contrasenia(
+            usuario,
+            password,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        {"detail": "Contraseña actualizada correctamente."},
+        status=status.HTTP_200_OK,
+    )
+
+# ---------------------------------------------------------------------
+# AUTORIZACIÓN DE ÍTEMS MEDIBLES
+# ---------------------------------------------------------------------
+
+def _puede_consultar_items(user):
+    return (
+        tiene_rol(user, *ROLES_SUPERVISION)
+        and tiene_permiso(user, "items.ver")
+    )
+
+
+def _puede_editar_items(user):
+    return (
+        tiene_rol(user, *ROLES_CONFIGURACION)
+        and tiene_permiso(user, "items.editar")
+    )
+
+
+# ---------------------------------------------------------------------
+# LISTAR Y CREAR ÍTEMS
+# GET  /api/items/
+# POST /api/items/
+# ---------------------------------------------------------------------
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def item_list(request):
+
+    if request.method == "GET":
+
+        if not _puede_consultar_items(request.user):
+            return Response(
+                {"detail": "No tienes permiso para consultar ítems."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        items = ItemMedible.objects.select_related(
+            "cargo"
+        ).all()
+
+        serializer = ItemMedibleSerializer(
+            items,
+            many=True,
+        )
+
+        return Response(
+            serializer.data,
+            status=status.HTTP_200_OK,
+        )
+
+    if not _puede_editar_items(request.user):
+        return Response(
+            {"detail": "No tienes permiso para administrar ítems."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    serializer = ItemMedibleSerializer(data=request.data)
+
+    if not serializer.is_valid():
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        item = ItemMedible(
+            **serializer.validated_data
+        )
+
+        item = CRUDCargo.crear_item(
+            item,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        ItemMedibleSerializer(item).data,
+        status=status.HTTP_201_CREATED,
+    )
+
+
+# ---------------------------------------------------------------------
+# CONSULTAR Y MODIFICAR UN ÍTEM
+# GET   /api/items/<pk>/
+# PUT   /api/items/<pk>/
+# PATCH /api/items/<pk>/
+# ---------------------------------------------------------------------
+
+@api_view(["GET", "PUT", "PATCH"])
+@permission_classes([IsAuthenticated])
+def item_detail(request, pk):
+
+    if request.method == "GET":
+
+        if not _puede_consultar_items(request.user):
+            return Response(
+                {"detail": "No tienes permiso para consultar ítems."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+    elif not _puede_editar_items(request.user):
+        return Response(
+            {"detail": "No tienes permiso para administrar ítems."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    item = (
+        ItemMedible.objects
+        .select_related("cargo")
+        .filter(pk=pk)
+        .first()
+    )
+
+    if item is None:
+        return Response(
+            {"detail": "Ítem medible no encontrado."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == "GET":
+        return Response(
+            ItemMedibleSerializer(item).data,
+            status=status.HTTP_200_OK,
+        )
+
+    serializer = ItemMedibleSerializer(
+        item,
+        data=request.data,
+        partial=(request.method == "PATCH"),
+    )
+
+    if not serializer.is_valid():
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        for campo, valor in serializer.validated_data.items():
+            setattr(item, campo, valor)
+
+        item = CRUDCargo.modificar_item(
+            item,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        ItemMedibleSerializer(item).data,
+        status=status.HTTP_200_OK,
+    )
+
+
+# ---------------------------------------------------------------------
+# CONSULTAR Y CAMBIAR VIGENCIA DE UN ÍTEM
+# GET  /api/items/<pk>/vigencia/
+# POST /api/items/<pk>/vigencia/
+# ---------------------------------------------------------------------
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def item_vigencia(request, pk):
+
+    if request.method == "GET":
+
+        if not _puede_consultar_items(request.user):
+            return Response(
+                {"detail": "No tienes permiso para consultar ítems."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+    elif not _puede_editar_items(request.user):
+        return Response(
+            {"detail": "No tienes permiso para modificar ítems."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    item = (
+        ItemMedible.objects
+        .select_related("cargo")
+        .filter(pk=pk)
+        .first()
+    )
+
+    if item is None:
+        return Response(
+            {"detail": "Ítem medible no encontrado."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == "GET":
+        return Response(
+            {
+                "id_item": item.pk,
+                "vigencia": item.vigencia,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    try:
+        item = CRUDCargo.cambiar_vigencia_item(
+            item,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        ItemMedibleSerializer(item).data,
         status=status.HTTP_200_OK,
     )
