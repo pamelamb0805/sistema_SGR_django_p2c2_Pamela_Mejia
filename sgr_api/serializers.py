@@ -286,10 +286,7 @@ class MetaSerializer(serializers.ModelSerializer):
         read_only=True,
     )
 
-    periodo_descripcion = serializers.CharField(
-        source="periodo.__str__",
-        read_only=True,
-    )
+    periodo_descripcion = serializers.SerializerMethodField()
 
     cargo = serializers.PrimaryKeyRelatedField(
         read_only=True,
@@ -329,6 +326,9 @@ class MetaSerializer(serializers.ModelSerializer):
             "item_nombre",
             "periodo_descripcion",
         ]
+
+    def get_periodo_descripcion(self, obj):
+        return str(obj.periodo)
 
     def validate(self, attrs):
         funcionario = attrs.get(

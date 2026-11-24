@@ -88,4 +88,18 @@ urlpatterns = [
         views.item_vigencia,
         name="api_item_vigencia",
     ),
+
+
+    # Metas.
+    path(
+        "metas/",
+        views.meta_list,
+        name="api_metas",
+    ),
+    path(
+        "metas/<int:pk>/",
+        views.meta_detail,
+        name="api_meta_detail",
+    ),
+
 ]

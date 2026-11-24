@@ -1336,17 +1336,22 @@ def _puede_eliminar_metas(user):
     return tiene_permiso(user, "metas.eliminar")
 
 
+def _funcionarios_en_ambito(user):
+    return filtrar_por_ambito(
+        Funcionario.objects.all(),
+        user,
+        campo="delegacion_id",
+    )
+
+
 def _metas_autorizadas(user):
-    queryset = (
-        MetaModel.objects
-        .select_related(
-            "periodo",
-            "funcionario",
-            "funcionario__cargo",
-            "funcionario__delegacion",
-            "item",
-            "cargo",
-        )
+    queryset = MetaModel.objects.select_related(
+        "periodo",
+        "funcionario",
+        "funcionario__cargo",
+        "funcionario__delegacion",
+        "item",
+        "cargo",
     )
 
     return filtrar_por_ambito(
@@ -1357,7 +1362,15 @@ def _metas_autorizadas(user):
 
 
 def _obtener_meta_autorizada(user, pk):
-    return _metas_autorizadas(user).filter(pk=pk).first()
+    return _metas_autorizadas(user).filter(
+        pk=pk
+    ).first()
+
+
+def _funcionario_autorizado(user, funcionario):
+    return _funcionarios_en_ambito(user).filter(
+        pk=funcionario.pk
+    ).exists()
 
 
 # ---------------------------------------------------------------------
@@ -1400,12 +1413,65 @@ def meta_list(request):
         )
 
     datos = dict(serializer.validated_data)
-    aplicar_a_cargo = datos.pop("aplicar_a_cargo", False)
+    aplicar_a_cargo = datos.pop(
+        "aplicar_a_cargo",
+        False,
+    )
+
+    funcionario = datos.get("funcionario")
+
+    if funcionario is None:
+        return Response(
+            {"detail": "Debes indicar un funcionario."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not _funcionario_autorizado(
+        request.user,
+        funcionario,
+    ):
+        return Response(
+            {
+                "detail": (
+                    "No puedes crear metas para funcionarios "
+                    "fuera de tu ámbito autorizado."
+                )
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
 
     try:
         meta = MetaModel(**datos)
 
         if aplicar_a_cargo:
+
+            # El servicio aplica la meta a todos los funcionarios
+            # activos del cargo. Solo se permite si todos están
+            # dentro del ámbito autorizado del usuario.
+            candidatos = Funcionario.objects.filter(
+                cargo=funcionario.cargo,
+                estado=Funcionario.ESTADO_ACTIVO,
+            )
+
+            autorizados = _funcionarios_en_ambito(
+                request.user
+            ).filter(
+                cargo=funcionario.cargo,
+                estado=Funcionario.ESTADO_ACTIVO,
+            )
+
+            if candidatos.count() != autorizados.count():
+                return Response(
+                    {
+                        "detail": (
+                            "No puedes aplicar una meta a todo el cargo "
+                            "porque existen funcionarios fuera de tu "
+                            "ámbito autorizado."
+                        )
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
             resultado = CRUDMeta.crear_meta_para_cargo(
                 meta,
                 request.user,
@@ -1417,16 +1483,21 @@ def meta_list(request):
                         resultado["creadas"],
                         many=True,
                     ).data,
-                    "cantidad_creadas": len(resultado["creadas"]),
+                    "cantidad_creadas": len(
+                        resultado["creadas"]
+                    ),
                     "omitidas": [
                         {
-                            "funcionario": funcionario.pk,
-                            "nombre": funcionario.nombre,
+                            "id_funcionario": funcionario_omitido.pk,
+                            "nombre": funcionario_omitido.nombre,
                             "motivo": motivo,
                         }
-                        for funcionario, motivo in resultado["omitidas"]
+                        for funcionario_omitido, motivo
+                        in resultado["omitidas"]
                     ],
-                    "cantidad_omitidas": len(resultado["omitidas"]),
+                    "cantidad_omitidas": len(
+                        resultado["omitidas"]
+                    ),
                 },
                 status=status.HTTP_201_CREATED,
             )
