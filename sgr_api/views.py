@@ -16,8 +16,8 @@ from core.mixins import (
     ROLES_CONFIGURACION,
 )
 
-from .serializers import DelegacionSerializer
 from .serializers import DelegacionSerializer, RolSerializer
+
 
 # ---------------------------------------------------------------------
 # AUTORIZACIÓN
