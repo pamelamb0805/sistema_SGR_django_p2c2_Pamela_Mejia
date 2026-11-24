@@ -16,7 +16,7 @@
       <div class="card-body p-4">
         <p class="text-muted">Este formulario puede completarse sin crear una cuenta ni iniciar sesión. Los datos se utilizarán para gestionar el requerimiento municipal.</p>
         {% if error_seguridad %}<div class="alert alert-warning">{{ error_seguridad }}</div>{% endif %}
-        <form method="post" novalidate id="form-solicitud">
+        <form method="post" id="form-solicitud">
           {% csrf_token %}
           {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
           <div class="row g-3">

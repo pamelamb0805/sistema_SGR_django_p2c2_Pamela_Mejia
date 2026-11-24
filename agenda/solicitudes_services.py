@@ -10,25 +10,101 @@ from social.models import UsuarioSocial
 from .models import Compromiso, HistorialTransiciones
 
 
+
 def normalizar_rut(valor):
-    valor = re.sub(r"[^0-9kK]", "", str(valor or "")).upper()
-    if len(valor) < 2:
+    """
+    Normaliza un RUT chileno.
+
+    Acepta:
+    - 12345678-5
+    - 12.345.678-5
+    - 123456785
+
+    Rechaza letras distintas de K en el dígito verificador,
+    caracteres especiales y letras dentro del cuerpo.
+    """
+
+    valor = str(valor or "").strip().upper()
+
+    if not valor:
         return ""
-    return f"{valor[:-1]}-{valor[-1]}"
+
+    # No eliminar letras o símbolos inválidos silenciosamente.
+    if not re.fullmatch(r"[0-9K.\-\s]+", valor):
+        return ""
+
+    limpio = re.sub(r"[.\-\s]", "", valor)
+
+    if len(limpio) < 8 or len(limpio) > 9:
+        return ""
+
+    cuerpo = limpio[:-1]
+    digito_verificador = limpio[-1]
+
+    if not cuerpo.isdigit():
+        return ""
+
+    if len(cuerpo) not in (7, 8):
+        return ""
+
+    if not (digito_verificador.isdigit() or digito_verificador == "K"):
+        return ""
+
+    return f"{cuerpo}-{digito_verificador}"
 
 
 def rut_valido(valor):
-    rut = re.sub(r"[^0-9kK]", "", str(valor or "")).upper()
-    if len(rut) < 2 or not rut[:-1].isdigit():
+    """
+    Valida estructura y dígito verificador mediante módulo 11.
+    No corrige entradas inválidas eliminando caracteres.
+    """
+
+    valor = str(valor or "").strip().upper()
+
+    if not valor:
         return False
-    cuerpo, dv = rut[:-1], rut[-1]
-    suma, factor = 0, 2
+
+    if not re.fullmatch(r"[0-9K.\-\s]+", valor):
+        return False
+
+    limpio = re.sub(r"[.\-\s]", "", valor)
+
+    if len(limpio) not in (8, 9):
+        return False
+
+    cuerpo = limpio[:-1]
+    digito_verificador = limpio[-1]
+
+    if not cuerpo.isdigit():
+        return False
+
+    if len(cuerpo) not in (7, 8):
+        return False
+
+    if not (
+        digito_verificador.isdigit()
+        or digito_verificador == "K"
+    ):
+        return False
+
+    suma = 0
+    factor = 2
+
     for digito in reversed(cuerpo):
         suma += int(digito) * factor
         factor = 2 if factor == 7 else factor + 1
+
     resto = 11 - (suma % 11)
-    esperado = "0" if resto == 11 else "K" if resto == 10 else str(resto)
-    return dv == esperado
+
+    if resto == 11:
+        esperado = "0"
+    elif resto == 10:
+        esperado = "K"
+    else:
+        esperado = str(resto)
+
+    return digito_verificador == esperado
+
 
 
 def tutor_registrado(rut):
