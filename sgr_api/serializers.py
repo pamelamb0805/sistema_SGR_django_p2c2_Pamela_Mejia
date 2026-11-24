@@ -1,3 +1,4 @@
+
 from rest_framework import serializers
 
 from organizations.models import Delegacion
@@ -7,6 +8,7 @@ class DelegacionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Delegacion
+
         fields = [
             "id_delegacion",
             "codigo",
@@ -16,4 +18,7 @@ class DelegacionSerializer(serializers.ModelSerializer):
             "estado",
             "ambito",
         ]
-        read_only_fields = ["id_delegacion"]
+
+        read_only_fields = [
+            "id_delegacion",
+        ]

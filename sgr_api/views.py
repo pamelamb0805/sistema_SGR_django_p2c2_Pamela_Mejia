@@ -1,9 +1,6 @@
 
 from rest_framework import status
-from rest_framework.decorators import (
-    api_view,
-    permission_classes,
-)
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -21,6 +18,10 @@ from core.mixins import (
 
 from .serializers import DelegacionSerializer
 
+
+# ---------------------------------------------------------------------
+# AUTORIZACIÓN
+# ---------------------------------------------------------------------
 
 def _puede_consultar(user):
     return (
@@ -44,6 +45,20 @@ def _delegaciones_autorizadas(user):
     )
 
 
+def _obtener_delegacion_autorizada(user, pk):
+    return (
+        _delegaciones_autorizadas(user)
+        .filter(id_delegacion=pk)
+        .first()
+    )
+
+
+# ---------------------------------------------------------------------
+# LISTAR Y CREAR DELEGACIONES
+# GET  /api/delegaciones/
+# POST /api/delegaciones/
+# ---------------------------------------------------------------------
+
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def delegacion_list(request):
@@ -52,7 +67,11 @@ def delegacion_list(request):
 
         if not _puede_consultar(request.user):
             return Response(
-                {"detail": "No tienes permiso para consultar delegaciones."},
+                {
+                    "detail": (
+                        "No tienes permiso para consultar delegaciones."
+                    )
+                },
                 status=status.HTTP_403_FORBIDDEN,
             )
 
@@ -63,11 +82,18 @@ def delegacion_list(request):
             many=True,
         )
 
-        return Response(serializer.data)
+        return Response(
+            serializer.data,
+            status=status.HTTP_200_OK,
+        )
 
     if not _puede_editar(request.user):
         return Response(
-            {"detail": "No tienes permiso para administrar delegaciones."},
+            {
+                "detail": (
+                    "No tienes permiso para administrar delegaciones."
+                )
+            },
             status=status.HTTP_403_FORBIDDEN,
         )
 
@@ -101,15 +127,45 @@ def delegacion_list(request):
     )
 
 
+# ---------------------------------------------------------------------
+# CONSULTAR Y MODIFICAR UNA DELEGACIÓN
+# GET   /api/delegaciones/<pk>/
+# PUT   /api/delegaciones/<pk>/
+# PATCH /api/delegaciones/<pk>/
+# ---------------------------------------------------------------------
+
 @api_view(["GET", "PUT", "PATCH"])
 @permission_classes([IsAuthenticated])
 def delegacion_detail(request, pk):
 
-    delegacion = _delegaciones_autorizadas(
-        request.user
-    ).filter(
-        id_delegacion=pk
-    ).first()
+    if request.method == "GET":
+
+        if not _puede_consultar(request.user):
+            return Response(
+                {
+                    "detail": (
+                        "No tienes permiso para consultar delegaciones."
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+    else:
+
+        if not _puede_editar(request.user):
+            return Response(
+                {
+                    "detail": (
+                        "No tienes permiso para administrar delegaciones."
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+    delegacion = _obtener_delegacion_autorizada(
+        request.user,
+        pk,
+    )
 
     if delegacion is None:
         return Response(
@@ -118,21 +174,9 @@ def delegacion_detail(request, pk):
         )
 
     if request.method == "GET":
-
-        if not _puede_consultar(request.user):
-            return Response(
-                {"detail": "No tienes permiso para consultar delegaciones."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-
         return Response(
-            DelegacionSerializer(delegacion).data
-        )
-
-    if not _puede_editar(request.user):
-        return Response(
-            {"detail": "No tienes permiso para administrar delegaciones."},
-            status=status.HTTP_403_FORBIDDEN,
+            DelegacionSerializer(delegacion).data,
+            status=status.HTTP_200_OK,
         )
 
     serializer = DelegacionSerializer(
@@ -167,21 +211,45 @@ def delegacion_detail(request, pk):
         status=status.HTTP_200_OK,
     )
 
-@api_view(["POST"])
+
+# ---------------------------------------------------------------------
+# CONSULTAR Y CAMBIAR EL ESTADO
+# GET  /api/delegaciones/<pk>/estado/
+# POST /api/delegaciones/<pk>/estado/
+# ---------------------------------------------------------------------
+
+@api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def delegacion_estado(request, pk):
 
-    if not _puede_editar(request.user):
-        return Response(
-            {"detail": "No tienes permiso para administrar delegaciones."},
-            status=status.HTTP_403_FORBIDDEN,
-        )
+    if request.method == "GET":
 
-    delegacion = _delegaciones_autorizadas(
-        request.user
-    ).filter(
-        id_delegacion=pk
-    ).first()
+        if not _puede_consultar(request.user):
+            return Response(
+                {
+                    "detail": (
+                        "No tienes permiso para consultar delegaciones."
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+    else:
+
+        if not _puede_editar(request.user):
+            return Response(
+                {
+                    "detail": (
+                        "No tienes permiso para administrar delegaciones."
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+    delegacion = _obtener_delegacion_autorizada(
+        request.user,
+        pk,
+    )
 
     if delegacion is None:
         return Response(
@@ -189,6 +257,14 @@ def delegacion_estado(request, pk):
             status=status.HTTP_404_NOT_FOUND,
         )
 
+    # GET solamente consulta. Nunca modifica el estado.
+    if request.method == "GET":
+        return Response(
+            DelegacionSerializer(delegacion).data,
+            status=status.HTTP_200_OK,
+        )
+
+    # POST cambia el estado utilizando el servicio de negocio.
     try:
         delegacion = CRUDDelegacion.activar_desactivar_delegacion(
             delegacion,
