@@ -29,7 +29,9 @@ from .serializers import (
     DelegacionSerializer,
     RolSerializer,
     FuncionarioSerializer,
+    UsuarioSerializer,
     ItemMedibleSerializer,
+    MetaSerializer,
 )
 
 
@@ -42,7 +44,8 @@ from core.mixins import (
     ROLES_CONFIGURACION,
 )
 
-
+from measurement.models import Meta as MetaModel
+from measurement.services import CRUDMeta
 
 
 # ---------------------------------------------------------------------
@@ -1314,5 +1317,237 @@ def item_vigencia(request, pk):
 
     return Response(
         ItemMedibleSerializer(item).data,
+        status=status.HTTP_200_OK,
+    )
+
+# ---------------------------------------------------------------------
+# AUTORIZACIÓN DE METAS
+# ---------------------------------------------------------------------
+
+def _puede_consultar_metas(user):
+    return tiene_permiso(user, "metas.ver")
+
+
+def _puede_editar_metas(user):
+    return tiene_permiso(user, "metas.editar")
+
+
+def _puede_eliminar_metas(user):
+    return tiene_permiso(user, "metas.eliminar")
+
+
+def _metas_autorizadas(user):
+    queryset = (
+        MetaModel.objects
+        .select_related(
+            "periodo",
+            "funcionario",
+            "funcionario__cargo",
+            "funcionario__delegacion",
+            "item",
+            "cargo",
+        )
+    )
+
+    return filtrar_por_ambito(
+        queryset,
+        user,
+        campo="funcionario__delegacion_id",
+    )
+
+
+def _obtener_meta_autorizada(user, pk):
+    return _metas_autorizadas(user).filter(pk=pk).first()
+
+
+# ---------------------------------------------------------------------
+# LISTAR Y CREAR METAS
+# GET  /api/metas/
+# POST /api/metas/
+# ---------------------------------------------------------------------
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def meta_list(request):
+
+    if request.method == "GET":
+
+        if not _puede_consultar_metas(request.user):
+            return Response(
+                {"detail": "No tienes permiso para consultar metas."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        metas = _metas_autorizadas(request.user)
+
+        return Response(
+            MetaSerializer(metas, many=True).data,
+            status=status.HTTP_200_OK,
+        )
+
+    if not _puede_editar_metas(request.user):
+        return Response(
+            {"detail": "No tienes permiso para crear metas."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    serializer = MetaSerializer(data=request.data)
+
+    if not serializer.is_valid():
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    datos = dict(serializer.validated_data)
+    aplicar_a_cargo = datos.pop("aplicar_a_cargo", False)
+
+    try:
+        meta = MetaModel(**datos)
+
+        if aplicar_a_cargo:
+            resultado = CRUDMeta.crear_meta_para_cargo(
+                meta,
+                request.user,
+            )
+
+            return Response(
+                {
+                    "creadas": MetaSerializer(
+                        resultado["creadas"],
+                        many=True,
+                    ).data,
+                    "cantidad_creadas": len(resultado["creadas"]),
+                    "omitidas": [
+                        {
+                            "funcionario": funcionario.pk,
+                            "nombre": funcionario.nombre,
+                            "motivo": motivo,
+                        }
+                        for funcionario, motivo in resultado["omitidas"]
+                    ],
+                    "cantidad_omitidas": len(resultado["omitidas"]),
+                },
+                status=status.HTTP_201_CREATED,
+            )
+
+        meta = CRUDMeta.crear_meta(
+            meta,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        MetaSerializer(meta).data,
+        status=status.HTTP_201_CREATED,
+    )
+
+
+# ---------------------------------------------------------------------
+# CONSULTAR, MODIFICAR Y ELIMINAR METAS
+# GET    /api/metas/<pk>/
+# PUT    /api/metas/<pk>/
+# PATCH  /api/metas/<pk>/
+# DELETE /api/metas/<pk>/
+# ---------------------------------------------------------------------
+
+@api_view(["GET", "PUT", "PATCH", "DELETE"])
+@permission_classes([IsAuthenticated])
+def meta_detail(request, pk):
+
+    if request.method == "GET":
+
+        if not _puede_consultar_metas(request.user):
+            return Response(
+                {"detail": "No tienes permiso para consultar metas."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+    elif request.method == "DELETE":
+
+        if not _puede_eliminar_metas(request.user):
+            return Response(
+                {"detail": "No tienes permiso para eliminar metas."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+    elif not _puede_editar_metas(request.user):
+        return Response(
+            {"detail": "No tienes permiso para modificar metas."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    meta = _obtener_meta_autorizada(
+        request.user,
+        pk,
+    )
+
+    if meta is None:
+        return Response(
+            {"detail": "Meta no encontrada."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == "GET":
+        return Response(
+            MetaSerializer(meta).data,
+            status=status.HTTP_200_OK,
+        )
+
+    if request.method == "DELETE":
+
+        try:
+            CRUDMeta.eliminar_meta(
+                meta,
+                request.user,
+            )
+
+        except ReglaNegocioError as exc:
+            return Response(
+                {"detail": str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            status=status.HTTP_204_NO_CONTENT,
+        )
+
+    serializer = MetaSerializer(
+        meta,
+        data=request.data,
+        partial=(request.method == "PATCH"),
+    )
+
+    if not serializer.is_valid():
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        for campo, valor in serializer.validated_data.items():
+            if campo == "aplicar_a_cargo":
+                continue
+
+            setattr(meta, campo, valor)
+
+        meta = CRUDMeta.modificar_meta(
+            meta,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        MetaSerializer(meta).data,
         status=status.HTTP_200_OK,
     )

@@ -9,7 +9,7 @@ from organizations.models import (
     Cargo,
     ItemMedible,
 )
-
+from measurement.models import Meta as MetaModel, Periodo
 
 class DelegacionSerializer(serializers.ModelSerializer):
 
@@ -274,3 +274,96 @@ class ItemMedibleSerializer(serializers.ModelSerializer):
             )
 
         return value
+
+class MetaSerializer(serializers.ModelSerializer):
+    funcionario_nombre = serializers.CharField(
+        source="funcionario.nombre",
+        read_only=True,
+    )
+
+    item_nombre = serializers.CharField(
+        source="item.nombre_item",
+        read_only=True,
+    )
+
+    periodo_descripcion = serializers.CharField(
+        source="periodo.__str__",
+        read_only=True,
+    )
+
+    cargo = serializers.PrimaryKeyRelatedField(
+        read_only=True,
+    )
+
+    aplicar_a_cargo = serializers.BooleanField(
+        write_only=True,
+        required=False,
+        default=False,
+    )
+
+    class Meta:
+        model = MetaModel
+        fields = [
+            "id_meta",
+            "periodo",
+            "funcionario",
+            "funcionario_nombre",
+            "item",
+            "item_nombre",
+            "valor_objetivo",
+            "unidad",
+            "ponderador",
+            "umbral_minimo",
+            "maximo_computable",
+            "fecha_version",
+            "cargo",
+            "aplicar_a_cargo",
+            "periodo_descripcion",
+        ]
+
+        read_only_fields = [
+            "id_meta",
+            "fecha_version",
+            "cargo",
+            "funcionario_nombre",
+            "item_nombre",
+            "periodo_descripcion",
+        ]
+
+    def validate(self, attrs):
+        funcionario = attrs.get(
+            "funcionario",
+            getattr(self.instance, "funcionario", None),
+        )
+
+        item = attrs.get(
+            "item",
+            getattr(self.instance, "item", None),
+        )
+
+        if funcionario and item:
+            if funcionario.cargo_id != item.cargo_id:
+                raise serializers.ValidationError({
+                    "item": (
+                        "El ítem medible no pertenece "
+                        "al cargo del funcionario."
+                    )
+                })
+
+        if self.instance:
+            for campo in ("periodo", "funcionario", "item"):
+                if campo in attrs:
+                    valor_original = getattr(
+                        self.instance,
+                        f"{campo}_id",
+                    )
+
+                    if attrs[campo].pk != valor_original:
+                        raise serializers.ValidationError({
+                            campo: (
+                                "No se puede cambiar esta relación "
+                                "en una meta existente."
+                            )
+                        })
+
+        return attrs
