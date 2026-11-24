@@ -44,9 +44,12 @@ from core.mixins import (
     ROLES_SUPERVISION,
     ROLES_CONFIGURACION,
     ROLES_MEDICION,
+    ROLES_OPERATIVOS,
+    ROLES_VALIDACION,
     tiene_rol,
     tiene_permiso,
     filtrar_por_ambito,
+    get_funcionario,
 )
 
 from measurement.models import (
