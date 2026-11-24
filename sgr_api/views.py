@@ -49,12 +49,14 @@ from measurement.models import (
     Meta as MetaModel,
     Periodo,
     ReglaCalculoVersion,
+    Ajuste,
 )
 
 from measurement.services import (
     CRUDMeta,
     CRUDPeriodo,
     CalculoIndicadores,
+    CRUDAjuste,
 )
 
 # ---------------------------------------------------------------------
@@ -2077,5 +2079,273 @@ def periodo_recalcular(request, pk):
             "id_periodo": periodo.pk,
             "indicadores_recalculados": cantidad,
         },
+        status=status.HTTP_200_OK,
+    )
+
+# ---------------------------------------------------------------------
+# AJUSTES: INCENTIVOS Y PENALIZACIONES
+# GET  /api/ajustes/
+# POST /api/ajustes/
+# ---------------------------------------------------------------------
+
+def _puede_consultar_ajustes(user):
+    return (
+        tiene_rol(user, *ROLES_SUPERVISION)
+        and tiene_permiso(user, "ajustes.ver")
+    )
+
+
+def _puede_editar_ajustes(user):
+    return (
+        tiene_rol(user, *ROLES_MEDICION)
+        and tiene_permiso(user, "ajustes.editar")
+    )
+
+
+def _ajustes_autorizados(user):
+    return filtrar_por_ambito(
+        Ajuste.objects.select_related(
+            "funcionario",
+            "funcionario__delegacion",
+            "periodo",
+            "meta",
+            "meta__item",
+        ),
+        user,
+        campo="funcionario__delegacion_id",
+    )
+
+
+def _obtener_ajuste_autorizado(user, pk):
+    return (
+        _ajustes_autorizados(user)
+        .filter(pk=pk)
+        .first()
+    )
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def ajuste_list(request):
+
+    if request.method == "GET":
+
+        if not _puede_consultar_ajustes(request.user):
+            return Response(
+                {"detail": "No tienes permiso para consultar ajustes."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        ajustes = _ajustes_autorizados(request.user)
+
+        # Filtros equivalentes al listado web.
+        periodo = request.query_params.get("periodo", "").strip()
+        if periodo:
+            ajustes = ajustes.filter(periodo_id=periodo)
+
+        funcionario = request.query_params.get(
+            "funcionario",
+            "",
+        ).strip()
+
+        if funcionario:
+            ajustes = ajustes.filter(
+                funcionario_id=funcionario,
+            )
+
+        efecto = request.query_params.get("efecto", "").strip()
+
+        if efecto in dict(Ajuste.EFECTOS):
+            ajustes = ajustes.filter(efecto=efecto)
+
+        q = request.query_params.get("q", "").strip()
+
+        if q:
+            from django.db.models import Q
+
+            ajustes = ajustes.filter(
+                Q(motivo__icontains=q)
+                | Q(funcionario__nombre__icontains=q)
+                | Q(meta__item__nombre_item__icontains=q)
+            )
+
+        ajustes = ajustes.order_by("-id_ajuste")
+
+        serializer = AjusteSerializer(
+            ajustes,
+            many=True,
+        )
+
+        return Response(
+            serializer.data,
+            status=status.HTTP_200_OK,
+        )
+
+    if not _puede_editar_ajustes(request.user):
+        return Response(
+            {"detail": "No tienes permiso para registrar ajustes."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    serializer = AjusteSerializer(data=request.data)
+
+    if not serializer.is_valid():
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        ajuste = Ajuste(**serializer.validated_data)
+
+        # No permitir crear ajustes fuera del ámbito autorizado.
+        funcionario_autorizado = filtrar_por_ambito(
+            Funcionario.objects.all(),
+            request.user,
+            campo="delegacion_id",
+        ).filter(
+            pk=ajuste.funcionario_id,
+        ).exists()
+
+        if not funcionario_autorizado:
+            return Response(
+                {
+                    "detail": (
+                        "No puedes registrar ajustes para "
+                        "funcionarios fuera de tu ámbito."
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        ajuste = CRUDAjuste.crear_ajuste(
+            ajuste,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        AjusteSerializer(ajuste).data,
+        status=status.HTTP_201_CREATED,
+    )
+
+
+# ---------------------------------------------------------------------
+# CONSULTAR, MODIFICAR Y ELIMINAR UN AJUSTE
+# GET    /api/ajustes/<pk>/
+# PUT    /api/ajustes/<pk>/
+# PATCH  /api/ajustes/<pk>/
+# DELETE /api/ajustes/<pk>/
+# ---------------------------------------------------------------------
+
+@api_view(["GET", "PUT", "PATCH", "DELETE"])
+@permission_classes([IsAuthenticated])
+def ajuste_detail(request, pk):
+
+    if request.method == "GET":
+
+        if not _puede_consultar_ajustes(request.user):
+            return Response(
+                {"detail": "No tienes permiso para consultar ajustes."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+    elif not _puede_editar_ajustes(request.user):
+        return Response(
+            {"detail": "No tienes permiso para modificar ajustes."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    ajuste = _obtener_ajuste_autorizado(
+        request.user,
+        pk,
+    )
+
+    if ajuste is None:
+        return Response(
+            {"detail": "Ajuste no encontrado."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == "GET":
+        return Response(
+            AjusteSerializer(ajuste).data,
+            status=status.HTTP_200_OK,
+        )
+
+    if request.method == "DELETE":
+
+        try:
+            CRUDAjuste.eliminar_ajuste(
+                ajuste,
+                request.user,
+            )
+
+        except ReglaNegocioError as exc:
+            return Response(
+                {"detail": str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            {"detail": "Ajuste eliminado correctamente."},
+            status=status.HTTP_200_OK,
+        )
+
+    serializer = AjusteSerializer(
+        ajuste,
+        data=request.data,
+        partial=(request.method == "PATCH"),
+    )
+
+    if not serializer.is_valid():
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        for campo, valor in serializer.validated_data.items():
+            setattr(ajuste, campo, valor)
+
+        # Verificar que el funcionario de destino también
+        # pertenezca al ámbito autorizado.
+        funcionario_autorizado = filtrar_por_ambito(
+            Funcionario.objects.all(),
+            request.user,
+            campo="delegacion_id",
+        ).filter(
+            pk=ajuste.funcionario_id,
+        ).exists()
+
+        if not funcionario_autorizado:
+            return Response(
+                {
+                    "detail": (
+                        "No puedes asignar el ajuste a un funcionario "
+                        "fuera de tu ámbito."
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        ajuste = CRUDAjuste.modificar_ajuste(
+            ajuste,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        AjusteSerializer(ajuste).data,
         status=status.HTTP_200_OK,
     )

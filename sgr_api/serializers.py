@@ -13,6 +13,7 @@ from measurement.models import (
     Meta as MetaModel,
     Periodo,
     ReglaCalculoVersion,
+    Ajuste,
 )
 class DelegacionSerializer(serializers.ModelSerializer):
 
@@ -418,3 +419,56 @@ class PeriodoSerializer(serializers.ModelSerializer):
                 })
 
         return attrs
+
+class AjusteSerializer(serializers.ModelSerializer):
+    funcionario_nombre = serializers.CharField(
+        source="funcionario.nombre",
+        read_only=True,
+    )
+
+    periodo_descripcion = serializers.SerializerMethodField()
+
+    meta_nombre = serializers.CharField(
+        source="meta.item.nombre_item",
+        read_only=True,
+        allow_null=True,
+    )
+
+    puntos = serializers.ReadOnlyField()
+
+    class Meta:
+        model = Ajuste
+        fields = [
+            "id_ajuste",
+            "motivo",
+            "valor",
+            "efecto",
+            "funcionario",
+            "funcionario_nombre",
+            "periodo",
+            "periodo_descripcion",
+            "meta",
+            "meta_nombre",
+            "puntos",
+        ]
+
+        read_only_fields = [
+            "id_ajuste",
+            "funcionario_nombre",
+            "periodo_descripcion",
+            "meta_nombre",
+            "puntos",
+        ]
+
+    def get_periodo_descripcion(self, obj):
+        return str(obj.periodo)
+
+    def validate_motivo(self, value):
+        value = value.strip()
+
+        if not value:
+            raise serializers.ValidationError(
+                "El motivo del ajuste es obligatorio."
+            )
+
+        return value

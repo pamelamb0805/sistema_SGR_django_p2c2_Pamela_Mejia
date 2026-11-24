@@ -140,5 +140,17 @@ urlpatterns = [
         name="api_periodo_recalcular",
     ),
 
+        # Ajustes: incentivos y penalizaciones.
+    path(
+        "ajustes/",
+        views.ajuste_list,
+        name="api_ajustes",
+    ),
+    path(
+        "ajustes/<int:pk>/",
+        views.ajuste_detail,
+        name="api_ajuste_detail",
+    ),
+
 
 ]
