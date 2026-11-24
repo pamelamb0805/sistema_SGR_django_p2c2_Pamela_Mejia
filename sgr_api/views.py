@@ -118,6 +118,25 @@ from catalogs.models import Catalogo, CatalogoVersion
 from catalogs.services import CRUDCatalogo
 
 from .serializers import CatalogoSerializer
+from django.core.exceptions import PermissionDenied
+
+from audit.models import Auditoria, Notificacion
+from audit.services import (
+    puede_consultar as puede_consultar_auditoria,
+    filtrar_auditoria,
+)
+from audit.collaboration import (
+    obtener_registro_comentable,
+    obtener_conversacion,
+    crear_comentario,
+)
+
+from .serializers import (
+    AuditoriaSerializer,
+    NotificacionSerializer,
+    ComentarioRegistroSerializer,
+)
+from django.utils import timezone
 
 # ---------------------------------------------------------------------
 # AUTORIZACIÓN
@@ -5099,3 +5118,329 @@ def catalogo_por_area_api(request):
         CatalogoSerializer(elementos, many=True).data,
         status=status.HTTP_200_OK,
     )
+
+
+# ---------------------------------------------------------------------
+# AUDITORÍA
+# GET /api/auditoria/
+# GET /api/auditoria/<pk>/
+# GET /api/auditoria/historial/<entidad>/<pk>/
+# ---------------------------------------------------------------------
+
+def _puede_consultar_auditoria_api(user):
+    return (
+        puede_consultar_auditoria(user)
+        and tiene_permiso(user, "auditoria.ver")
+    )
+
+
+def _auditoria_filtrada_api(request):
+    """
+    Aplica los mismos filtros del historial web mediante
+    el servicio filtrar_auditoria.
+    """
+    datos = {}
+
+    for campo in ("evento", "entidad"):
+        valor = request.query_params.get(campo, "").strip()
+        if valor:
+            datos[campo] = valor
+
+    id_entidad = request.query_params.get("id_entidad", "").strip()
+    if id_entidad:
+        if not id_entidad.isdigit():
+            return None, "El ID de entidad debe ser numérico."
+        datos["id_entidad"] = int(id_entidad)
+
+    funcionario = request.query_params.get("funcionario", "").strip()
+    if funcionario:
+        if not funcionario.isdigit():
+            return None, "El funcionario debe ser un ID numérico."
+        datos["funcionario"] = int(funcionario)
+
+    for campo in ("fecha_desde", "fecha_hasta"):
+        valor = request.query_params.get(campo, "").strip()
+        if valor:
+            fecha = parse_date(valor)
+            if fecha is None:
+                return None, (
+                    f"El parámetro {campo} debe tener formato YYYY-MM-DD."
+                )
+            datos[campo] = fecha
+
+    if (
+        datos.get("fecha_desde")
+        and datos.get("fecha_hasta")
+        and datos["fecha_hasta"] < datos["fecha_desde"]
+    ):
+        return None, (
+            "La fecha_hasta no puede ser anterior a fecha_desde."
+        )
+
+    q = request.query_params.get("q", "").strip()
+    if q:
+        datos["q"] = q
+
+    queryset = Auditoria.objects.select_related("funcionario")
+
+    queryset, _ = filtrar_auditoria(queryset, datos)
+
+    return queryset.order_by("-fecha", "-id_auditoria"), None
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def auditoria_list(request):
+    if not _puede_consultar_auditoria_api(request.user):
+        return Response(
+            {"detail": "No tienes permiso para consultar la auditoría."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    queryset, error = _auditoria_filtrada_api(request)
+
+    if error:
+        return Response(
+            {"detail": error},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    serializer = AuditoriaSerializer(
+        queryset,
+        many=True,
+    )
+
+    return Response(
+        serializer.data,
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def auditoria_detail(request, pk):
+    if not _puede_consultar_auditoria_api(request.user):
+        return Response(
+            {"detail": "No tienes permiso para consultar la auditoría."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    evento = (
+        Auditoria.objects
+        .select_related("funcionario")
+        .filter(pk=pk)
+        .first()
+    )
+
+    if evento is None:
+        return Response(
+            {"detail": "Evento de auditoría no encontrado."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    return Response(
+        AuditoriaSerializer(evento).data,
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def auditoria_historial_entidad(request, entidad, pk):
+    if not _puede_consultar_auditoria_api(request.user):
+        return Response(
+            {"detail": "No tienes permiso para consultar la auditoría."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    queryset = (
+        Auditoria.objects
+        .select_related("funcionario")
+        .filter(
+            entidad_afectada=entidad,
+            id_entidad_afectada=pk,
+        )
+        .order_by("-fecha", "-id_auditoria")
+    )
+
+    return Response(
+        AuditoriaSerializer(queryset, many=True).data,
+        status=status.HTTP_200_OK,
+    )
+
+
+# ---------------------------------------------------------------------
+# NOTIFICACIONES
+# GET  /api/notificaciones/
+# POST /api/notificaciones/marcar-leidas/
+# ---------------------------------------------------------------------
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def notificacion_list(request):
+    queryset = (
+        Notificacion.objects
+        .filter(usuario=request.user)
+        .select_related(
+            "auditoria",
+            "auditoria__funcionario",
+            "delegacion",
+        )
+        .order_by("-fecha_creacion", "-id_notificacion")
+    )
+
+    leida = request.query_params.get("leida")
+
+    if leida in ("true", "1"):
+        queryset = queryset.filter(leida=True)
+    elif leida in ("false", "0"):
+        queryset = queryset.filter(leida=False)
+
+    pendientes = Notificacion.objects.filter(
+        usuario=request.user,
+        leida=False,
+    ).count()
+
+    return Response(
+        {
+            "pendientes": pendientes,
+            "total": queryset.count(),
+            "notificaciones": NotificacionSerializer(
+                queryset,
+                many=True,
+            ).data,
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def notificacion_marcar_leidas(request):
+    """
+    Marca como leídas las notificaciones propias.
+    Si se entrega una lista de IDs, solo marca esas notificaciones.
+    """
+    ids = request.data.get("ids")
+
+    queryset = Notificacion.objects.filter(
+        usuario=request.user,
+        leida=False,
+    )
+
+    if ids is not None:
+        if not isinstance(ids, list) or not all(
+            isinstance(pk, int) and pk > 0 for pk in ids
+        ):
+            return Response(
+                {"detail": "El campo ids debe ser una lista de IDs positivos."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        queryset = queryset.filter(pk__in=ids)
+
+    actualizadas = queryset.update(
+        leida=True,
+        fecha_lectura=timezone.now(),
+    )
+
+    pendientes = Notificacion.objects.filter(
+        usuario=request.user,
+        leida=False,
+    ).count()
+
+    return Response(
+        {
+            "detail": "Notificaciones actualizadas.",
+            "actualizadas": actualizadas,
+            "pendientes": pendientes,
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+# ---------------------------------------------------------------------
+# COMENTARIOS DE REGISTROS
+# GET  /api/comentarios/<app_label>/<model_name>/<pk>/
+# POST /api/comentarios/<app_label>/<model_name>/<pk>/
+# ---------------------------------------------------------------------
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def comentarios_registro_api(request, app_label, model_name, pk):
+    try:
+        registro, delegacion_id = obtener_registro_comentable(
+            request.user,
+            app_label,
+            model_name,
+            pk,
+        )
+
+        if request.method == "GET":
+            conversacion = obtener_conversacion(
+                registro,
+                delegacion_id,
+            )
+
+            serializer = ComentarioRegistroSerializer(
+                conversacion,
+                many=True,
+            )
+
+            return Response(
+                serializer.data,
+                status=status.HTTP_200_OK,
+            )
+
+        serializer = ComentarioRegistroSerializer(
+            data=request.data,
+        )
+
+        if not serializer.is_valid():
+            return Response(
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        respuesta_a = None
+        respuesta_id = serializer.validated_data.get("respuesta_a")
+
+        if respuesta_id is not None:
+            conversacion = obtener_conversacion(
+                registro,
+                delegacion_id,
+            )
+
+            respuesta_a = conversacion.filter(
+                pk=respuesta_id.pk,
+            ).first()
+
+            if respuesta_a is None:
+                return Response(
+                    {
+                        "respuesta_a": (
+                            "La respuesta seleccionada no pertenece "
+                            "a esta conversación."
+                        )
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        comentario = crear_comentario(
+            registro=registro,
+            delegacion_id=delegacion_id,
+            usuario=request.user,
+            mensaje=serializer.validated_data["mensaje"],
+            respuesta_a=respuesta_a,
+        )
+
+        return Response(
+            ComentarioRegistroSerializer(comentario).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    except PermissionDenied as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_403_FORBIDDEN,
+        )

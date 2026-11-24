@@ -342,7 +342,51 @@ urlpatterns = [
         name="api_catalogo_historial",
     ),
 
+        # -------------------------------------------------------------
+    # AUDITORÍA
+    # -------------------------------------------------------------
 
+    path(
+        "auditoria/",
+        views.auditoria_list,
+        name="api_auditoria",
+    ),
 
+    path(
+        "auditoria/<int:pk>/",
+        views.auditoria_detail,
+        name="api_auditoria_detail",
+    ),
 
+    path(
+        "auditoria/historial/<str:entidad>/<int:pk>/",
+        views.auditoria_historial_entidad,
+        name="api_auditoria_historial",
+    ),
+
+    # -------------------------------------------------------------
+    # NOTIFICACIONES
+    # -------------------------------------------------------------
+
+    path(
+        "notificaciones/",
+        views.notificacion_list,
+        name="api_notificaciones",
+    ),
+
+    path(
+        "notificaciones/marcar-leidas/",
+        views.notificacion_marcar_leidas,
+        name="api_notificaciones_marcar_leidas",
+    ),
+
+    # -------------------------------------------------------------
+    # COMENTARIOS DE REGISTROS
+    # -------------------------------------------------------------
+
+    path(
+        "comentarios/<str:app_label>/<str:model_name>/<int:pk>/",
+        views.comentarios_registro_api,
+        name="api_comentarios_registro",
+    ),
 ]

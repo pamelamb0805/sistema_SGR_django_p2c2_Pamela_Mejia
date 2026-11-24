@@ -29,6 +29,7 @@ from organizations.models import Funcionario
 from django.db.models import Q
 from catalogs.models import Catalogo
 from social.models import UsuarioSocial, AtencionSocial
+from audit.models import Auditoria, Notificacion, ComentarioRegistro
 
 class DelegacionSerializer(serializers.ModelSerializer):
 
@@ -1217,3 +1218,136 @@ class CatalogoSerializer(serializers.ModelSerializer):
 
     def validate_descripcion(self, value):
         return value.strip()
+
+
+# ---------------------------------------------------------------------
+# AUDITORÍA
+# ---------------------------------------------------------------------
+
+class AuditoriaSerializer(serializers.ModelSerializer):
+    funcionario_nombre = serializers.CharField(
+        source="funcionario.nombre",
+        read_only=True,
+        allow_null=True,
+    )
+
+    class Meta:
+        model = Auditoria
+        fields = [
+            "id_auditoria",
+            "evento",
+            "fecha",
+            "entidad_afectada",
+            "id_entidad_afectada",
+            "valor_anterior",
+            "valor_nuevo",
+            "funcionario",
+            "funcionario_nombre",
+        ]
+        read_only_fields = fields
+
+
+class NotificacionSerializer(serializers.ModelSerializer):
+    evento = serializers.CharField(
+        source="auditoria.evento",
+        read_only=True,
+    )
+    entidad = serializers.CharField(
+        source="auditoria.entidad_afectada",
+        read_only=True,
+    )
+    id_entidad = serializers.IntegerField(
+        source="auditoria.id_entidad_afectada",
+        read_only=True,
+    )
+    actor = serializers.SerializerMethodField()
+    delegacion_nombre = serializers.CharField(
+        source="delegacion.nombre",
+        read_only=True,
+        allow_null=True,
+    )
+
+    class Meta:
+        model = Notificacion
+        fields = [
+            "id_notificacion",
+            "auditoria",
+            "evento",
+            "entidad",
+            "id_entidad",
+            "actor",
+            "delegacion",
+            "delegacion_nombre",
+            "leida",
+            "fecha_creacion",
+            "fecha_lectura",
+        ]
+        read_only_fields = fields
+
+    def get_actor(self, obj):
+        funcionario = obj.auditoria.funcionario
+        return funcionario.nombre if funcionario else "Sistema / técnico"
+
+
+class ComentarioRegistroSerializer(serializers.ModelSerializer):
+    autor_nombre = serializers.CharField(
+        source="autor.username",
+        read_only=True,
+    )
+    funcionario_nombre = serializers.CharField(
+        source="funcionario.nombre",
+        read_only=True,
+        allow_null=True,
+    )
+    delegacion_nombre = serializers.CharField(
+        source="delegacion.nombre",
+        read_only=True,
+    )
+
+    class Meta:
+        model = ComentarioRegistro
+        fields = [
+            "id_comentario",
+            "content_type",
+            "object_id",
+            "autor",
+            "autor_nombre",
+            "funcionario",
+            "funcionario_nombre",
+            "delegacion",
+            "delegacion_nombre",
+            "respuesta_a",
+            "mensaje",
+            "fecha_creacion",
+        ]
+        read_only_fields = [
+            "id_comentario",
+            "content_type",
+            "object_id",
+            "autor",
+            "autor_nombre",
+            "funcionario",
+            "funcionario_nombre",
+            "delegacion",
+            "delegacion_nombre",
+            "fecha_creacion",
+        ]
+        extra_kwargs = {
+            "mensaje": {
+                "required": True,
+                "allow_blank": False,
+                "max_length": 5000,
+            },
+            "respuesta_a": {
+                "required": False,
+                "allow_null": True,
+            },
+        }
+
+    def validate_mensaje(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError(
+                "Debe escribir un comentario."
+            )
+        return value
