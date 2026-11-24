@@ -563,6 +563,10 @@ class CRUDCargo:
             return original
 
     @staticmethod
+    def crear_cargo(cargo, actor=None):
+        return _guardar(cargo, actor, "cargo")
+
+    @staticmethod
     def modificar_cargo(cargo, actor=None):
         return _guardar(cargo, actor, "cargo")
 

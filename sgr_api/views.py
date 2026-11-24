@@ -1,6 +1,17 @@
 
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.http import FileResponse
+from django.urls import reverse
+from django.utils import timezone
+from django.utils.dateparse import parse_date
+
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import (
+    api_view,
+    permission_classes,
+    parser_classes,
+)
+from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -9,13 +20,9 @@ from organizations.models import (
     Rol,
     Funcionario,
     Usuario,
-)
-
-from organizations.models import (
-    Delegacion,
-    Rol,
-    Funcionario,
+    Cargo,
     ItemMedible,
+    ItemMedibleVersion,
 )
 
 from organizations.services import (
@@ -23,33 +30,6 @@ from organizations.services import (
     CRUDRol,
     CRUDFuncionario,
     CRUDCargo,
-)
-
-from .serializers import (
-    DelegacionSerializer,
-    RolSerializer,
-    FuncionarioSerializer,
-    UsuarioSerializer,
-    ItemMedibleSerializer,
-    MetaSerializer,
-    PeriodoSerializer,
-    AjusteSerializer,
-    ActividadSerializer,
-    EvidenciaSerializer,
-    ValidacionSerializer,
-)
-
-from core.exceptions import ReglaNegocioError
-from core.mixins import (
-    ROLES_SUPERVISION,
-    ROLES_CONFIGURACION,
-    ROLES_MEDICION,
-    ROLES_OPERATIVOS,
-    ROLES_VALIDACION,
-    tiene_rol,
-    tiene_permiso,
-    filtrar_por_ambito,
-    get_funcionario,
 )
 
 from measurement.models import (
@@ -65,11 +45,7 @@ from measurement.services import (
     CalculoIndicadores,
     CRUDAjuste,
 )
-from django.http import FileResponse
-from django.urls import reverse
 
-from rest_framework.decorators import parser_classes
-from rest_framework.parsers import MultiPartParser, FormParser
 from activities.models import (
     Actividad,
     Evidencia,
@@ -84,9 +60,11 @@ from activities.services import (
     evidencias_visibles,
 )
 
-from django.utils.dateparse import parse_date
+from agenda.models import (
+    Compromiso,
+    HistorialTransiciones,
+)
 
-from agenda.models import Compromiso
 from agenda.services import (
     CRUDCompromiso,
     CRUDHistorialTransiciones,
@@ -95,11 +73,19 @@ from agenda.services import (
     supervisa,
 )
 
-from .serializers import (
-    CompromisoSerializer,
-    HistorialTransicionesSerializer,
+from agenda.solicitudes_services import (
+    solicitudes_visibles,
+    puede_gestionar_solicitud,
+    crear_solicitud,
+    cambiar_estado as cambiar_estado_solicitud,
+    agregar_evento as agregar_evento_solicitud,
 )
-from social.models import UsuarioSocial, AtencionSocial
+
+from social.models import (
+    UsuarioSocial,
+    AtencionSocial,
+)
+
 from social.services import (
     CRUDUsuarioSocial,
     CRUDAtencionSocial,
@@ -108,38 +94,67 @@ from social.services import (
     puede_escribir,
     estadisticas_atenciones,
 )
-from .serializers import (
-    UsuarioSocialSerializer,
-    AtencionSocialSerializer,
+
+from catalogs.models import (
+    Catalogo,
+    CatalogoVersion,
 )
 
-
-from catalogs.models import Catalogo, CatalogoVersion
 from catalogs.services import CRUDCatalogo
 
-from .serializers import CatalogoSerializer
-from django.core.exceptions import PermissionDenied
+from audit.models import (
+    Auditoria,
+    Notificacion,
+    AlertaOperativa,
+)
 
-from audit.models import Auditoria, Notificacion
 from audit.services import (
     puede_consultar as puede_consultar_auditoria,
     filtrar_auditoria,
 )
+
 from audit.collaboration import (
     obtener_registro_comentable,
     obtener_conversacion,
     crear_comentario,
 )
 
+from core.exceptions import ReglaNegocioError
+
+from core.mixins import (
+    ROLES_SUPERVISION,
+    ROLES_CONFIGURACION,
+    ROLES_MEDICION,
+    ROLES_OPERATIVOS,
+    ROLES_VALIDACION,
+    tiene_rol,
+    tiene_permiso,
+    filtrar_por_ambito,
+    get_funcionario,
+)
+
 from .serializers import (
+    DelegacionSerializer,
+    RolSerializer,
+    FuncionarioSerializer,
+    UsuarioSerializer,
+    CargoSerializer,
+    ItemMedibleSerializer,
+    MetaSerializer,
+    PeriodoSerializer,
+    AjusteSerializer,
+    ActividadSerializer,
+    EvidenciaSerializer,
+    ValidacionSerializer,
+    CompromisoSerializer,
+    HistorialTransicionesSerializer,
+    UsuarioSocialSerializer,
+    AtencionSocialSerializer,
+    CatalogoSerializer,
     AuditoriaSerializer,
     NotificacionSerializer,
     ComentarioRegistroSerializer,
 )
-from django.utils import timezone
-from organizations.models import Cargo, ItemMedibleVersion
-from .serializers import CargoSerializer
-from django.core.exceptions import ValidationError
 
 # ---------------------------------------------------------------------
 # AUTORIZACIÓN
@@ -5613,3 +5628,578 @@ def item_historial(request, pk):
     ]
 
     return Response(datos, status=status.HTTP_200_OK)
+
+    # ---------------------------------------------------------------------
+# SOLICITUDES VECINALES
+# ---------------------------------------------------------------------
+
+def _solicitud_dict(obj):
+    return {
+        "id_compromiso": obj.pk,
+        "solicitante": obj.solicitante,
+        "territorio": obj.territorio,
+        "delegacion": obj.delegacion_id,
+        "delegacion_nombre": obj.delegacion.nombre,
+        "funcionario": obj.funcionario_id,
+        "funcionario_nombre": obj.funcionario.nombre,
+        "tipo_solicitud": obj.tipo_solicitud,
+        "categoria_solicitud": obj.categoria_solicitud,
+        "descripcion_solicitud": obj.descripcion_solicitud,
+        "solucion": obj.solucion,
+        "rut_solicitante": obj.rut_solicitante,
+        "relacion_vecinal": obj.relacion_vecinal,
+        "canal_solicitud": obj.canal_solicitud,
+        "estado_solicitud": obj.estado_solicitud,
+        "fecha_creacion": obj.fecha_creacion,
+        "fecha_propuesta_solucion": obj.fecha_propuesta_solucion,
+        "rut_menor": obj.rut_menor,
+        "nombre_menor": obj.nombre_menor,
+    }
+
+
+def _historial_solicitud_dict(evento):
+    return {
+        "id_cambio": evento.pk,
+        "estado_anterior": evento.estado_anterior,
+        "estado_nuevo": evento.estado_nuevo,
+        "fecha": evento.fecha,
+        "observacion": evento.observacion,
+        "funcionario": evento.funcionario_id,
+        "funcionario_nombre": evento.funcionario.nombre,
+    }
+
+
+def _solicitudes_autorizadas(user):
+    return solicitudes_visibles(user).select_related(
+        "delegacion",
+        "funcionario",
+        "funcionario__cargo",
+    ).filter(
+        tipo_solicitud__in=[
+            Compromiso.TIPO_GENERAL,
+            Compromiso.TIPO_REGALO,
+        ]
+    )
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def solicitud_vecinal_list(request):
+    if request.method == "GET":
+        if not tiene_permiso(request.user, "agenda.ver"):
+            return Response(
+                {"detail": "No tienes permiso para consultar solicitudes."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        queryset = _solicitudes_autorizadas(request.user)
+
+        estado = request.query_params.get("estado")
+        if estado:
+            if estado not in dict(Compromiso.ESTADOS_SOLICITUD):
+                return Response(
+                    {"estado": "Estado de solicitud no válido."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            queryset = queryset.filter(estado_solicitud=estado)
+
+        tipo = request.query_params.get("tipo")
+        if tipo:
+            if tipo not in dict(Compromiso.TIPOS_SOLICITUD):
+                return Response(
+                    {"tipo": "Tipo de solicitud no válido."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            queryset = queryset.filter(tipo_solicitud=tipo)
+
+        delegacion = request.query_params.get("delegacion")
+        if delegacion:
+            if not delegacion.isdigit():
+                return Response(
+                    {"delegacion": "Debe indicar un ID numérico."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            queryset = queryset.filter(delegacion_id=int(delegacion))
+
+        desde = request.query_params.get("fecha_desde")
+        hasta = request.query_params.get("fecha_hasta")
+
+        if desde:
+            fecha = parse_date(desde)
+            if fecha is None:
+                return Response(
+                    {"fecha_desde": "Formato requerido: YYYY-MM-DD."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            queryset = queryset.filter(fecha_creacion__date__gte=fecha)
+
+        if hasta:
+            fecha = parse_date(hasta)
+            if fecha is None:
+                return Response(
+                    {"fecha_hasta": "Formato requerido: YYYY-MM-DD."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            queryset = queryset.filter(fecha_creacion__date__lte=fecha)
+
+        if desde and hasta and parse_date(hasta) < parse_date(desde):
+            return Response(
+                {"detail": "fecha_hasta no puede ser anterior a fecha_desde."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        resultados = [
+            _solicitud_dict(obj)
+            for obj in queryset.order_by("-fecha_creacion", "-pk")
+        ]
+
+        return Response(resultados, status=status.HTTP_200_OK)
+
+    # Registrar una solicitud desde un usuario autenticado.
+    if not (
+        tiene_rol(request.user, *ROLES_OPERATIVOS)
+        and tiene_permiso(request.user, "agenda.registrar")
+    ):
+        return Response(
+            {"detail": "No tienes permiso para registrar solicitudes."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    datos = request.data.copy()
+
+    campos_obligatorios = [
+        "tipo_solicitud",
+        "nombre_solicitante",
+        "territorio",
+        "categoria_solicitud",
+        "descripcion_solicitud",
+        "delegacion",
+        "relacion_vecinal",
+    ]
+
+    faltantes = [
+        campo for campo in campos_obligatorios
+        if not datos.get(campo)
+    ]
+
+    if faltantes:
+        return Response(
+            {"detail": "Faltan campos obligatorios.", "campos": faltantes},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        delegacion_id = int(datos["delegacion"])
+    except (TypeError, ValueError):
+        return Response(
+            {"delegacion": "Debe indicar un ID numérico."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    from organizations.models import Delegacion
+
+    delegacion = Delegacion.objects.filter(
+        pk=delegacion_id,
+        estado="Activa",
+    ).first()
+
+    if delegacion is None:
+        return Response(
+            {"delegacion": "La delegación no existe o está inactiva."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    datos["delegacion"] = delegacion
+
+    fecha_propuesta = datos.get("fecha_propuesta_solucion")
+    if fecha_propuesta:
+        fecha_propuesta = parse_date(str(fecha_propuesta))
+        if fecha_propuesta is None:
+            return Response(
+                {"fecha_propuesta_solucion": "Formato requerido: YYYY-MM-DD."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        datos["fecha_propuesta_solucion"] = fecha_propuesta
+
+    try:
+        solicitud = crear_solicitud(datos)
+    except (ValueError, ValidationError) as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    solicitud = _solicitudes_autorizadas(request.user).filter(
+        pk=solicitud.pk
+    ).first()
+
+    if solicitud is None:
+        return Response(
+            {"detail": "Solicitud creada, pero fuera del ámbito visible del usuario."},
+            status=status.HTTP_201_CREATED,
+        )
+
+    return Response(
+        _solicitud_dict(solicitud),
+        status=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def solicitud_vecinal_detail(request, pk):
+    if not tiene_permiso(request.user, "agenda.ver"):
+        return Response(
+            {"detail": "No tienes permiso para consultar solicitudes."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    solicitud = _solicitudes_autorizadas(request.user).filter(
+        pk=pk
+    ).first()
+
+    if solicitud is None:
+        return Response(
+            {"detail": "Solicitud no encontrada."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    return Response(_solicitud_dict(solicitud))
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def solicitud_vecinal_estado(request, pk):
+    solicitud = _solicitudes_autorizadas(request.user).filter(
+        pk=pk
+    ).first()
+
+    if solicitud is None:
+        return Response(
+            {"detail": "Solicitud no encontrada."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if not tiene_permiso(request.user, "agenda.estado"):
+        return Response(
+            {"detail": "No tienes permiso para cambiar estados."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    if not puede_gestionar_solicitud(request.user, solicitud):
+        return Response(
+            {"detail": "No puedes gestionar esta solicitud."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    nuevo_estado = request.data.get("estado")
+    observacion = str(request.data.get("observacion", "")).strip()
+
+    if not nuevo_estado:
+        return Response(
+            {"estado": "Este campo es obligatorio."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        solicitud = cambiar_estado_solicitud(
+            solicitud,
+            nuevo_estado,
+            request.user,
+            observacion,
+        )
+    except (ValueError, ValidationError) as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    solicitud = _solicitudes_autorizadas(request.user).get(pk=pk)
+
+    return Response(
+        _solicitud_dict(solicitud),
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def solicitud_vecinal_historial(request, pk):
+    solicitud = _solicitudes_autorizadas(request.user).filter(
+        pk=pk
+    ).first()
+
+    if solicitud is None:
+        return Response(
+            {"detail": "Solicitud no encontrada."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == "GET":
+        if not tiene_permiso(request.user, "agenda.ver"):
+            return Response(
+                {"detail": "No tienes permiso para consultar el historial."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        historial = HistorialTransiciones.objects.filter(
+            compromiso=solicitud
+        ).select_related("funcionario").order_by(
+            "fecha",
+            "id_cambio",
+        )
+
+        return Response(
+            [_historial_solicitud_dict(evento) for evento in historial],
+            status=status.HTTP_200_OK,
+        )
+
+    if not tiene_permiso(request.user, "agenda.estado"):
+        return Response(
+            {"detail": "No tienes permiso para registrar eventos."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    if not puede_gestionar_solicitud(request.user, solicitud):
+        return Response(
+            {"detail": "No puedes gestionar esta solicitud."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    observacion = str(request.data.get("observacion", "")).strip()
+
+    if not observacion:
+        return Response(
+            {"observacion": "Debe indicar el detalle del evento."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        evento = agregar_evento_solicitud(
+            solicitud,
+            request.user,
+            observacion,
+        )
+    except ValueError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    evento = HistorialTransiciones.objects.select_related(
+        "funcionario"
+    ).get(pk=evento.pk)
+
+    return Response(
+        _historial_solicitud_dict(evento),
+        status=status.HTTP_201_CREATED,
+    )
+
+# ---------------------------------------------------------------------
+# ALERTAS OPERATIVAS
+# ---------------------------------------------------------------------
+
+def _alerta_operativa_dict(alerta):
+    return {
+        "id_alerta": alerta.pk,
+        "clave": alerta.clave,
+        "tipo": alerta.tipo,
+        "titulo": alerta.titulo,
+        "motivo": alerta.motivo,
+        "responsable": alerta.responsable,
+        "fecha": alerta.fecha,
+        "url": alerta.url,
+        "nivel": alerta.nivel,
+        "prioridad": alerta.prioridad,
+        "estado": alerta.estado,
+        "fecha_generacion": alerta.fecha_generacion,
+        "fecha_atencion": alerta.fecha_atencion,
+        "atendida_por": alerta.atendida_por_id,
+    }
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def alerta_operativa_list(request):
+    queryset = AlertaOperativa.objects.filter(
+        usuario=request.user
+    ).order_by(
+        "prioridad",
+        "fecha",
+        "id_alerta",
+    )
+
+    estado = request.query_params.get("estado", "").strip()
+
+    if estado:
+        if estado not in dict(AlertaOperativa.ESTADOS):
+            return Response(
+                {"estado": "Estado de alerta no válido."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        queryset = queryset.filter(estado=estado)
+
+    tipo = request.query_params.get("tipo", "").strip()
+    if tipo:
+        queryset = queryset.filter(tipo=tipo)
+
+    pendientes = AlertaOperativa.objects.filter(
+        usuario=request.user,
+        estado=AlertaOperativa.ESTADO_PENDIENTE,
+    ).count()
+
+    return Response(
+        {
+            "pendientes": pendientes,
+            "total": queryset.count(),
+            "alertas": [
+                _alerta_operativa_dict(alerta)
+                for alerta in queryset
+            ],
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def alerta_operativa_atender(request, pk):
+    alerta = AlertaOperativa.objects.filter(
+        pk=pk,
+        usuario=request.user,
+    ).first()
+
+    if alerta is None:
+        return Response(
+            {"detail": "Alerta no encontrada."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if alerta.estado == AlertaOperativa.ESTADO_ATENDIDA:
+        return Response(
+            {"detail": "La alerta ya estaba atendida."},
+            status=status.HTTP_200_OK,
+        )
+
+    from django.utils import timezone
+
+    alerta.estado = AlertaOperativa.ESTADO_ATENDIDA
+    alerta.fecha_atencion = timezone.now()
+    alerta.atendida_por = request.user
+    alerta.save(
+        update_fields=[
+            "estado",
+            "fecha_atencion",
+            "atendida_por",
+        ]
+    )
+
+    return Response(
+        {
+            "detail": "Alerta marcada como atendida.",
+            "alerta": _alerta_operativa_dict(alerta),
+        },
+        status=status.HTTP_200_OK,
+    )
+
+    # ---------------------------------------------------------------------
+# EXPORTACIÓN DE AUDITORÍA
+# ---------------------------------------------------------------------
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def auditoria_exportar_api(request):
+    if not _puede_consultar_auditoria_api(request.user):
+        return Response(
+            {"detail": "No tienes permiso para consultar la auditoría."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    if not tiene_permiso(request.user, "auditoria.exportar"):
+        return Response(
+            {"detail": "No tienes permiso para exportar auditoría."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    queryset, error = _auditoria_filtrada_api(request)
+
+    if error:
+        return Response(
+            {"detail": error},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    from openpyxl import Workbook
+    from django.http import HttpResponse
+    from django.utils import timezone
+
+    def celda_segura(valor):
+        texto = "" if valor is None else str(valor)
+
+        if texto[:1] in ("=", "+", "-", "@", "\t", "\r"):
+            return "'" + texto
+
+        return texto
+
+    libro = Workbook()
+    hoja = libro.active
+    hoja.title = "Auditoría"
+
+    hoja.append(["Informe de auditoría del SGR"])
+    hoja.append([
+        "Generado",
+        timezone.localtime().strftime("%d/%m/%Y %H:%M:%S"),
+    ])
+    hoja.append([
+        "Generado por",
+        celda_segura(request.user.get_username()),
+    ])
+    hoja.append([])
+
+    hoja.append([
+        "ID",
+        "Fecha y hora",
+        "Funcionario responsable",
+        "Evento",
+        "Entidad afectada",
+        "ID de entidad",
+        "Valor anterior",
+        "Valor nuevo",
+    ])
+
+    for evento in queryset.select_related(
+        "funcionario"
+    ).iterator():
+
+        hoja.append([
+            evento.pk,
+            timezone.localtime(
+                evento.fecha
+            ).strftime("%d/%m/%Y %H:%M:%S"),
+            celda_segura(
+                evento.funcionario.nombre
+                if evento.funcionario
+                else "Sistema / técnico"
+            ),
+            celda_segura(evento.evento),
+            celda_segura(evento.entidad_afectada),
+            evento.id_entidad_afectada,
+            celda_segura(evento.valor_anterior),
+            celda_segura(evento.valor_nuevo),
+        ])
+
+    respuesta = HttpResponse(
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        )
+    )
+
+    respuesta["Content-Disposition"] = (
+        f'attachment; filename="auditoria_'
+        f'{timezone.localtime():%Y%m%d_%H%M}.xlsx"'
+    )
+    respuesta["Cache-Control"] = "private, no-store"
+
+    libro.save(respuesta)
+    return respuesta

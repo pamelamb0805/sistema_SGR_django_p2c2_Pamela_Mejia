@@ -400,4 +400,58 @@ path(
     views.item_historial,
     name="api_item_historial",
 ),
+
+    # -------------------------------------------------------------
+    # SOLICITUDES VECINALES
+    # -------------------------------------------------------------
+
+    path(
+        "solicitudes-vecinales/",
+        views.solicitud_vecinal_list,
+        name="api_solicitudes_vecinales",
+    ),
+
+    path(
+        "solicitudes-vecinales/<int:pk>/",
+        views.solicitud_vecinal_detail,
+        name="api_solicitud_vecinal_detail",
+    ),
+
+    path(
+        "solicitudes-vecinales/<int:pk>/estado/",
+        views.solicitud_vecinal_estado,
+        name="api_solicitud_vecinal_estado",
+    ),
+
+    path(
+        "solicitudes-vecinales/<int:pk>/historial/",
+        views.solicitud_vecinal_historial,
+        name="api_solicitud_vecinal_historial",
+    ),
+
+    # -------------------------------------------------------------
+    # ALERTAS OPERATIVAS
+    # -------------------------------------------------------------
+
+    path(
+        "alertas/",
+        views.alerta_operativa_list,
+        name="api_alertas",
+    ),
+
+    path(
+        "alertas/<int:pk>/atender/",
+        views.alerta_operativa_atender,
+        name="api_alerta_atender",
+    ),
+
+    # -------------------------------------------------------------
+    # EXPORTACIÓN DE AUDITORÍA
+    # -------------------------------------------------------------
+
+    path(
+        "auditoria/exportar/",
+        views.auditoria_exportar_api,
+        name="api_auditoria_exportar",
+    ),
 ]
