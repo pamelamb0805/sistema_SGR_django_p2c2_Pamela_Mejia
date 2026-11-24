@@ -389,4 +389,15 @@ urlpatterns = [
         views.comentarios_registro_api,
         name="api_comentarios_registro",
     ),
+
+    # CARGOS
+path("cargos/", views.cargo_list, name="api_cargos"),
+path("cargos/<int:pk>/", views.cargo_detail, name="api_cargo_detail"),
+
+# HISTORIAL DE ÍTEMS
+path(
+    "items/<int:pk>/historial/",
+    views.item_historial,
+    name="api_item_historial",
+),
 ]

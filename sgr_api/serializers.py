@@ -46,7 +46,7 @@ class DelegacionSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id_delegacion"]
 
-
+from organizations.models import ItemMedibleVersion, Cargo
 class RolSerializer(serializers.ModelSerializer):
 
     permisos = serializers.ListField(
@@ -1351,3 +1351,41 @@ class ComentarioRegistroSerializer(serializers.ModelSerializer):
                 "Debe escribir un comentario."
             )
         return value
+
+class CargoSerializer(serializers.ModelSerializer):
+    vigente = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = Cargo
+        fields = [
+            "id_cargo",
+            "nombre_cargo",
+            "vigencia_desde",
+            "vigencia_hasta",
+            "vigente",
+        ]
+        read_only_fields = ["id_cargo", "vigente"]
+
+    def validate_nombre_cargo(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError(
+                "El nombre del cargo es obligatorio."
+            )
+        return value
+
+    def validate(self, attrs):
+        inicio = attrs.get(
+            "vigencia_desde",
+            getattr(self.instance, "vigencia_desde", None),
+        )
+        termino = attrs.get(
+            "vigencia_hasta",
+            getattr(self.instance, "vigencia_hasta", None),
+        )
+        if inicio and termino and termino < inicio:
+            raise serializers.ValidationError({
+                "vigencia_hasta":
+                    "La vigencia final no puede ser anterior a la inicial."
+            })
+        return attrs

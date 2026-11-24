@@ -137,6 +137,9 @@ from .serializers import (
     ComentarioRegistroSerializer,
 )
 from django.utils import timezone
+from organizations.models import Cargo, ItemMedibleVersion
+from .serializers import CargoSerializer
+from django.core.exceptions import ValidationError
 
 # ---------------------------------------------------------------------
 # AUTORIZACIÓN
@@ -5444,3 +5447,169 @@ def comentarios_registro_api(request, app_label, model_name, pk):
             {"detail": str(exc)},
             status=status.HTTP_403_FORBIDDEN,
         )
+
+# ---------------------------------------------------------------------
+# CARGOS
+# ---------------------------------------------------------------------
+
+def _puede_consultar_cargos(user):
+    return (
+        tiene_rol(user, *ROLES_SUPERVISION)
+        and tiene_permiso(user, "cargos.ver")
+    )
+
+
+def _puede_editar_cargos(user):
+    return (
+        tiene_rol(user, *ROLES_CONFIGURACION)
+        and tiene_permiso(user, "cargos.editar")
+    )
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def cargo_list(request):
+    if request.method == "GET":
+        if not _puede_consultar_cargos(request.user):
+            return Response(
+                {"detail": "No tienes permiso para consultar cargos."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        queryset = Cargo.objects.all().order_by("nombre_cargo")
+        return Response(
+            CargoSerializer(queryset, many=True).data,
+            status=status.HTTP_200_OK,
+        )
+
+    if not _puede_editar_cargos(request.user):
+        return Response(
+            {"detail": "No tienes permiso para administrar cargos."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    serializer = CargoSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        cargo = CRUDCargo.crear_cargo(
+            Cargo(**serializer.validated_data),
+            request.user,
+        )
+    except (ReglaNegocioError, ValidationError) as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        CargoSerializer(cargo).data,
+        status=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(["GET", "PUT", "PATCH", "DELETE"])
+@permission_classes([IsAuthenticated])
+def cargo_detail(request, pk):
+    if request.method == "GET":
+        permitido = _puede_consultar_cargos(request.user)
+    else:
+        permitido = _puede_editar_cargos(request.user)
+
+    if not permitido:
+        return Response(
+            {"detail": "No tienes permiso para esta operación."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    cargo = Cargo.objects.filter(pk=pk).first()
+    if cargo is None:
+        return Response(
+            {"detail": "Cargo no encontrado."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == "GET":
+        return Response(CargoSerializer(cargo).data)
+
+    if request.method == "DELETE":
+        try:
+            CRUDCargo.eliminar_cargo(cargo, request.user)
+        except (ReglaNegocioError, ValidationError) as exc:
+            return Response(
+                {"detail": str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    serializer = CargoSerializer(
+        cargo,
+        data=request.data,
+        partial=request.method == "PATCH",
+    )
+    if not serializer.is_valid():
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        for campo, valor in serializer.validated_data.items():
+            setattr(cargo, campo, valor)
+        cargo = CRUDCargo.modificar_cargo(cargo, request.user)
+    except (ReglaNegocioError, ValidationError) as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(CargoSerializer(cargo).data)
+
+
+# ---------------------------------------------------------------------
+# HISTORIAL DE VERSIONES DE ÍTEMS MEDIBLES
+# ---------------------------------------------------------------------
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def item_historial(request, pk):
+    if not _puede_consultar_items(request.user):
+        return Response(
+            {"detail": "No tienes permiso para consultar ítems."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    item = ItemMedible.objects.filter(pk=pk).first()
+    if item is None:
+        return Response(
+            {"detail": "Ítem medible no encontrado."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    versiones = (
+        ItemMedibleVersion.objects
+        .filter(objeto_id=item.pk)
+        .select_related("creado_por")
+        .order_by("-numero_version")
+    )
+
+    datos = [
+        {
+            "objeto_id": version.objeto_id,
+            "numero_version": version.numero_version,
+            "vigente_desde": version.vigente_desde,
+            "vigente_hasta": version.vigente_hasta,
+            "datos": version.datos,
+            "creado_por": (
+                version.creado_por.username
+                if version.creado_por else None
+            ),
+        }
+        for version in versiones
+    ]
+
+    return Response(datos, status=status.HTTP_200_OK)
