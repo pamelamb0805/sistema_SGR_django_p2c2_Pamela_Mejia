@@ -2567,16 +2567,28 @@ def actividad_list(request):
         termino = filtros.get("q", "").strip()
 
         if termino:
+            import re
             from django.db.models import Q
 
-            actividades = actividades.filter(
-                Q(codigo__icontains=termino)
-                | Q(accion__icontains=termino)
-                | Q(contacto__icontains=termino)
-                | Q(funcionario__nombre__icontains=termino)
-                | Q(item__nombre_item__icontains=termino)
-                | Q(catalogo_nombre__icontains=termino)
+            # Buscar códigos completos: ACT-0000123 o ACT-0000123-E01.
+            coincidencia = re.fullmatch(
+                r"ACT-(\d+)(?:-E\d+)?",
+                termino.strip(),
+                re.IGNORECASE,
             )
+
+            if coincidencia:
+                actividades = actividades.filter(
+                    id_actividad=int(coincidencia.group(1))
+                )
+            else:
+                actividades = actividades.filter(
+                    Q(accion__icontains=termino)
+                    | Q(contacto__icontains=termino)
+                    | Q(funcionario__nombre__icontains=termino)
+                    | Q(item__nombre_item__icontains=termino)
+                    | Q(catalogo_nombre__icontains=termino)
+                )
 
         actividades = actividades.order_by(
             "-fecha",
