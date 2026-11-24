@@ -454,4 +454,16 @@ path(
         views.auditoria_exportar_api,
         name="api_auditoria_exportar",
     ),
+
+    path(
+    "metas/<int:pk>/historial/",
+    views.meta_historial,
+    name="api_meta_historial",
+),
+
+path(
+    "funcionarios/<int:pk>/items-vigentes/",
+    views.funcionario_items_vigentes,
+    name="api_funcionario_items_vigentes",
+),
 ]

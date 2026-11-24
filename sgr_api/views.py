@@ -155,6 +155,13 @@ from .serializers import (
     NotificacionSerializer,
     ComentarioRegistroSerializer,
 )
+from measurement.models import (
+    Meta as MetaModel,
+    MetaVersion,
+    Periodo,
+    ReglaCalculoVersion,
+    Ajuste,
+)
 
 # ---------------------------------------------------------------------
 # AUTORIZACIÓN
@@ -6203,3 +6210,123 @@ def auditoria_exportar_api(request):
 
     libro.save(respuesta)
     return respuesta
+
+
+# ---------------------------------------------------------------------
+# HISTORIAL DE VERSIONES DE METAS
+# GET /api/metas/<pk>/historial/
+# ---------------------------------------------------------------------
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def meta_historial(request, pk):
+    if not _puede_consultar_metas(request.user):
+        return Response(
+            {"detail": "No tienes permiso para consultar metas."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    meta = _obtener_meta_autorizada(
+        request.user,
+        pk,
+    )
+
+    if meta is None:
+        return Response(
+            {"detail": "Meta no encontrada."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    versiones = (
+        MetaVersion.objects
+        .filter(objeto_id=meta.pk)
+        .select_related("creado_por")
+        .order_by("-numero_version")
+    )
+
+    resultado = [
+        {
+            "objeto_id": version.objeto_id,
+            "numero_version": version.numero_version,
+            "vigente_desde": version.vigente_desde,
+            "vigente_hasta": version.vigente_hasta,
+            "datos": version.datos,
+            "creado_por": (
+                version.creado_por.get_username()
+                if version.creado_por
+                else None
+            ),
+        }
+        for version in versiones
+    ]
+
+    return Response(
+        {
+            "meta": meta.pk,
+            "total_versiones": len(resultado),
+            "versiones": resultado,
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+# ---------------------------------------------------------------------
+# ÍTEMS VIGENTES POR FUNCIONARIO
+# GET /api/funcionarios/<pk>/items-vigentes/
+# ---------------------------------------------------------------------
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def funcionario_items_vigentes(request, pk):
+    if not tiene_permiso(request.user, "metas.ver"):
+        return Response(
+            {"detail": "No tienes permiso para consultar ítems."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    funcionarios = filtrar_por_ambito(
+        Funcionario.objects.select_related(
+            "cargo",
+            "delegacion",
+        ),
+        request.user,
+        "delegacion_id",
+    )
+
+    funcionario = funcionarios.filter(
+        pk=pk,
+        estado=Funcionario.ESTADO_ACTIVO,
+    ).first()
+
+    if funcionario is None:
+        return Response(
+            {
+                "detail": (
+                    "Funcionario no encontrado o fuera de tu ámbito."
+                )
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    items = ItemMedible.objects.filter(
+        cargo_id=funcionario.cargo_id,
+        vigencia=True,
+    ).order_by("nombre_item")
+
+    return Response(
+        {
+            "funcionario": funcionario.pk,
+            "funcionario_nombre": funcionario.nombre,
+            "cargo": funcionario.cargo.nombre_cargo,
+            "items": [
+                {
+                    "id": item.pk,
+                    "codigo": item.codigo,
+                    "nombre": item.nombre_item,
+                    "tipo": item.tipo,
+                }
+                for item in items
+            ],
+        },
+        status=status.HTTP_200_OK,
+    )
