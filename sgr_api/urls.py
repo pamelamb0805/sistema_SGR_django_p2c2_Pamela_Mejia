@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import exportaciones, views
 
 
 urlpatterns = [
@@ -466,4 +466,107 @@ path(
     views.funcionario_items_vigentes,
     name="api_funcionario_items_vigentes",
 ),
+
+
+    # -------------------------------------------------------------
+    # EXPORTACIONES EXCEL
+    # -------------------------------------------------------------
+
+    # Organizaciones
+    path(
+        "delegaciones/exportar/",
+        exportaciones.exportar_delegaciones_api,
+        name="api_delegaciones_exportar",
+    ),
+    path(
+        "roles/exportar/",
+        exportaciones.exportar_roles_api,
+        name="api_roles_exportar",
+    ),
+    path(
+        "usuarios/exportar/",
+        exportaciones.exportar_usuarios_api,
+        name="api_usuarios_exportar",
+    ),
+    path(
+        "cargos/<int:pk>/items/exportar/",
+        exportaciones.exportar_items_api,
+        name="api_items_exportar",
+    ),
+    path(
+        "funcionarios/exportar/",
+        exportaciones.exportar_funcionarios_api,
+        name="api_funcionarios_exportar",
+    ),
+    path(
+        "cargos/exportar/",
+        exportaciones.exportar_cargos_api,
+        name="api_cargos_exportar",
+    ),
+
+    # Medición
+    path(
+        "metas/exportar/",
+        exportaciones.exportar_metas_api,
+        name="api_metas_exportar",
+    ),
+    path(
+        "periodos/exportar/",
+        exportaciones.exportar_periodos_api,
+        name="api_periodos_exportar",
+    ),
+    path(
+        "ajustes/exportar/",
+        exportaciones.exportar_ajustes_api,
+        name="api_ajustes_exportar",
+    ),
+    path(
+        "semaforo/exportar/",
+        exportaciones.exportar_semaforo_api,
+        name="api_semaforo_exportar",
+    ),
+
+    # Actividades y validaciones
+    path(
+        "actividades/exportar/",
+        exportaciones.exportar_actividades_api,
+        name="api_actividades_exportar",
+    ),
+    path(
+        "validaciones/exportar/",
+        exportaciones.exportar_validaciones_api,
+        name="api_validaciones_exportar",
+    ),
+
+    # Agenda colectiva
+    path(
+        "compromisos/exportar/",
+        exportaciones.exportar_compromisos_api,
+        name="api_compromisos_exportar",
+    ),
+    path(
+        "compromisos/resumen/exportar/",
+        exportaciones.exportar_resumen_agenda_api,
+        name="api_compromisos_resumen_exportar",
+    ),
+
+    # Atención social
+    path(
+        "casos/exportar/",
+        exportaciones.exportar_casos_sociales_api,
+        name="api_casos_exportar",
+    ),
+    path(
+        "atenciones/estadisticas/exportar/",
+        exportaciones.exportar_estadisticas_sociales_api,
+        name="api_atenciones_estadisticas_exportar",
+    ),
+
+    # Catálogos
+    path(
+        "catalogos/exportar/",
+        exportaciones.exportar_catalogos_api,
+        name="api_catalogos_exportar",
+    ),
+
 ]
