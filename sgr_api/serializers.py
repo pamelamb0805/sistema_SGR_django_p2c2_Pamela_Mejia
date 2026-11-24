@@ -745,39 +745,44 @@ class CompromisoSerializer(serializers.ModelSerializer):
         if request is None:
             return
 
-        # El responsable solo puede elegirse entre los funcionarios
-        # que el usuario autenticado está autorizado a asignar.
+        # En listados con many=True, DRF puede entregar un QuerySet
+        # como instance. Solo tratar como compromiso una instancia real.
+        compromiso_actual = (
+            self.instance
+            if isinstance(self.instance, Compromiso)
+            else None
+        )
+
+        # Responsables que el usuario tiene permitido asignar.
         asignables = funcionarios_asignables(request.user)
 
-        if self.instance is not None:
+        if compromiso_actual is not None:
             asignables = (
                 asignables
                 | Funcionario.objects.filter(
-                    pk=self.instance.funcionario_id
+                    pk=compromiso_actual.funcionario_id
                 )
             )
 
         self.fields["funcionario"].queryset = asignables.distinct()
 
-        # Solo se permiten ítems vigentes, salvo que se conserve
-        # el ítem que ya tenía el compromiso.
+        # Ítems vigentes, conservando el ítem actual si está inactivo.
         items = ItemMedible.objects.filter(
             vigencia=True
         ).select_related("cargo")
 
         if (
-            self.instance is not None
-            and self.instance.item_medible_id
+            compromiso_actual is not None
+            and compromiso_actual.item_medible_id
         ):
             items = (
                 items
                 | ItemMedible.objects.filter(
-                    pk=self.instance.item_medible_id
+                    pk=compromiso_actual.item_medible_id
                 )
             )
 
         self.fields["item_medible"].queryset = items.distinct()
-
     def get_periodo_descripcion(self, obj):
         return str(obj.periodo) if obj.periodo_id else None
 
