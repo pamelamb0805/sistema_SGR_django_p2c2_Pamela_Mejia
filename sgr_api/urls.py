@@ -102,4 +102,43 @@ urlpatterns = [
         name="api_meta_detail",
     ),
 
+
+    # Períodos de medición.
+    path(
+        "periodos/",
+        views.periodo_list,
+        name="api_periodos",
+    ),
+    path(
+        "periodos/<int:pk>/",
+        views.periodo_detail,
+        name="api_periodo_detail",
+    ),
+    path(
+        "periodos/<int:pk>/cerrar/",
+        views.periodo_cerrar,
+        name="api_periodo_cerrar",
+    ),
+    path(
+        "periodos/<int:pk>/reabrir/",
+        views.periodo_reabrir,
+        name="api_periodo_reabrir",
+    ),
+    path(
+        "periodos/<int:pk>/reglas/",
+        views.periodo_reglas,
+        name="api_periodo_reglas",
+    ),
+    path(
+        "periodos/<int:pk>/reglas/historial/",
+        views.periodo_reglas_historial,
+        name="api_periodo_reglas_historial",
+    ),
+    path(
+        "periodos/<int:pk>/recalcular/",
+        views.periodo_recalcular,
+        name="api_periodo_recalcular",
+    ),
+
+
 ]

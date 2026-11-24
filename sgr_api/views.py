@@ -32,6 +32,7 @@ from .serializers import (
     UsuarioSerializer,
     ItemMedibleSerializer,
     MetaSerializer,
+    PeriodoSerializer
 )
 
 
@@ -44,9 +45,17 @@ from core.mixins import (
     ROLES_CONFIGURACION,
 )
 
-from measurement.models import Meta as MetaModel
-from measurement.services import CRUDMeta
+from measurement.models import (
+    Meta as MetaModel,
+    Periodo,
+    ReglaCalculoVersion,
+)
 
+from measurement.services import (
+    CRUDMeta,
+    CRUDPeriodo,
+    CalculoIndicadores,
+)
 
 # ---------------------------------------------------------------------
 # AUTORIZACIÓN
@@ -1620,5 +1629,453 @@ def meta_detail(request, pk):
 
     return Response(
         MetaSerializer(meta).data,
+        status=status.HTTP_200_OK,
+    )
+
+
+# ---------------------------------------------------------------------
+# AUTORIZACIÓN DE PERÍODOS
+# ---------------------------------------------------------------------
+
+def _puede_consultar_periodos(user):
+    return tiene_permiso(user, "periodos.ver")
+
+
+def _puede_editar_periodos(user):
+    return tiene_permiso(user, "periodos.editar")
+
+
+def _puede_cerrar_periodos(user):
+    return tiene_permiso(user, "periodos.cerrar")
+
+
+def _puede_reabrir_periodos(user):
+    return tiene_permiso(user, "periodos.reabrir")
+
+
+def _obtener_periodo(pk):
+    return Periodo.objects.filter(pk=pk).first()
+
+
+# ---------------------------------------------------------------------
+# LISTAR Y CREAR PERÍODOS
+# GET  /api/periodos/
+# POST /api/periodos/
+# ---------------------------------------------------------------------
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def periodo_list(request):
+
+    if request.method == "GET":
+
+        if not _puede_consultar_periodos(request.user):
+            return Response(
+                {"detail": "No tienes permiso para consultar períodos."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        periodos = CRUDPeriodo.mostrar_todos_periodos()
+
+        estado = request.query_params.get("estado")
+        if estado in dict(Periodo.ESTADOS):
+            periodos = periodos.filter(estado=estado)
+
+        return Response(
+            PeriodoSerializer(periodos, many=True).data,
+            status=status.HTTP_200_OK,
+        )
+
+    if not _puede_editar_periodos(request.user):
+        return Response(
+            {"detail": "No tienes permiso para crear períodos."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    serializer = PeriodoSerializer(data=request.data)
+
+    if not serializer.is_valid():
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        periodo = Periodo(
+            **serializer.validated_data
+        )
+
+        periodo = CRUDPeriodo.crear_periodo(
+            periodo,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        PeriodoSerializer(periodo).data,
+        status=status.HTTP_201_CREATED,
+    )
+
+
+# ---------------------------------------------------------------------
+# CONSULTAR Y MODIFICAR UN PERÍODO
+# GET   /api/periodos/<pk>/
+# PUT   /api/periodos/<pk>/
+# PATCH /api/periodos/<pk>/
+# ---------------------------------------------------------------------
+
+@api_view(["GET", "PUT", "PATCH"])
+@permission_classes([IsAuthenticated])
+def periodo_detail(request, pk):
+
+    if request.method == "GET":
+
+        if not _puede_consultar_periodos(request.user):
+            return Response(
+                {"detail": "No tienes permiso para consultar períodos."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+    elif not _puede_editar_periodos(request.user):
+        return Response(
+            {"detail": "No tienes permiso para modificar períodos."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    periodo = _obtener_periodo(pk)
+
+    if periodo is None:
+        return Response(
+            {"detail": "Período no encontrado."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == "GET":
+        return Response(
+            PeriodoSerializer(periodo).data,
+            status=status.HTTP_200_OK,
+        )
+
+    serializer = PeriodoSerializer(
+        periodo,
+        data=request.data,
+        partial=(request.method == "PATCH"),
+    )
+
+    if not serializer.is_valid():
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        for campo, valor in serializer.validated_data.items():
+            setattr(periodo, campo, valor)
+
+        periodo = CRUDPeriodo.modificar_periodo(
+            periodo,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        PeriodoSerializer(periodo).data,
+        status=status.HTTP_200_OK,
+    )
+
+
+# ---------------------------------------------------------------------
+# CERRAR PERÍODO
+# POST /api/periodos/<pk>/cerrar/
+# ---------------------------------------------------------------------
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def periodo_cerrar(request, pk):
+
+    if not _puede_cerrar_periodos(request.user):
+        return Response(
+            {"detail": "No tienes permiso para cerrar períodos."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    periodo = _obtener_periodo(pk)
+
+    if periodo is None:
+        return Response(
+            {"detail": "Período no encontrado."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    try:
+        periodo = CRUDPeriodo.cerrar_periodo(
+            periodo,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        PeriodoSerializer(periodo).data,
+        status=status.HTTP_200_OK,
+    )
+
+
+# ---------------------------------------------------------------------
+# REABRIR PERÍODO
+# POST /api/periodos/<pk>/reabrir/
+# ---------------------------------------------------------------------
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def periodo_reabrir(request, pk):
+
+    if not _puede_reabrir_periodos(request.user):
+        return Response(
+            {"detail": "No tienes permiso para reabrir períodos."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    periodo = _obtener_periodo(pk)
+
+    if periodo is None:
+        return Response(
+            {"detail": "Período no encontrado."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    motivo = request.data.get("motivo", "")
+
+    if not isinstance(motivo, str) or not motivo.strip():
+        return Response(
+            {"detail": "Debes indicar el motivo de la reapertura."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        periodo = CRUDPeriodo.reabrir_periodo(
+            periodo,
+            motivo,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        PeriodoSerializer(periodo).data,
+        status=status.HTTP_200_OK,
+    )
+
+
+# ---------------------------------------------------------------------
+# CONSULTAR Y ACTUALIZAR REGLAS DEL PERÍODO
+# GET /api/periodos/<pk>/reglas/
+# PUT /api/periodos/<pk>/reglas/
+# ---------------------------------------------------------------------
+
+@api_view(["GET", "PUT"])
+@permission_classes([IsAuthenticated])
+def periodo_reglas(request, pk):
+
+    if request.method == "GET":
+
+        if not _puede_consultar_periodos(request.user):
+            return Response(
+                {"detail": "No tienes permiso para consultar reglas."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+    elif not _puede_editar_periodos(request.user):
+        return Response(
+            {"detail": "No tienes permiso para modificar reglas."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    periodo = _obtener_periodo(pk)
+
+    if periodo is None:
+        return Response(
+            {"detail": "Período no encontrado."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    version = (
+        ReglaCalculoVersion.objects
+        .filter(periodo=periodo)
+        .order_by("-numero_version")
+        .first()
+    )
+
+    if request.method == "GET":
+        configuracion = (
+            version.datos
+            if version
+            else CRUDPeriodo._datos_reglas_actuales()
+        )
+
+        return Response(
+            {
+                "id_periodo": periodo.pk,
+                "numero_version": (
+                    version.numero_version if version else 0
+                ),
+                "vigente_desde": (
+                    version.vigente_desde if version else None
+                ),
+                "reglas": configuracion,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    datos = request.data
+
+    try:
+        nueva_version = CRUDPeriodo.actualizar_reglas_periodo(
+            periodo,
+            datos,
+            request.user,
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        {
+            "id_periodo": periodo.pk,
+            "numero_version": nueva_version.numero_version,
+            "vigente_desde": nueva_version.vigente_desde,
+            "reglas": nueva_version.datos,
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+# ---------------------------------------------------------------------
+# HISTORIAL DE REGLAS DEL PERÍODO
+# GET /api/periodos/<pk>/reglas/historial/
+# ---------------------------------------------------------------------
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def periodo_reglas_historial(request, pk):
+
+    if not _puede_consultar_periodos(request.user):
+        return Response(
+            {"detail": "No tienes permiso para consultar el historial."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    periodo = _obtener_periodo(pk)
+
+    if periodo is None:
+        return Response(
+            {"detail": "Período no encontrado."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    versiones = (
+        ReglaCalculoVersion.objects
+        .filter(periodo=periodo)
+        .select_related("creado_por")
+        .order_by("-numero_version")
+    )
+
+    resultado = [
+        {
+            "numero_version": version.numero_version,
+            "vigente_desde": version.vigente_desde,
+            "vigente_hasta": version.vigente_hasta,
+            "datos": version.datos,
+            "creado_por": (
+                version.creado_por.username
+                if version.creado_por
+                else None
+            ),
+        }
+        for version in versiones
+    ]
+
+    return Response(
+        {
+            "id_periodo": periodo.pk,
+            "total_versiones": len(resultado),
+            "versiones": resultado,
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+# ---------------------------------------------------------------------
+# RECALCULAR INDICADORES DEL PERÍODO
+# POST /api/periodos/<pk>/recalcular/
+# ---------------------------------------------------------------------
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def periodo_recalcular(request, pk):
+
+    if not _puede_editar_periodos(request.user):
+        return Response(
+            {"detail": "No tienes permiso para recalcular períodos."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    periodo = _obtener_periodo(pk)
+
+    if periodo is None:
+        return Response(
+            {"detail": "Período no encontrado."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if not periodo.abierto:
+        return Response(
+            {
+                "detail": (
+                    "El período está cerrado: sus resultados "
+                    "no se pueden recalcular."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        cantidad = CalculoIndicadores.recalcular_periodo(
+            periodo
+        )
+
+    except ReglaNegocioError as exc:
+        return Response(
+            {"detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        {
+            "detail": "Indicadores recalculados correctamente.",
+            "id_periodo": periodo.pk,
+            "indicadores_recalculados": cantidad,
+        },
         status=status.HTTP_200_OK,
     )

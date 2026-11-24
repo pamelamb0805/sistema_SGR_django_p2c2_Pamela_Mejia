@@ -9,8 +9,11 @@ from organizations.models import (
     Cargo,
     ItemMedible,
 )
-from measurement.models import Meta as MetaModel, Periodo
-
+from measurement.models import (
+    Meta as MetaModel,
+    Periodo,
+    ReglaCalculoVersion,
+)
 class DelegacionSerializer(serializers.ModelSerializer):
 
     class Meta:
@@ -365,5 +368,53 @@ class MetaSerializer(serializers.ModelSerializer):
                                 "en una meta existente."
                             )
                         })
+
+        return attrs
+
+
+class PeriodoSerializer(serializers.ModelSerializer):
+    abierto = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Periodo
+        fields = [
+            "id_periodo",
+            "fecha_inicio",
+            "fecha_termino",
+            "dias_computables",
+            "estado",
+            "version_parametros",
+            "abierto",
+        ]
+
+        read_only_fields = [
+            "id_periodo",
+            "dias_computables",
+            "estado",
+            "version_parametros",
+            "abierto",
+        ]
+
+    def get_abierto(self, obj):
+        return obj.abierto
+
+    def validate(self, attrs):
+        fecha_inicio = attrs.get(
+            "fecha_inicio",
+            getattr(self.instance, "fecha_inicio", None),
+        )
+        fecha_termino = attrs.get(
+            "fecha_termino",
+            getattr(self.instance, "fecha_termino", None),
+        )
+
+        if fecha_inicio and fecha_termino:
+            if fecha_termino < fecha_inicio:
+                raise serializers.ValidationError({
+                    "fecha_termino": (
+                        "La fecha de término no puede ser "
+                        "anterior a la fecha de inicio."
+                    )
+                })
 
         return attrs
