@@ -1480,3 +1480,32 @@ main#contenido:has(.sgr-executive) > .d-flex.border-bottom .btn {
 .modal-content button {
     pointer-events: auto !important;
 }
+
+
+/* ==========================================================
+   FIX DEFINITIVO: MODALES CRUD VISIBLES Y FUNCIONALES
+   Evita que el contenido principal atrape los modales
+   debajo del backdrop de Bootstrap.
+========================================================== */
+
+@media (min-width: 992px) {
+    main#contenido {
+        z-index: auto !important;
+    }
+}
+
+.modal {
+    z-index: 2060 !important;
+    pointer-events: auto !important;
+}
+
+.modal-backdrop {
+    z-index: 2050 !important;
+}
+
+.modal-dialog,
+.modal-content,
+.modal-content form,
+.modal-content button {
+    pointer-events: auto !important;
+}
