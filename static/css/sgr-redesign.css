@@ -262,13 +262,12 @@ body.sgr-app > .container-fluid > .row {
 ========================================================== */
 
 main#contenido {
-    min-width: 0;
-    min-height: calc(100vh - 68px);
-    padding-top: 25px !important;
-    padding-bottom: 30px !important;
-    color: var(--sgr-text);
-    background: var(--sgr-background);
-    border-radius: 18px 0 0 0;
+    position: relative;
+    z-index: auto !important;
+    flex: 0 0 83.333333% !important;
+    width: 83.333333% !important;
+    max-width: 83.333333% !important;
+    margin-left: 0 !important;
 }
 
 main#contenido > .d-flex.border-bottom {
@@ -1463,4 +1462,21 @@ main#contenido:has(.sgr-executive) > .d-flex.border-bottom .btn {
         max-width: 83.333333% !important;
         margin-left: 0 !important;
     }
+}
+
+/* FIX GLOBAL: MODALES CRUD SOBRE EL FONDO */
+.modal {
+    z-index: 2060 !important;
+    pointer-events: auto !important;
+}
+
+.modal-backdrop {
+    z-index: 2050 !important;
+}
+
+.modal-dialog,
+.modal-content,
+.modal-content form,
+.modal-content button {
+    pointer-events: auto !important;
 }

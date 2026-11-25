@@ -1,5 +1,4 @@
 
-import calendar
 from datetime import date
 
 from django.contrib.auth.decorators import login_required
@@ -10,49 +9,90 @@ from django.views.decorators.http import require_GET
 
 from core.mixins import (
     ROLES_SUPERVISION,
-    es_transversal,
     filtrar_por_ambito,
     get_funcionario,
     tiene_rol,
 )
 from organizations.models import Funcionario, Delegacion
-from measurement.models import Periodo, Meta
+from measurement.models import Periodo
 from measurement.services import CalculoIndicadores
 from activities.models import Actividad, Evidencia
-from activities.services import actividades_visibles
 from agenda.models import Compromiso
-from agenda.services import compromisos_visibles
 
 
 def _fila(codigo, descripcion, responsable, delegacion, fecha, estado, url):
+    """
+    Normaliza los datos de cada fila que se entrega al modal del dashboard.
+
+    El campo registro reúne el código y la descripción para que el
+    frontend pueda mostrar una identificación legible del registro.
+    """
+
+    codigo_texto = str(codigo).strip() if codigo is not None else ""
+    descripcion_texto = (
+        str(descripcion).strip()
+        if descripcion is not None
+        else ""
+    )
+
+    registro = " · ".join(
+        parte
+        for parte in (codigo_texto, descripcion_texto)
+        if parte
+    )
+
     return {
-        "codigo": str(codigo),
-        "descripcion": str(descripcion),
-        "responsable": str(responsable),
-        "delegacion": str(delegacion),
+        "codigo": codigo_texto or "—",
+        "descripcion": descripcion_texto or "—",
+        "registro": registro or "—",
+        "responsable": (
+            str(responsable).strip()
+            if responsable is not None
+            else "—"
+        ),
+        "delegacion": (
+            str(delegacion).strip()
+            if delegacion is not None
+            else "—"
+        ),
         "fecha": fecha.strftime("%d/%m/%Y") if fecha else "—",
-        "estado": str(estado),
+        "estado": str(estado).strip() if estado is not None else "—",
         "url": url,
     }
 
 
 def _mes_desde_etiqueta(etiqueta):
+    """
+    Convierte etiquetas como 'Nov 2026' o 'Ene 2026' en una fecha.
+    Acepta abreviaturas en español e inglés.
+    """
+
     meses = {
-        "jan": 1, "ene": 1,
+        "jan": 1,
+        "ene": 1,
         "feb": 2,
         "mar": 3,
-        "apr": 4, "abr": 4,
+        "apr": 4,
+        "abr": 4,
         "may": 5,
         "jun": 6,
         "jul": 7,
-        "aug": 8, "ago": 8,
-        "sep": 9, "set": 9,
+        "aug": 8,
+        "ago": 8,
+        "sep": 9,
+        "set": 9,
         "oct": 10,
         "nov": 11,
-        "dec": 12, "dic": 12,
+        "dec": 12,
+        "dic": 12,
     }
 
-    partes = etiqueta.strip().lower().replace(".", "").split()
+    partes = (
+        etiqueta.strip()
+        .lower()
+        .replace(".", "")
+        .split()
+    )
 
     if len(partes) != 2:
         return None
@@ -67,14 +107,29 @@ def _mes_desde_etiqueta(etiqueta):
 
 
 def _funcionarios_visibles(user):
+    """
+    Funcionarios activos dentro del ámbito territorial autorizado.
+    """
+
     qs = Funcionario.objects.filter(
         estado=Funcionario.ESTADO_ACTIVO
-    ).select_related("cargo", "delegacion")
+    ).select_related(
+        "cargo",
+        "delegacion",
+    )
 
-    return filtrar_por_ambito(qs, user, "delegacion_id")
+    return filtrar_por_ambito(
+        qs,
+        user,
+        "delegacion_id",
+    )
 
 
 def _actividades_dashboard(user, funcionario):
+    """
+    Actividades visibles para el usuario, respetando su ámbito y rol.
+    """
+
     qs = Actividad.objects.select_related(
         "funcionario",
         "funcionario__delegacion",
@@ -83,29 +138,54 @@ def _actividades_dashboard(user, funcionario):
     )
 
     qs = filtrar_por_ambito(
-        qs, user, "funcionario__delegacion_id"
+        qs,
+        user,
+        "funcionario__delegacion_id",
     )
 
     if not tiene_rol(user, *ROLES_SUPERVISION):
-        qs = qs.filter(funcionario=funcionario) if funcionario else qs.none()
+        qs = (
+            qs.filter(funcionario=funcionario)
+            if funcionario
+            else qs.none()
+        )
 
     return qs
 
 
 def _compromisos_dashboard(user, funcionario):
+    """
+    Compromisos visibles para el usuario, respetando su ámbito y rol.
+    """
+
     qs = Compromiso.objects.select_related(
-        "funcionario", "delegacion", "item_medible"
+        "funcionario",
+        "delegacion",
+        "item_medible",
     )
 
-    qs = filtrar_por_ambito(qs, user, "delegacion_id")
+    qs = filtrar_por_ambito(
+        qs,
+        user,
+        "delegacion_id",
+    )
 
     if not tiene_rol(user, *ROLES_SUPERVISION):
-        qs = qs.filter(funcionario=funcionario) if funcionario else qs.none()
+        qs = (
+            qs.filter(funcionario=funcionario)
+            if funcionario
+            else qs.none()
+        )
 
     return qs
 
 
 def _evidencias_dashboard(user, funcionario):
+    """
+    Evidencias visibles para el usuario, respetando el ámbito
+    territorial de la actividad asociada.
+    """
+
     qs = Evidencia.objects.select_related(
         "actividad",
         "actividad__funcionario",
@@ -113,19 +193,30 @@ def _evidencias_dashboard(user, funcionario):
     )
 
     qs = filtrar_por_ambito(
-        qs, user, "actividad__funcionario__delegacion_id"
+        qs,
+        user,
+        "actividad__funcionario__delegacion_id",
     )
 
     if not tiene_rol(user, *ROLES_SUPERVISION):
         qs = (
             qs.filter(actividad__funcionario=funcionario)
-            if funcionario else qs.none()
+            if funcionario
+            else qs.none()
         )
 
     return qs
 
 
 def _detalle_indicador(user, etiqueta, periodo, funcionario):
+    """
+    Registros que componen el cumplimiento de un indicador.
+
+    Si el usuario tiene un funcionario asociado, consulta su propio
+    desempeño. Si es un administrador sin funcionario asociado,
+    consulta los funcionarios activos de su ámbito autorizado.
+    """
+
     filas = []
 
     funcionarios = (
@@ -136,30 +227,44 @@ def _detalle_indicador(user, etiqueta, periodo, funcionario):
 
     for persona in funcionarios:
         resumen = CalculoIndicadores.resumen_funcionario(
-            persona, periodo, timezone.localdate()
+            persona,
+            periodo,
+            timezone.localdate(),
         )
 
         for fila in resumen.get("filas", []):
             if fila["item"].nombre_item != etiqueta:
                 continue
 
-            filas.append(_fila(
-                f"META-{fila['meta'].pk}",
-                fila["item"].nombre_item,
-                persona.nombre,
-                persona.delegacion.nombre,
-                fila["meta"].fecha_version,
-                f"{fila['cumplimiento']}% de cumplimiento",
-                reverse(
-                    "measurement:desempeno_detalle",
+            if funcionario and persona.pk == funcionario.pk:
+                url = reverse("measurement:mi_desempeno")
+            else:
+                url = reverse(
+                    "measurement:desempeno_funcionario",
                     args=[persona.pk],
-                ),
-            ))
+                )
+
+            filas.append(
+                _fila(
+                    f"META-{fila['meta'].pk}",
+                    fila["item"].nombre_item,
+                    persona.nombre,
+                    persona.delegacion.nombre,
+                    fila["meta"].fecha_version,
+                    f"{fila['cumplimiento']}% de cumplimiento",
+                    url,
+                )
+            )
 
     return filas
 
 
 def _detalle_semaforo(user, etiqueta, periodo):
+    """
+    Funcionarios cuyo resultado individual corresponde al estado
+    seleccionado en el gráfico de semáforo.
+    """
+
     if not tiene_rol(user, *ROLES_SUPERVISION):
         return None
 
@@ -167,32 +272,48 @@ def _detalle_semaforo(user, etiqueta, periodo):
 
     for persona in _funcionarios_visibles(user):
         resumen = CalculoIndicadores.resumen_funcionario(
-            persona, periodo, timezone.localdate()
+            persona,
+            periodo,
+            timezone.localdate(),
         )
 
         if resumen["semaforo"] != etiqueta:
             continue
 
-        filas.append(_fila(
-            f"FUNC-{persona.pk}",
-            persona.cargo.nombre_cargo,
-            persona.nombre,
-            persona.delegacion.nombre,
-            None,
-            resumen["semaforo"],
-            reverse("organizations:funcionario_list"),
-        ))
+        filas.append(
+            _fila(
+                f"FUNC-{persona.pk}",
+                persona.cargo.nombre_cargo,
+                persona.nombre,
+                persona.delegacion.nombre,
+                None,
+                resumen["semaforo"],
+                reverse(
+                    "organizations:funcionario_detail",
+                    args=[persona.pk],
+                ),
+            )
+        )
 
     return filas
 
 
 def _detalle_delegacion(user, etiqueta, periodo):
+    """
+    Funcionarios pertenecientes a la delegación seleccionada,
+    limitados al ámbito territorial autorizado.
+    """
+
     if not tiene_rol(user, *ROLES_SUPERVISION):
         return None
 
-    delegaciones_ids = _funcionarios_visibles(user).values_list(
-        "delegacion_id", flat=True
-    ).distinct()
+    funcionarios_visibles = _funcionarios_visibles(user)
+
+    delegaciones_ids = (
+        funcionarios_visibles
+        .values_list("delegacion_id", flat=True)
+        .distinct()
+    )
 
     delegacion = Delegacion.objects.filter(
         pk__in=delegaciones_ids,
@@ -204,22 +325,31 @@ def _detalle_delegacion(user, etiqueta, periodo):
 
     filas = []
 
-    for persona in _funcionarios_visibles(user).filter(
+    funcionarios_delegacion = funcionarios_visibles.filter(
         delegacion=delegacion
-    ):
+    )
+
+    for persona in funcionarios_delegacion:
         resumen = CalculoIndicadores.resumen_funcionario(
-            persona, periodo, timezone.localdate()
+            persona,
+            periodo,
+            timezone.localdate(),
         )
 
-        filas.append(_fila(
-            f"FUNC-{persona.pk}",
-            persona.cargo.nombre_cargo,
-            persona.nombre,
-            delegacion.nombre,
-            None,
-            f"{resumen['total_ponderado']}% de cumplimiento",
-            reverse("organizations:funcionario_list"),
-        ))
+        filas.append(
+            _fila(
+                f"FUNC-{persona.pk}",
+                persona.cargo.nombre_cargo,
+                persona.nombre,
+                delegacion.nombre,
+                None,
+                f"{resumen['total_ponderado']}% de cumplimiento",
+                reverse(
+                    "organizations:funcionario_detail",
+                    args=[persona.pk],
+                ),
+            )
+        )
 
     return filas
 
@@ -227,12 +357,22 @@ def _detalle_delegacion(user, etiqueta, periodo):
 @login_required
 @require_GET
 def dashboard_detalle(request):
+    """
+    Endpoint JSON para los siete gráficos interactivos del dashboard.
+
+    Cada consulta reutiliza los mismos criterios de ámbito y visibilidad
+    que se aplican al construir los datos de los gráficos.
+    """
+
     tipo = request.GET.get("tipo", "").strip()
     etiqueta = request.GET.get("etiqueta", "").strip()
 
     if not tipo or not etiqueta:
         return JsonResponse(
-            {"ok": False, "mensaje": "Selección incompleta."},
+            {
+                "ok": False,
+                "mensaje": "Selección incompleta.",
+            },
             status=400,
         )
 
@@ -243,79 +383,138 @@ def dashboard_detalle(request):
 
     filas = None
 
+    # 1. Cumplimiento por indicador.
     if tipo == "personal":
         if periodo is None:
             filas = []
         else:
             filas = _detalle_indicador(
-                user, etiqueta, periodo, funcionario
+                user,
+                etiqueta,
+                periodo,
+                funcionario,
             )
 
+    # 2. Semáforo de desempeño.
     elif tipo == "semaforo":
         if periodo is None:
             filas = []
         else:
-            filas = _detalle_semaforo(user, etiqueta, periodo)
+            filas = _detalle_semaforo(
+                user,
+                etiqueta,
+                periodo,
+            )
 
+    # 3. Cumplimiento por delegación.
     elif tipo == "delegaciones":
         if periodo is None:
             filas = []
         else:
-            filas = _detalle_delegacion(user, etiqueta, periodo)
+            filas = _detalle_delegacion(
+                user,
+                etiqueta,
+                periodo,
+            )
 
+    # 4. Compromisos por estado.
     elif tipo == "agenda":
-        qs = _compromisos_dashboard(user, funcionario).filter(
-            estado=etiqueta
+        qs = _compromisos_dashboard(
+            user,
+            funcionario,
+        ).filter(
+            estado=etiqueta,
         )
 
         filas = [
             _fila(
-                f"COMP-{c.pk}",
-                c.origen,
-                c.funcionario.nombre,
-                c.delegacion.nombre,
-                c.fecha_comprometida,
-                c.estado,
-                reverse("agenda:compromiso_detail", args=[c.pk]),
+                f"COMP-{compromiso.pk}",
+                compromiso.origen,
+                compromiso.funcionario.nombre,
+                compromiso.delegacion.nombre,
+                compromiso.fecha_comprometida,
+                compromiso.estado,
+                reverse(
+                    "agenda:compromiso_detail",
+                    args=[compromiso.pk],
+                ),
             )
-            for c in qs.order_by("-fecha_comprometida")[:100]
+            for compromiso in qs.order_by(
+                "-fecha_comprometida"
+            )[:100]
         ]
 
+    # 5. Compromisos por trabajo.
     elif tipo == "trabajo":
-        qs = _compromisos_dashboard(user, funcionario)
+        qs = _compromisos_dashboard(
+            user,
+            funcionario,
+        )
+
         if etiqueta == "Sin trabajo asociado":
-            qs = qs.filter(item_medible__isnull=True)
+            qs = qs.filter(
+                item_medible__isnull=True
+            )
         else:
-            qs = qs.filter(item_medible__nombre_item=etiqueta)
+            qs = qs.filter(
+                item_medible__nombre_item=etiqueta
+            )
 
         filas = [
             _fila(
-                f"COMP-{c.pk}",
-                c.origen,
-                c.funcionario.nombre,
-                c.delegacion.nombre,
-                c.fecha_comprometida,
-                c.estado,
-                reverse("agenda:compromiso_detail", args=[c.pk]),
+                f"COMP-{compromiso.pk}",
+                compromiso.origen,
+                compromiso.funcionario.nombre,
+                compromiso.delegacion.nombre,
+                compromiso.fecha_comprometida,
+                compromiso.estado,
+                reverse(
+                    "agenda:compromiso_detail",
+                    args=[compromiso.pk],
+                ),
             )
-            for c in qs.order_by("-fecha_comprometida")[:100]
+            for compromiso in qs.order_by(
+                "-fecha_comprometida"
+            )[:100]
         ]
 
+    # 6. Evolución mensual de actividades.
     elif tipo == "evolucion":
         mes = _mes_desde_etiqueta(etiqueta)
 
         if mes is None:
             return JsonResponse(
-                {"ok": False, "mensaje": "Mes no válido."},
+                {
+                    "ok": False,
+                    "mensaje": "Mes no válido.",
+                },
                 status=400,
             )
 
         if mes.month == 12:
-            siguiente = date(mes.year + 1, 1, 1)
+            siguiente = date(
+                mes.year + 1,
+                1,
+                1,
+            )
         else:
-            siguiente = date(mes.year, mes.month + 1, 1)
+            siguiente = date(
+                mes.year,
+                mes.month + 1,
+                1,
+            )
 
-        qs = _actividades_dashboard(user, funcionario).filter(
+        qs = _actividades_dashboard(
+            user,
+            funcionario,
+        )
+
+        # El gráfico principal utiliza el período vigente cuando existe.
+        # El detalle debe aplicar exactamente el mismo filtro.
+        if periodo is not None:
+            qs = qs.filter(periodo=periodo)
+
+        qs = qs.filter(
             fecha__gte=mes,
             fecha__lt=siguiente,
         )
@@ -333,12 +532,19 @@ def dashboard_detalle(request):
                     args=[actividad.pk],
                 ),
             )
-            for actividad in qs.order_by("-fecha")[:100]
+            for actividad in qs.order_by(
+                "-fecha",
+                "-id_actividad",
+            )[:100]
         ]
 
+    # 7. Estado de evidencias.
     elif tipo == "evidencias":
-        qs = _evidencias_dashboard(user, funcionario).filter(
-            estado_revision=etiqueta
+        qs = _evidencias_dashboard(
+            user,
+            funcionario,
+        ).filter(
+            estado_revision=etiqueta,
         )
 
         filas = [
@@ -347,31 +553,46 @@ def dashboard_detalle(request):
                 evidencia.actividad.accion,
                 evidencia.actividad.funcionario.nombre,
                 evidencia.actividad.funcionario.delegacion.nombre,
-                evidencia.fecha_carga.date(),
+                timezone.localtime(
+                    evidencia.fecha_carga
+                ).date(),
                 evidencia.estado_revision,
                 reverse(
                     "activities:actividad_detail",
                     args=[evidencia.actividad_id],
                 ),
             )
-            for evidencia in qs.order_by("-fecha_carga")[:100]
+            for evidencia in qs.order_by(
+                "-fecha_carga",
+                "-id_evidencia",
+            )[:100]
         ]
 
     else:
         return JsonResponse(
-            {"ok": False, "mensaje": "Tipo de gráfico no válido."},
+            {
+                "ok": False,
+                "mensaje": "Tipo de gráfico no válido.",
+            },
             status=400,
         )
 
     if filas is None:
         return JsonResponse(
-            {"ok": False, "mensaje": "No tienes permiso para consultar este detalle."},
+            {
+                "ok": False,
+                "mensaje": (
+                    "No tienes permiso para consultar este detalle."
+                ),
+            },
             status=403,
         )
 
-    return JsonResponse({
-        "ok": True,
-        "titulo": etiqueta,
-        "total": len(filas),
-        "filas": filas,
-    })
+    return JsonResponse(
+        {
+            "ok": True,
+            "titulo": etiqueta,
+            "total": len(filas),
+            "filas": filas,
+        }
+    )

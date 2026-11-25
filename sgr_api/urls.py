@@ -1,0 +1,572 @@
+from django.urls import path
+
+from . import exportaciones, views
+
+
+urlpatterns = [
+    # Delegaciones.
+    path(
+        "delegaciones/",
+        views.delegacion_list,
+        name="api_delegaciones",
+    ),
+    path(
+        "delegaciones/<int:pk>/",
+        views.delegacion_detail,
+        name="api_delegacion_detail",
+    ),
+    path(
+        "delegaciones/<int:pk>/estado/",
+        views.delegacion_estado,
+        name="api_delegacion_estado",
+    ),
+
+    # Roles.
+    path(
+        "roles/",
+        views.rol_list,
+        name="api_roles",
+    ),
+    path(
+        "roles/<int:pk>/",
+        views.rol_detail,
+        name="api_rol_detail",
+    ),
+
+    # Funcionarios.
+    path(
+        "funcionarios/",
+        views.funcionario_list,
+        name="api_funcionarios",
+    ),
+    path(
+        "funcionarios/<int:pk>/",
+        views.funcionario_detail,
+        name="api_funcionario_detail",
+    ),
+    path(
+        "funcionarios/<int:pk>/estado/",
+        views.funcionario_estado,
+        name="api_funcionario_estado",
+    ),
+
+    # Usuarios y accesos.
+    path(
+        "usuarios/",
+        views.usuario_list,
+        name="api_usuarios",
+    ),
+    path(
+        "usuarios/<int:pk>/",
+        views.usuario_detail,
+        name="api_usuario_detail",
+    ),
+    path(
+        "usuarios/<int:pk>/estado/",
+        views.usuario_estado,
+        name="api_usuario_estado",
+    ),
+    path(
+        "usuarios/<int:pk>/contrasenia/",
+        views.usuario_contrasenia,
+        name="api_usuario_contrasenia",
+    ),
+
+        # Ítems medibles.
+    path(
+        "items/",
+        views.item_list,
+        name="api_items",
+    ),
+    path(
+        "items/<int:pk>/",
+        views.item_detail,
+        name="api_item_detail",
+    ),
+    path(
+        "items/<int:pk>/vigencia/",
+        views.item_vigencia,
+        name="api_item_vigencia",
+    ),
+
+
+    # Metas.
+    path(
+        "metas/",
+        views.meta_list,
+        name="api_metas",
+    ),
+    path(
+        "metas/<int:pk>/",
+        views.meta_detail,
+        name="api_meta_detail",
+    ),
+
+
+    # Períodos de medición.
+    path(
+        "periodos/",
+        views.periodo_list,
+        name="api_periodos",
+    ),
+    path(
+        "periodos/<int:pk>/",
+        views.periodo_detail,
+        name="api_periodo_detail",
+    ),
+    path(
+        "periodos/<int:pk>/cerrar/",
+        views.periodo_cerrar,
+        name="api_periodo_cerrar",
+    ),
+    path(
+        "periodos/<int:pk>/reabrir/",
+        views.periodo_reabrir,
+        name="api_periodo_reabrir",
+    ),
+    path(
+        "periodos/<int:pk>/reglas/",
+        views.periodo_reglas,
+        name="api_periodo_reglas",
+    ),
+    path(
+        "periodos/<int:pk>/reglas/historial/",
+        views.periodo_reglas_historial,
+        name="api_periodo_reglas_historial",
+    ),
+    path(
+        "periodos/<int:pk>/recalcular/",
+        views.periodo_recalcular,
+        name="api_periodo_recalcular",
+    ),
+
+        # Ajustes: incentivos y penalizaciones.
+    path(
+        "ajustes/",
+        views.ajuste_list,
+        name="api_ajustes",
+    ),
+    path(
+        "ajustes/<int:pk>/",
+        views.ajuste_detail,
+        name="api_ajuste_detail",
+    ),
+
+        # -------------------------------------------------------------
+    # Actividades
+    # -------------------------------------------------------------
+
+    path(
+        "actividades/",
+        views.actividad_list,
+        name="api_actividades",
+    ),
+
+    path(
+        "actividades/<int:pk>/",
+        views.actividad_detail,
+        name="api_actividad_detail",
+    ),
+
+    path(
+        "actividades/<int:pk>/anular/",
+        views.actividad_anular,
+        name="api_actividad_anular",
+    ),
+
+    # -------------------------------------------------------------
+    # Evidencias
+    # -------------------------------------------------------------
+
+    path(
+        "actividades/<int:pk>/evidencias/",
+        views.actividad_evidencias,
+        name="api_actividad_evidencias",
+    ),
+
+    path(
+        "evidencias/<int:pk>/",
+        views.evidencia_detail,
+        name="api_evidencia_detail",
+    ),
+
+    path(
+        "evidencias/<int:pk>/archivo/",
+        views.evidencia_archivo,
+        name="api_evidencia_archivo",
+    ),
+
+    # -------------------------------------------------------------
+    # Validaciones
+    # -------------------------------------------------------------
+
+    path(
+        "validaciones/",
+        views.validacion_list,
+        name="api_validaciones",
+    ),
+
+    path(
+        "evidencias/<int:pk>/validaciones/",
+        views.evidencia_validaciones,
+        name="api_evidencia_validaciones",
+    ),
+
+    path(
+        "evidencias/<int:pk>/validar/",
+        views.evidencia_validar,
+        name="api_evidencia_validar",
+    ),
+
+
+    # -------------------------------------------------------------
+    # AGENDA COLECTIVA - COMPROMISOS
+    # -------------------------------------------------------------
+
+    path(
+        "compromisos/",
+        views.compromiso_list,
+        name="api_compromisos",
+    ),
+
+    path(
+        "compromisos/resumen/",
+        views.compromiso_resumen,
+        name="api_compromisos_resumen",
+    ),
+
+    path(
+        "compromisos/<int:pk>/",
+        views.compromiso_detail,
+        name="api_compromiso_detail",
+    ),
+
+    path(
+        "compromisos/<int:pk>/estado/",
+        views.compromiso_estado,
+        name="api_compromiso_estado",
+    ),
+
+    path(
+        "compromisos/<int:pk>/reasignar/",
+        views.compromiso_reasignar,
+        name="api_compromiso_reasignar",
+    ),
+
+    path(
+        "compromisos/<int:pk>/historial/",
+        views.compromiso_historial,
+        name="api_compromiso_historial",
+    ),
+
+        # -------------------------------------------------------------
+    # ATENCIÓN SOCIAL - CASOS
+    # -------------------------------------------------------------
+
+    path(
+        "casos/",
+        views.caso_social_list,
+        name="api_casos_sociales",
+    ),
+
+    path(
+        "casos/<int:pk>/",
+        views.caso_social_detail,
+        name="api_caso_social_detail",
+    ),
+
+    path(
+        "casos/<int:pk>/estado/",
+        views.caso_social_estado,
+        name="api_caso_social_estado",
+    ),
+
+    path(
+        "casos/<int:pk>/gestiones/",
+        views.caso_social_gestiones,
+        name="api_caso_social_gestiones",
+    ),
+
+    # -------------------------------------------------------------
+    # ATENCIÓN SOCIAL - GESTIONES
+    # -------------------------------------------------------------
+
+    path(
+        "gestiones/<int:pk>/",
+        views.gestion_social_detail,
+        name="api_gestion_social_detail",
+    ),
+
+    # -------------------------------------------------------------
+    # ESTADÍSTICAS SOCIALES
+    # -------------------------------------------------------------
+
+    path(
+        "atenciones/estadisticas/",
+        views.atencion_social_estadisticas,
+        name="api_atencion_social_estadisticas",
+    ),
+
+
+    # -------------------------------------------------------------
+    # CATÁLOGOS
+    # -------------------------------------------------------------
+
+    path(
+        "catalogos/",
+        views.catalogo_list,
+        name="api_catalogos",
+    ),
+
+    path(
+        "catalogos/por-area/",
+        views.catalogo_por_area_api,
+        name="api_catalogos_por_area",
+    ),
+
+    path(
+        "catalogos/<int:pk>/",
+        views.catalogo_detail,
+        name="api_catalogo_detail",
+    ),
+
+    path(
+        "catalogos/<int:pk>/estado/",
+        views.catalogo_estado,
+        name="api_catalogo_estado",
+    ),
+
+    path(
+        "catalogos/<int:pk>/historial/",
+        views.catalogo_historial,
+        name="api_catalogo_historial",
+    ),
+
+        # -------------------------------------------------------------
+    # AUDITORÍA
+    # -------------------------------------------------------------
+
+    path(
+        "auditoria/",
+        views.auditoria_list,
+        name="api_auditoria",
+    ),
+
+    path(
+        "auditoria/<int:pk>/",
+        views.auditoria_detail,
+        name="api_auditoria_detail",
+    ),
+
+    path(
+        "auditoria/historial/<str:entidad>/<int:pk>/",
+        views.auditoria_historial_entidad,
+        name="api_auditoria_historial",
+    ),
+
+    # -------------------------------------------------------------
+    # NOTIFICACIONES
+    # -------------------------------------------------------------
+
+    path(
+        "notificaciones/",
+        views.notificacion_list,
+        name="api_notificaciones",
+    ),
+
+    path(
+        "notificaciones/marcar-leidas/",
+        views.notificacion_marcar_leidas,
+        name="api_notificaciones_marcar_leidas",
+    ),
+
+    # -------------------------------------------------------------
+    # COMENTARIOS DE REGISTROS
+    # -------------------------------------------------------------
+
+    path(
+        "comentarios/<str:app_label>/<str:model_name>/<int:pk>/",
+        views.comentarios_registro_api,
+        name="api_comentarios_registro",
+    ),
+
+    # CARGOS
+path("cargos/", views.cargo_list, name="api_cargos"),
+path("cargos/<int:pk>/", views.cargo_detail, name="api_cargo_detail"),
+
+# HISTORIAL DE ÍTEMS
+path(
+    "items/<int:pk>/historial/",
+    views.item_historial,
+    name="api_item_historial",
+),
+
+    # -------------------------------------------------------------
+    # SOLICITUDES VECINALES
+    # -------------------------------------------------------------
+
+    path(
+        "solicitudes-vecinales/",
+        views.solicitud_vecinal_list,
+        name="api_solicitudes_vecinales",
+    ),
+
+    path(
+        "solicitudes-vecinales/<int:pk>/",
+        views.solicitud_vecinal_detail,
+        name="api_solicitud_vecinal_detail",
+    ),
+
+    path(
+        "solicitudes-vecinales/<int:pk>/estado/",
+        views.solicitud_vecinal_estado,
+        name="api_solicitud_vecinal_estado",
+    ),
+
+    path(
+        "solicitudes-vecinales/<int:pk>/historial/",
+        views.solicitud_vecinal_historial,
+        name="api_solicitud_vecinal_historial",
+    ),
+
+    # -------------------------------------------------------------
+    # ALERTAS OPERATIVAS
+    # -------------------------------------------------------------
+
+    path(
+        "alertas/",
+        views.alerta_operativa_list,
+        name="api_alertas",
+    ),
+
+    path(
+        "alertas/<int:pk>/atender/",
+        views.alerta_operativa_atender,
+        name="api_alerta_atender",
+    ),
+
+    # -------------------------------------------------------------
+    # EXPORTACIÓN DE AUDITORÍA
+    # -------------------------------------------------------------
+
+    path(
+        "auditoria/exportar/",
+        views.auditoria_exportar_api,
+        name="api_auditoria_exportar",
+    ),
+
+    path(
+    "metas/<int:pk>/historial/",
+    views.meta_historial,
+    name="api_meta_historial",
+),
+
+path(
+    "funcionarios/<int:pk>/items-vigentes/",
+    views.funcionario_items_vigentes,
+    name="api_funcionario_items_vigentes",
+),
+
+
+    # -------------------------------------------------------------
+    # EXPORTACIONES EXCEL
+    # -------------------------------------------------------------
+
+    # Organizaciones
+    path(
+        "delegaciones/exportar/",
+        exportaciones.exportar_delegaciones_api,
+        name="api_delegaciones_exportar",
+    ),
+    path(
+        "roles/exportar/",
+        exportaciones.exportar_roles_api,
+        name="api_roles_exportar",
+    ),
+    path(
+        "usuarios/exportar/",
+        exportaciones.exportar_usuarios_api,
+        name="api_usuarios_exportar",
+    ),
+    path(
+        "cargos/<int:pk>/items/exportar/",
+        exportaciones.exportar_items_api,
+        name="api_items_exportar",
+    ),
+    path(
+        "funcionarios/exportar/",
+        exportaciones.exportar_funcionarios_api,
+        name="api_funcionarios_exportar",
+    ),
+    path(
+        "cargos/exportar/",
+        exportaciones.exportar_cargos_api,
+        name="api_cargos_exportar",
+    ),
+
+    # Medición
+    path(
+        "metas/exportar/",
+        exportaciones.exportar_metas_api,
+        name="api_metas_exportar",
+    ),
+    path(
+        "periodos/exportar/",
+        exportaciones.exportar_periodos_api,
+        name="api_periodos_exportar",
+    ),
+    path(
+        "ajustes/exportar/",
+        exportaciones.exportar_ajustes_api,
+        name="api_ajustes_exportar",
+    ),
+    path(
+        "semaforo/exportar/",
+        exportaciones.exportar_semaforo_api,
+        name="api_semaforo_exportar",
+    ),
+
+    # Actividades y validaciones
+    path(
+        "actividades/exportar/",
+        exportaciones.exportar_actividades_api,
+        name="api_actividades_exportar",
+    ),
+    path(
+        "validaciones/exportar/",
+        exportaciones.exportar_validaciones_api,
+        name="api_validaciones_exportar",
+    ),
+
+    # Agenda colectiva
+    path(
+        "compromisos/exportar/",
+        exportaciones.exportar_compromisos_api,
+        name="api_compromisos_exportar",
+    ),
+    path(
+        "compromisos/resumen/exportar/",
+        exportaciones.exportar_resumen_agenda_api,
+        name="api_compromisos_resumen_exportar",
+    ),
+
+    # Atención social
+    path(
+        "casos/exportar/",
+        exportaciones.exportar_casos_sociales_api,
+        name="api_casos_exportar",
+    ),
+    path(
+        "atenciones/estadisticas/exportar/",
+        exportaciones.exportar_estadisticas_sociales_api,
+        name="api_atenciones_estadisticas_exportar",
+    ),
+
+    # Catálogos
+    path(
+        "catalogos/exportar/",
+        exportaciones.exportar_catalogos_api,
+        name="api_catalogos_exportar",
+    ),
+
+]

@@ -1,4 +1,5 @@
 
+
 {% extends "base.html" %}
 {% load ui_extras %}
 
@@ -326,6 +327,8 @@
 .sgr-executive .sgr-chart-body canvas {
     max-width: 100%;
     cursor: pointer;
+    pointer-events: auto;
+    touch-action: manipulation;
 }
 
 .sgr-executive .sgr-empty {
@@ -1077,6 +1080,7 @@
 {% endwith %}
 {% endblock %}
 
+
 {% block extra_js %}
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
@@ -1112,48 +1116,99 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const URL_DETALLE = "{% url 'dashboard_detalle' %}";
 
+    /* =====================================================
+       LECTURA DE DATOS
+    ===================================================== */
+
     function obtenerDatos(id) {
         const elemento = document.getElementById(id);
 
-        if (!elemento) return null;
+        if (!elemento) {
+            console.warn("No se encontró el elemento:", id);
+            return null;
+        }
 
         try {
-            return JSON.parse(elemento.textContent);
+            const datos = JSON.parse(elemento.textContent);
+
+            if (
+                !datos ||
+                !Array.isArray(datos.labels) ||
+                !Array.isArray(datos.values)
+            ) {
+                console.warn("Datos inválidos para:", id);
+                return null;
+            }
+
+            return datos;
+
         } catch (error) {
-            console.error("Error leyendo datos:", id, error);
+            console.error(
+                "Error leyendo los datos del gráfico:",
+                id,
+                error
+            );
+
             return null;
         }
     }
+
+    function datosValidos(datos) {
+        return (
+            datos !== null &&
+            Array.isArray(datos.labels) &&
+            Array.isArray(datos.values) &&
+            datos.labels.length > 0 &&
+            datos.labels.length === datos.values.length
+        );
+    }
+
+    function coloresPorEtiqueta(etiquetas, paleta = COLORES) {
+        return etiquetas.map(function (_, indice) {
+            return paleta[indice % paleta.length];
+        });
+    }
+
+    /* =====================================================
+       CONFIGURACIÓN COMÚN
+    ===================================================== */
 
     function opcionesBase() {
         return {
             responsive: true,
             maintainAspectRatio: false,
+
             interaction: {
                 mode: "nearest",
                 intersect: true
             },
-            onHover: function(event, elementos, grafico) {
-                if (grafico && grafico.canvas) {
-                    grafico.canvas.style.cursor = elementos && elementos.length
-                        ? "pointer"
-                        : "default";
-                }
-            },
+
             plugins: {
                 legend: {
                     position: "bottom",
+
                     labels: {
                         usePointStyle: true,
                         padding: 6,
                         boxWidth: 6,
-                        font: { size: 8 }
+
+                        font: {
+                            size: 8
+                        }
                     }
                 },
+
                 tooltip: {
                     backgroundColor: "#333333",
-                    titleFont: { size: 9 },
-                    bodyFont: { size: 8 },
+
+                    titleFont: {
+                        size: 9
+                    },
+
+                    bodyFont: {
+                        size: 8
+                    },
+
                     padding: 7,
                     cornerRadius: 5
                 }
@@ -1161,20 +1216,45 @@ document.addEventListener("DOMContentLoaded", function () {
         };
     }
 
-    /* MODAL */
+    /* =====================================================
+       MODAL DE DETALLES
+    ===================================================== */
 
-    const modalElemento = document.getElementById("dashboardDetailModal");
+    const modalElemento = document.getElementById(
+        "dashboardDetailModal"
+    );
 
-    const modalDetalle = modalElemento && window.bootstrap
+    const loading = document.getElementById(
+        "dashboardDetailLoading"
+    );
+
+    const empty = document.getElementById(
+        "dashboardDetailEmpty"
+    );
+
+    const errorBox = document.getElementById(
+        "dashboardDetailError"
+    );
+
+    const contenido = document.getElementById(
+        "dashboardDetailContent"
+    );
+
+    const filasElemento = document.getElementById(
+        "dashboardDetailRows"
+    );
+
+    const titulo = document.getElementById(
+        "dashboardDetailTitle"
+    );
+
+    const modalDetalle = (
+        modalElemento &&
+        window.bootstrap &&
+        window.bootstrap.Modal
+    )
         ? new bootstrap.Modal(modalElemento)
         : null;
-
-    const loading = document.getElementById("dashboardDetailLoading");
-    const empty = document.getElementById("dashboardDetailEmpty");
-    const errorBox = document.getElementById("dashboardDetailError");
-    const contenido = document.getElementById("dashboardDetailContent");
-    const filas = document.getElementById("dashboardDetailRows");
-    const titulo = document.getElementById("dashboardDetailTitle");
 
     function ocultarEstados() {
         loading.classList.add("d-none");
@@ -1183,15 +1263,28 @@ document.addEventListener("DOMContentLoaded", function () {
         contenido.classList.add("d-none");
     }
 
-    async function abrirDetalle(tipo, etiqueta, indice = null) {
+    function mostrarError(mensaje) {
+        ocultarEstados();
+
+        errorBox.textContent = (
+            mensaje ||
+            "No fue posible cargar los registros."
+        );
+
+        errorBox.classList.remove("d-none");
+    }
+
+    async function abrirDetalle(tipo, etiqueta) {
 
         if (!modalDetalle) {
-            console.error("Bootstrap Modal no está disponible.");
+            console.error(
+                "Bootstrap Modal no está disponible."
+            );
             return;
         }
 
         titulo.textContent = etiqueta;
-        filas.innerHTML = "";
+        filasElemento.innerHTML = "";
 
         ocultarEstados();
         loading.classList.remove("d-none");
@@ -1203,32 +1296,56 @@ document.addEventListener("DOMContentLoaded", function () {
             etiqueta: etiqueta
         });
 
-        if (indice !== null) {
-            parametros.set("indice", indice);
-        }
-
         try {
+
             const respuesta = await fetch(
                 URL_DETALLE + "?" + parametros.toString(),
                 {
                     method: "GET",
+
                     headers: {
-                        "X-Requested-With": "XMLHttpRequest"
-                    }
+                        "X-Requested-With": "XMLHttpRequest",
+                        "Accept": "application/json"
+                    },
+
+                    credentials: "same-origin"
                 }
             );
 
+            const tipoContenido = (
+                respuesta.headers.get("content-type") || ""
+            ).toLowerCase();
+
+            if (!tipoContenido.includes("application/json")) {
+                throw new Error(
+                    "El servidor no devolvió una respuesta JSON. " +
+                    "Comprueba que tu sesión siga activa."
+                );
+            }
+
             const resultado = await respuesta.json();
 
-            if (!respuesta.ok) {
+            if (!respuesta.ok || resultado.ok === false) {
                 throw new Error(
-                    resultado.error || "Error al consultar los registros."
+                    resultado.mensaje ||
+                    resultado.error ||
+                    "Error al consultar los registros."
+                );
+            }
+
+            if (!Array.isArray(resultado.filas)) {
+                throw new Error(
+                    "La respuesta no contiene una lista válida de registros."
                 );
             }
 
             ocultarEstados();
 
-            if (!resultado.filas || resultado.filas.length === 0) {
+            titulo.textContent = (
+                resultado.titulo || etiqueta
+            );
+
+            if (resultado.filas.length === 0) {
                 empty.classList.remove("d-none");
                 return;
             }
@@ -1237,15 +1354,41 @@ document.addEventListener("DOMContentLoaded", function () {
 
                 const tr = document.createElement("tr");
 
-                [
-                    fila.registro,
+                const registro = (
+                    fila.registro ||
+                    [
+                        fila.codigo,
+                        fila.descripcion
+                    ]
+                        .filter(function (valor) {
+                            return (
+                                valor &&
+                                valor !== "—"
+                            );
+                        })
+                        .join(" · ") ||
+                    "—"
+                );
+
+                const valores = [
+                    registro,
                     fila.responsable,
                     fila.fecha,
                     fila.estado
-                ].forEach(function (valor) {
+                ];
+
+                valores.forEach(function (valor) {
 
                     const td = document.createElement("td");
-                    td.textContent = valor || "—";
+
+                    td.textContent = (
+                        valor !== null &&
+                        valor !== undefined &&
+                        String(valor).trim() !== ""
+                    )
+                        ? String(valor)
+                        : "—";
+
                     tr.appendChild(td);
 
                 });
@@ -1253,15 +1396,26 @@ document.addEventListener("DOMContentLoaded", function () {
                 const tdAccion = document.createElement("td");
 
                 if (fila.url) {
+
                     const enlace = document.createElement("a");
+
                     enlace.href = fila.url;
-                    enlace.className = "btn btn-sm btn-outline-danger";
+                    enlace.className = (
+                        "btn btn-sm btn-outline-danger"
+                    );
+
                     enlace.textContent = "Ver";
+
+                    enlace.setAttribute(
+                        "aria-label",
+                        "Ver registro " + registro
+                    );
+
                     tdAccion.appendChild(enlace);
                 }
 
                 tr.appendChild(tdAccion);
-                filas.appendChild(tr);
+                filasElemento.appendChild(tr);
 
             });
 
@@ -1269,74 +1423,125 @@ document.addEventListener("DOMContentLoaded", function () {
 
         } catch (error) {
 
-            console.error("Error al abrir detalle:", error);
+            console.error(
+                "Error al abrir el detalle del dashboard:",
+                error
+            );
 
-            ocultarEstados();
-            errorBox.textContent = error.message;
-            errorBox.classList.remove("d-none");
+            mostrarError(error.message);
 
         }
     }
 
-    /* FUNCIÓN PARA SELECCIONAR ELEMENTOS */
+    /* =====================================================
+       EVENTOS DE SELECCIÓN
+    ===================================================== */
 
-    function eventoSeleccion(tipo, indiceMensual = false) {
+    function eventoSeleccion(tipo) {
 
         return function (evento, elementos, grafico) {
 
-            if (!elementos || elementos.length === 0) {
+            if (
+                !elementos ||
+                elementos.length === 0 ||
+                !grafico ||
+                !grafico.data ||
+                !grafico.data.labels
+            ) {
                 return;
             }
 
             const indice = elementos[0].index;
             const etiqueta = grafico.data.labels[indice];
 
+            if (
+                etiqueta === null ||
+                etiqueta === undefined ||
+                String(etiqueta).trim() === ""
+            ) {
+                return;
+            }
+
             abrirDetalle(
                 tipo,
-                etiqueta,
-                indiceMensual ? indice : null
+                String(etiqueta)
             );
         };
     }
 
-    /* GRÁFICOS DE BARRAS */
+    /* =====================================================
+       GRÁFICOS DE BARRAS
+    ===================================================== */
 
-    function crearBarras(id, datos, horizontal = false, tipo = "") {
+    function crearBarras(
+        id,
+        datos,
+        horizontal = false,
+        tipo = ""
+    ) {
 
         const canvas = document.getElementById(id);
 
-        if (!canvas || !datos || !datos.labels || !datos.labels.length) {
+        if (!canvas || !datosValidos(datos)) {
             return;
         }
 
+        const esTrabajo = tipo === "trabajo";
+
         new Chart(canvas, {
+
             type: "bar",
+
             data: {
                 labels: datos.labels,
+
                 datasets: [{
-                    label: tipo === "trabajo" ? "Compromisos" : "Cumplimiento",
+                    label: esTrabajo
+                        ? "Compromisos"
+                        : "Cumplimiento",
+
                     data: datos.values,
-                    backgroundColor: COLORES,
+
+                    backgroundColor: coloresPorEtiqueta(
+                        datos.labels,
+                        COLORES
+                    ),
+
                     borderRadius: 3,
                     borderSkipped: false,
                     maxBarThickness: 18
                 }]
             },
+
             options: {
                 ...opcionesBase(),
+
                 indexAxis: horizontal ? "y" : "x",
 
                 onClick: eventoSeleccion(tipo),
-                onHover: function(evento, elementos) { canvas.style.cursor = elementos.length ? "pointer" : "default"; },
-                interaction: { mode: "nearest", intersect: true },
+
+                onHover: function (
+                    evento,
+                    elementos
+                ) {
+                    canvas.style.cursor = (
+                        elementos.length
+                            ? "pointer"
+                            : "default"
+                    );
+                },
 
                 plugins: {
                     ...opcionesBase().plugins,
-                    legend: { display: false },
+
+                    legend: {
+                        display: false
+                    },
+
                     tooltip: {
                         callbacks: {
-                            label: function(context) {
-                                return tipo === "trabajo"
+                            label: function (context) {
+                                return esTrabajo
                                     ? " " + context.raw + " compromisos"
                                     : " " + context.raw + "%";
                             }
@@ -1344,124 +1549,280 @@ document.addEventListener("DOMContentLoaded", function () {
                     }
                 },
 
-                scales: horizontal ? {
-                    x: {
-                        beginAtZero: true,
-                        ...(tipo === "trabajo" ? {} : { max: 100 }),
-                        grid: { color: "rgba(0,0,0,.06)" },
-                        ticks: {
-                            font: { size: 7 },
-                            callback: value => tipo === "trabajo" ? value : value + "%"
+                scales: horizontal
+                    ? {
+                        x: {
+                            beginAtZero: true,
+
+                            ...(esTrabajo
+                                ? {}
+                                : { max: 100 }
+                            ),
+
+                            grid: {
+                                color: "rgba(0,0,0,.06)"
+                            },
+
+                            ticks: {
+                                font: {
+                                    size: 7
+                                },
+
+                                callback: function (valor) {
+                                    return esTrabajo
+                                        ? valor
+                                        : valor + "%";
+                                }
+                            }
+                        },
+
+                        y: {
+                            grid: {
+                                display: false
+                            },
+
+                            ticks: {
+                                font: {
+                                    size: 7
+                                }
+                            }
                         }
-                    },
-                    y: {
-                        grid: { display: false },
-                        ticks: { font: { size: 7 } }
                     }
-                } : {
-                    y: {
-                        beginAtZero: true,
-                        grid: { color: "rgba(0,0,0,.06)" },
-                        ticks: { font: { size: 7 } }
-                    },
-                    x: {
-                        grid: { display: false },
-                        ticks: { font: { size: 7 } }
+                    : {
+                        y: {
+                            beginAtZero: true,
+
+                            ...(esTrabajo
+                                ? {}
+                                : { max: 100 }
+                            ),
+
+                            grid: {
+                                color: "rgba(0,0,0,.06)"
+                            },
+
+                            ticks: {
+                                font: {
+                                    size: 7
+                                },
+
+                                callback: function (valor) {
+                                    return esTrabajo
+                                        ? valor
+                                        : valor + "%";
+                                }
+                            }
+                        },
+
+                        x: {
+                            grid: {
+                                display: false
+                            },
+
+                            ticks: {
+                                font: {
+                                    size: 7
+                                }
+                            }
+                        }
                     }
-                }
             }
         });
     }
 
-    /* GRÁFICOS DE DONA */
+    /* =====================================================
+       GRÁFICOS DE DONA
+    ===================================================== */
 
-    function crearDona(id, datos, colores = COLORES, tipo = "") {
+
+/* =====================================================
+   GRÁFICOS DE DONA
+===================================================== */
+
+    function crearDona(
+        id,
+        datos,
+        colores = COLORES,
+        tipo = ""
+    ) {
 
         const canvas = document.getElementById(id);
 
-        if (!canvas || !datos || !datos.labels || !datos.labels.length) {
+        if (!canvas || !datosValidos(datos)) {
             return;
         }
 
         new Chart(canvas, {
+
             type: "doughnut",
+
             data: {
                 labels: datos.labels,
+
                 datasets: [{
                     data: datos.values,
-                    backgroundColor: colores,
+
+                    backgroundColor: coloresPorEtiqueta(
+                        datos.labels,
+                        colores
+                    ),
+
                     borderColor: "#FFFFFF",
                     borderWidth: 2,
                     hoverOffset: 5
                 }]
             },
+
             options: {
                 ...opcionesBase(),
+
                 cutout: "65%",
+
                 onClick: eventoSeleccion(tipo),
-                onHover: function(evento, elementos) { canvas.style.cursor = elementos.length ? "pointer" : "default"; },
-                interaction: { mode: "nearest", intersect: true }
-            }
-        });
-    }
 
-    /* EVOLUCIÓN MENSUAL */
-
-    function crearLinea(id, datos) {
-
-        const canvas = document.getElementById(id);
-
-        if (!canvas || !datos || !datos.labels || !datos.labels.length) {
-            return;
-        }
-
-        new Chart(canvas, {
-            type: "line",
-            data: {
-                labels: datos.labels,
-                datasets: [{
-                    label: "Actividades",
-                    data: datos.values,
-                    borderColor: ROJO,
-                    backgroundColor: "rgba(173,0,0,.10)",
-                    fill: true,
-                    tension: .35,
-                    pointRadius: 4,
-                    pointHoverRadius: 6,
-                    pointBackgroundColor: ROJO,
-                    pointBorderColor: "#FFFFFF",
-                    pointBorderWidth: 1
-                }]
-            },
-            options: {
-                ...opcionesBase(),
-
-                onClick: eventoSeleccion("evolucion", true),
+                onHover: function (
+                    evento,
+                    elementos
+                ) {
+                    canvas.style.cursor = (
+                        elementos.length
+                            ? "pointer"
+                            : "default"
+                    );
+                },
 
                 plugins: {
                     ...opcionesBase().plugins,
-                    legend: { display: false }
-                },
 
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        grid: { color: "rgba(0,0,0,.06)" },
-                        ticks: {
-                            precision: 0,
-                            font: { size: 7 }
+                    legend: {
+                        ...opcionesBase().plugins.legend,
+
+                        onClick: function (
+                            evento,
+                            elementoLeyenda,
+                            leyenda
+                        ) {
+                            const grafico = leyenda.chart;
+                            const indice = elementoLeyenda.index;
+
+                            if (
+                                indice === undefined ||
+                                indice === null
+                            ) {
+                                return;
+                            }
+
+                            // Oculta o vuelve a mostrar el segmento.
+                            grafico.toggleDataVisibility(indice);
+
+                            // Actualiza el gráfico y la leyenda.
+                            grafico.update();
                         }
-                    },
-                    x: {
-                        grid: { display: false },
-                        ticks: { font: { size: 7 } }
                     }
                 }
             }
         });
     }
 
-    /* INICIALIZACIÓN DE LOS SIETE GRÁFICOS */
+    /* =====================================================
+       EVOLUCIÓN MENSUAL
+    ===================================================== */
+
+    function crearLinea(id, datos) {
+
+        const canvas = document.getElementById(id);
+
+        if (!canvas || !datosValidos(datos)) {
+            return;
+        }
+
+        new Chart(canvas, {
+
+            type: "line",
+
+            data: {
+                labels: datos.labels,
+
+                datasets: [{
+                    label: "Actividades",
+
+                    data: datos.values,
+
+                    borderColor: ROJO,
+                    backgroundColor: "rgba(173,0,0,.10)",
+
+                    fill: true,
+                    tension: 0.35,
+
+                    pointRadius: 4,
+                    pointHoverRadius: 6,
+
+                    pointBackgroundColor: ROJO,
+                    pointBorderColor: "#FFFFFF",
+                    pointBorderWidth: 1
+                }]
+            },
+
+            options: {
+                ...opcionesBase(),
+
+                onClick: eventoSeleccion("evolucion"),
+
+                onHover: function (
+                    evento,
+                    elementos
+                ) {
+                    canvas.style.cursor = (
+                        elementos.length
+                            ? "pointer"
+                            : "default"
+                    );
+                },
+
+                plugins: {
+                    ...opcionesBase().plugins,
+
+                    legend: {
+                        display: false
+                    }
+                },
+
+                scales: {
+                    y: {
+                        beginAtZero: true,
+
+                        grid: {
+                            color: "rgba(0,0,0,.06)"
+                        },
+
+                        ticks: {
+                            precision: 0,
+
+                            font: {
+                                size: 7
+                            }
+                        }
+                    },
+
+                    x: {
+                        grid: {
+                            display: false
+                        },
+
+                        ticks: {
+                            font: {
+                                size: 7
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    /* =====================================================
+       INICIALIZACIÓN DE LOS SIETE GRÁFICOS
+    ===================================================== */
 
     crearBarras(
         "graficoPersonal",
