@@ -1509,3 +1509,33 @@ main#contenido:has(.sgr-executive) > .d-flex.border-bottom .btn {
 .modal-content button {
     pointer-events: auto !important;
 }
+
+/* =====================================================
+   FIX URGENTE: NAVEGACIÓN DEL DASHBOARD
+   Solo afecta a la vista principal.
+===================================================== */
+
+@media (min-width: 992px) {
+
+    body[data-sgr-url-name="dashboard"] #sgr-sidebar {
+        position: sticky !important;
+        top: 68px !important;
+        z-index: 1041 !important;
+        pointer-events: auto !important;
+        isolation: isolate !important;
+    }
+
+    body[data-sgr-url-name="dashboard"] #sgr-sidebar a,
+    body[data-sgr-url-name="dashboard"] #sgr-sidebar .nav-link {
+        position: relative !important;
+        z-index: 1 !important;
+        pointer-events: auto !important;
+        cursor: pointer !important;
+    }
+
+    body[data-sgr-url-name="dashboard"] main#contenido {
+        position: relative !important;
+        z-index: 0 !important;
+        isolation: isolate !important;
+    }
+}

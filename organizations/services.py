@@ -1279,7 +1279,9 @@ class Seguridad:
             for rol in roles
         }
 
-        if delegaciones and not ({"global", "multiples"} & alcances):
+        # Solo validar el alcance cuando se agregan delegaciones nuevas.
+        # Las delegaciones que el usuario ya tenía pueden conservarse.
+        if delegaciones_nuevas and not ({"global", "multiples"} & alcances):
             raise ReglaNegocioError(
                 "Los roles asignados no permiten "
                 "delegaciones adicionales."
