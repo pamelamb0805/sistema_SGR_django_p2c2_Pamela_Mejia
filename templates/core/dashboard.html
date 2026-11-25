@@ -484,7 +484,24 @@
     .sgr-executive .sgr-alert-action {
         margin-left: 22px;
     }
+
+    /* FIX: el dashboard no debe cubrir la navegación lateral */
+    .sgr-executive {
+        position: relative;
+        z-index: auto;
+        isolation: auto;
+    }
+
+    #dashboardDetailModal {
+        z-index: 1060;
+    }
+
+    .modal-backdrop {
+        z-index: 1050;
+    }
 }
+
+
 </style>
 
 <div class="sgr-executive">
@@ -1082,6 +1099,38 @@
 
 
 {% block extra_js %}
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+
+    /* Evitar que el contenido del dashboard bloquee el menú lateral */
+    const selectores = [
+        ".sidebar",
+        ".sidebar-wrapper",
+        "#sidebar",
+        "#sidebar-wrapper",
+        ".main-sidebar",
+        "aside"
+    ];
+
+    selectores.forEach(function (selector) {
+        document.querySelectorAll(selector).forEach(function (menu) {
+            menu.style.setProperty("pointer-events", "auto", "important");
+            menu.style.setProperty("z-index", "1055", "important");
+
+            menu.querySelectorAll("a, button, .nav-link").forEach(function (enlace) {
+                enlace.style.setProperty("pointer-events", "auto", "important");
+            });
+        });
+    });
+
+    /* Corregir capas del contenido principal */
+    document.querySelectorAll(".sgr-executive").forEach(function (contenido) {
+        contenido.style.setProperty("z-index", "1", "important");
+    });
+
+});
+</script>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 
