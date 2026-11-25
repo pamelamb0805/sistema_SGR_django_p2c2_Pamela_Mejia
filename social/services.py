@@ -15,18 +15,36 @@ from django.utils import timezone
 
 from catalogs.models import Catalogo
 from core.exceptions import ReglaNegocioError
-from core.mixins import (
-    ROL_DELEGADO, ROLES_OPERATIVOS, ROLES_TRANSVERSALES, auditar, es_transversal, get_funcionario, tiene_rol,
+from core.services import (
+    guardar,
+    snapshot,
+    _notificar_crud,
 )
-from core.services import guardar, snapshot
 
 from .models import AtencionSocial, UsuarioSocial
+from core.mixins import (
+    ROL_DELEGADO,
+    ROLES_OPERATIVOS,
+    ROLES_TRANSVERSALES,
+    auditar,
+    es_transversal,
+    get_funcionario,
+    get_delegaciones_autorizadas_ids,
+    get_delegacion_activa,
+    tiene_rol,
+    tiene_permiso,
+)
 
 # Acceso al módulo: datos personales de usuarios atendidos => solo quienes los necesitan (RNF-009)
 ROLES_SOCIAL = ROLES_OPERATIVOS + ROLES_TRANSVERSALES
 TIPOS_CATALOGO_ATENCION = (Catalogo.TIPO_ATENCION, Catalogo.TIPO_SUBATENCION)
 
-
+def _exigir_permiso(actor, permiso, mensaje=None):
+    if not tiene_permiso(actor, permiso):
+        raise ReglaNegocioError(
+            mensaje or "No tiene permiso para realizar esta operación."
+        )
+    
 def maximo_gestiones():
     return settings.SGR_MAX_GESTIONES_SOCIAL
 
@@ -35,15 +53,28 @@ def maximo_gestiones():
 # Visibilidad y permisos
 # ---------------------------------------------------------------------------
 def casos_visibles(user):
+    """
+    Devuelve los casos de las delegaciones autorizadas.
+    La consulta requiere el permiso funcional de lectura.
+    """
     qs = UsuarioSocial.objects.select_related("delegacion")
-    if not tiene_rol(user, *ROLES_SOCIAL):
+
+    if not tiene_permiso(user, "atenciones.ver"):
         return qs.none()
+
+    contexto_activo = getattr(user, "_sgr_delegacion_activa_id", None)
+    if contexto_activo:
+        return qs.filter(delegacion_id=contexto_activo)
+
     if es_transversal(user):
         return qs
-    f = get_funcionario(user)
-    return qs.filter(delegacion_id=f.delegacion_id) if f else qs.none()
 
+    delegaciones_ids = get_delegaciones_autorizadas_ids(user)
 
+    if not delegaciones_ids:
+        return qs.none()
+
+    return qs.filter(delegacion_id__in=delegaciones_ids)
 
 def gestiones_visibles(user):
     return (
@@ -59,29 +90,39 @@ def gestiones_visibles(user):
         )
     )
 
-
 def puede_escribir(user, caso_delegacion_id):
-    """Registrar y modificar: Funcionario o Delegado de la misma delegación."""
-    if not tiene_rol(user, *ROLES_OPERATIVOS):
-        return False
-    f = get_funcionario(user)
-    return f is not None and f.delegacion_id == caso_delegacion_id
+    """Comprueba el ámbito territorial; el permiso se valida por operación."""
+    contexto_activo = getattr(user, "_sgr_delegacion_activa_id", None)
+    if contexto_activo:
+        return caso_delegacion_id == contexto_activo
+    delegaciones_ids = get_delegaciones_autorizadas_ids(user)
+    return caso_delegacion_id in delegaciones_ids
 
 
 def puede_reabrir(user, caso_delegacion_id):
-    if es_transversal(user):
+    """La reapertura requiere permiso de estado y ámbito autorizado."""
+    if not tiene_permiso(user, "atenciones.estado"):
+        return False
+
+    if es_transversal(user) and not getattr(user, "_sgr_delegacion_activa_id", None):
         return True
-    f = get_funcionario(user)
-    return tiene_rol(user, ROL_DELEGADO) and f is not None and f.delegacion_id == caso_delegacion_id
 
+    return puede_escribir(user, caso_delegacion_id)
 
-def _exigir_escritura(user, caso):
+def _exigir_escritura(user, caso, permiso="atenciones.gestionar"):
+    _exigir_permiso(
+        user,
+        permiso,
+        "No tiene permiso para modificar este caso o sus gestiones.",
+    )
+
     if not puede_escribir(user, caso.delegacion_id):
-        raise ReglaNegocioError("No tiene permiso para modificar casos de esta delegación.")
+        raise ReglaNegocioError(
+            "No tiene autorización sobre la delegación de este caso."
+        )
 
 
-
-def _validar_catalogo(tipo_atencion, subatencion):
+def _validar_catalogo(tipo_atencion, subatencion, original=None):
     if tipo_atencion is None or subatencion is None:
         raise ReglaNegocioError(
             "Debe seleccionar el Tipo de Atención y la Subatención."
@@ -97,9 +138,32 @@ def _validar_catalogo(tipo_atencion, subatencion):
             "El elemento seleccionado no es una Subatención."
         )
 
-    if not tipo_atencion.activo or not subatencion.activo:
+    # En una edición, solo se tolera conservar elementos inactivos
+    # cuando son exactamente los mismos que tenía el registro.
+    conserva_tipo = (
+        original is not None
+        and original.tipo_atencion_id == tipo_atencion.pk
+    )
+
+    conserva_subatencion = (
+        original is not None
+        and original.subatencion_id == subatencion.pk
+    )
+
+    if not tipo_atencion.activo and not conserva_tipo:
         raise ReglaNegocioError(
-            "No se pueden registrar atenciones con catálogos inactivos."
+            "No se pueden registrar atenciones con un Tipo de "
+            "Atención inactivo."
+        )
+
+    if not subatencion.activo and not conserva_subatencion:
+        raise ReglaNegocioError(
+            "No se pueden registrar atenciones con una Subatención inactiva."
+        )
+
+    if not subatencion.tipo_atencion_padre_id:
+        raise ReglaNegocioError(
+            "La Subatención no tiene un Tipo de Atención asociado."
         )
 
     if subatencion.tipo_atencion_padre_id != tipo_atencion.pk:
@@ -107,7 +171,27 @@ def _validar_catalogo(tipo_atencion, subatencion):
             "La Subatención no corresponde al Tipo de Atención seleccionado."
         )
 
+    padre = subatencion.tipo_atencion_padre
 
+    padre_inactivo_conservado = (
+        conserva_subatencion
+        and conserva_tipo
+        and padre.pk == tipo_atencion.pk
+    )
+
+    if not padre.activo and not padre_inactivo_conservado:
+        raise ReglaNegocioError(
+            "El Tipo de Atención asociado a la Subatención está inactivo."
+        )
+
+    if (
+        padre.area != Catalogo.AREA_GENERAL
+        and padre.area.casefold() != subatencion.area.casefold()
+    ):
+        raise ReglaNegocioError(
+            "El Tipo de Atención y la Subatención no pertenecen "
+            "a la misma área."
+        )
 # ---------------------------------------------------------------------------
 # CRUDAtencionSocial (RF-015, RN-012)
 # ---------------------------------------------------------------------------
@@ -172,6 +256,12 @@ class CRUDAtencionSocial:
 
     @staticmethod
     def registrar_gestion(gestion, actor=None):
+        _exigir_permiso(
+            actor,
+            "atenciones.gestionar",
+            "No tiene permiso para registrar gestiones sociales.",
+        )
+
         autor = get_funcionario(actor)
 
         if autor is None:
@@ -184,7 +274,7 @@ class CRUDAtencionSocial:
                 pk=gestion.usuario_id
             )
 
-            _exigir_escritura(actor, caso)
+            _exigir_escritura(actor, caso, "atenciones.gestionar")
 
             if caso.cerrado:
                 raise ReglaNegocioError(
@@ -219,23 +309,30 @@ class CRUDAtencionSocial:
                 anterior=existentes[-1] if existentes else None,
             )
 
-            # La asignación se realiza en el servidor.
             gestion.numero_gestion = len(existentes) + 1
             gestion.funcionario = autor
             gestion.delegacion = caso.delegacion
             gestion.usuario = caso
+            gestion.tipo_atencion_nombre = gestion.tipo_atencion.nombre
+            gestion.subatencion_nombre = gestion.subatencion.nombre
 
             gestion.full_clean()
             guardar(gestion, actor, "atencion_social")
 
         return gestion
-
     @staticmethod
     def modificar_gestion(gestion, actor=None):
         with transaction.atomic():
             original = (
-                AtencionSocial.objects.select_for_update()
-                .select_related("usuario", "delegacion", "funcionario")
+                AtencionSocial.objects
+                .select_for_update()
+                .select_related(
+                    "usuario",
+                    "delegacion",
+                    "funcionario",
+                    "tipo_atencion",
+                    "subatencion",
+                )
                 .get(pk=gestion.pk)
             )
 
@@ -243,7 +340,11 @@ class CRUDAtencionSocial:
                 pk=original.usuario_id
             )
 
-            _exigir_escritura(actor, caso)
+            _exigir_escritura(
+                actor,
+                caso,
+                "atenciones.gestionar",
+            )
 
             if caso.cerrado:
                 raise ReglaNegocioError(
@@ -267,9 +368,12 @@ class CRUDAtencionSocial:
                     "Cada gestión del caso debe tener un Tipo de Atención diferente."
                 )
 
+            # Permite conservar la clasificación anterior aunque después
+            # se haya desactivado, pero no permite cambiarla por una inactiva.
             _validar_catalogo(
                 gestion.tipo_atencion,
                 gestion.subatencion,
+                original=original,
             )
 
             CRUDAtencionSocial._validar_fecha_y_estado(
@@ -290,42 +394,37 @@ class CRUDAtencionSocial:
                 ),
             )
 
-            # No se permite cambiar estas asignaciones desde el formulario.
+            # Asignaciones protegidas: no se cambian desde el formulario.
             gestion.usuario = caso
             gestion.delegacion = original.delegacion
             gestion.funcionario = original.funcionario
             gestion.fecha_registro = original.fecha_registro
 
+            # Mantiene el nombre histórico si no cambió el catálogo.
+            if gestion.tipo_atencion_id == original.tipo_atencion_id:
+                gestion.tipo_atencion_nombre = (
+                    original.tipo_atencion_nombre
+                    or original.tipo_atencion.nombre
+                )
+            else:
+                gestion.tipo_atencion_nombre = gestion.tipo_atencion.nombre
+
+            if gestion.subatencion_id == original.subatencion_id:
+                gestion.subatencion_nombre = (
+                    original.subatencion_nombre
+                    or original.subatencion.nombre
+                )
+            else:
+                gestion.subatencion_nombre = gestion.subatencion.nombre
+
             gestion.full_clean()
-            guardar(gestion, actor, "atencion_social")
-
-        return gestion
-
-
-    @staticmethod
-    def modificar_gestion(gestion, actor=None):
-        """Corrige tipo, fecha, resultado, estado o catálogo de una gestión (queda auditado)."""
-        with transaction.atomic():
-            original = AtencionSocial.objects.select_for_update().get(pk=gestion.pk)
-            caso = UsuarioSocial.objects.select_for_update().get(pk=original.usuario_id)
-            _exigir_escritura(actor, caso)
-            if caso.cerrado:
-                raise ReglaNegocioError("El caso está cerrado: reábralo para modificar sus gestiones.")
-            if gestion.usuario_id != original.usuario_id or gestion.numero_gestion != original.numero_gestion:
-                raise ReglaNegocioError("No se puede cambiar el caso ni el número de la gestión.")
-            otras = caso.gestiones.exclude(pk=gestion.pk)
-            if otras.filter(tipo_atencion=gestion.tipo_atencion).exists():
-                raise ReglaNegocioError("Cada gestión del caso debe tener un tipo de atención diferente.")
-            if gestion.catalogo_id != original.catalogo_id:
-                _validar_catalogo(gestion.catalogo)
-            CRUDAtencionSocial._validar_fecha_y_estado(
+            guardar(
                 gestion,
-                anterior=otras.filter(numero_gestion__lt=gestion.numero_gestion).order_by("-numero_gestion").first(),
-                siguiente=otras.filter(numero_gestion__gt=gestion.numero_gestion).order_by("numero_gestion").first())
-            guardar(gestion, actor, "atencion_social")
+                actor,
+                "atencion_social",
+            )
+
         return gestion
-
-
 # ---------------------------------------------------------------------------
 # CRUDUsuarioSocial (RF-015, HU-03)
 # ---------------------------------------------------------------------------
@@ -333,15 +432,26 @@ class CRUDUsuarioSocial:
     @staticmethod
     def crear_caso(caso, primera_gestion, actor=None):
         """Crea el caso y su primera gestión en una sola transacción."""
+        _exigir_permiso(
+            actor,
+            "atenciones.registrar",
+            "No tiene permiso para registrar casos sociales.",
+        )
+
         autor = get_funcionario(actor)
 
-        if autor is None or not tiene_rol(actor, *ROLES_OPERATIVOS):
+        if autor is None:
             raise ReglaNegocioError(
-                "No tiene permiso para registrar casos sociales."
+                "Su usuario no tiene un funcionario asociado."
             )
 
         with transaction.atomic():
-            caso.delegacion_id = autor.delegacion_id
+            delegacion_activa_id = get_delegacion_activa(actor)
+            if not delegacion_activa_id or not puede_escribir(actor, delegacion_activa_id):
+                raise ReglaNegocioError(
+                    "No tiene una delegación activa autorizada para registrar la atención."
+                )
+            caso.delegacion_id = delegacion_activa_id
             caso.estado_caso = UsuarioSocial.ESTADO_ABIERTO
             guardar(caso, actor, "usuario_social")
 
@@ -349,10 +459,25 @@ class CRUDUsuarioSocial:
             primera_gestion.delegacion = caso.delegacion
             primera_gestion.funcionario = autor
 
-            CRUDAtencionSocial.registrar_gestion(
-                primera_gestion,
+            # El alta inicial de la gestión queda cubierta por el permiso
+            # de registrar el caso.
+            _exigir_permiso(
                 actor,
+                "atenciones.registrar",
+                "No tiene permiso para registrar la primera gestión.",
             )
+
+            CRUDAtencionSocial._validar_fecha_y_estado(
+                primera_gestion
+            )
+            _validar_catalogo(
+                primera_gestion.tipo_atencion,
+                primera_gestion.subatencion,
+            )
+
+            primera_gestion.numero_gestion = 1
+            primera_gestion.full_clean()
+            guardar(primera_gestion, actor, "atencion_social")
 
         return caso
 
@@ -368,73 +493,181 @@ class CRUDUsuarioSocial:
 
     @staticmethod
     def modificar_caso(caso, actor=None):
-        _exigir_escritura(actor, caso)
+        _exigir_permiso(
+            actor,
+            "atenciones.editar",
+            "No tiene permiso para editar casos sociales.",
+        )
+
         original = UsuarioSocial.objects.get(pk=caso.pk)
+
         if original.delegacion_id != caso.delegacion_id:
-            raise ReglaNegocioError("No se puede cambiar la delegación del caso.")
+            raise ReglaNegocioError(
+                "No se puede cambiar la delegación del caso."
+            )
+
+        if not puede_escribir(actor, original.delegacion_id):
+            raise ReglaNegocioError(
+                "No tiene autorización sobre la delegación de este caso."
+            )
+
         return guardar(caso, actor, "usuario_social")
+
 
     @staticmethod
     def cambiar_estado_caso(caso, nuevo_estado, actor=None):
+        _exigir_permiso(
+            actor,
+            "atenciones.estado",
+            "No tiene permiso para cambiar el estado de casos sociales.",
+        )
+
         with transaction.atomic():
-            caso = UsuarioSocial.objects.select_for_update().get(pk=caso.pk)
-            if not (puede_escribir(actor, caso.delegacion_id) or es_transversal(actor)):
-                raise ReglaNegocioError("No tiene permiso para modificar casos de esta delegación.")
+            caso = UsuarioSocial.objects.select_for_update().get(
+                pk=caso.pk
+            )
+
+            if not puede_escribir(actor, caso.delegacion_id):
+                raise ReglaNegocioError(
+                    "No tiene autorización sobre la delegación de este caso."
+                )
+
             if nuevo_estado not in dict(UsuarioSocial.ESTADOS):
                 raise ReglaNegocioError("Estado de caso no válido.")
+
             if nuevo_estado == caso.estado_caso:
-                raise ReglaNegocioError(f"El caso ya está «{caso.estado_caso}».")
-            if caso.cerrado and not puede_reabrir(actor, caso.delegacion_id):
-                raise ReglaNegocioError("Solo el delegado o la coordinación pueden reabrir un caso cerrado.")
+                raise ReglaNegocioError(
+                    f"El caso ya está «{caso.estado_caso}»."
+                )
+
+            if caso.cerrado and not puede_reabrir(
+                actor,
+                caso.delegacion_id,
+            ):
+                raise ReglaNegocioError(
+                    "No tiene permiso para reabrir este caso."
+                )
+
             anterior = snapshot(caso)
             caso.estado_caso = nuevo_estado
             caso.save(update_fields=["estado_caso"])
-            auditar(actor, "CAMBIO_ESTADO_CASO", "usuario_social", caso.pk, anterior,
-                    json.dumps({"estado_caso": nuevo_estado}, ensure_ascii=False))
+
+            auditar(
+                actor,
+                "CAMBIO_ESTADO_CASO",
+                "usuario_social",
+                caso.pk,
+                anterior,
+                json.dumps(
+                    {"estado_caso": nuevo_estado},
+                    ensure_ascii=False,
+                ),
+            )
+
+            _notificar_crud(
+                "usuario_social",
+                "actualizar",
+                actor,
+                caso,
+            )
+
         return caso
-
-
 # ---------------------------------------------------------------------------
 # Estadísticas (HU-03: cada atención válida se cuenta una sola vez)
 # ---------------------------------------------------------------------------
 def estadisticas_atenciones(queryset):
-    """Resumen de gestiones realizadas sin duplicar registros."""
+    """
+    Estadísticas utilizando las fotografías históricas
+    de los catálogos registradas en cada gestión.
+    """
     realizadas = queryset.filter(
         estado=AtencionSocial.ESTADO_REALIZADA
+    ).select_related(
+        "tipo_atencion",
+        "subatencion",
+        "delegacion",
     )
 
+    gestiones = list(realizadas)
+
+    por_tipo = {}
+    por_subatencion = {}
+    por_delegacion = {}
+    por_mes = {}
+
+    for gestion in gestiones:
+        tipo = (
+            gestion.tipo_atencion_nombre
+            or gestion.tipo_atencion.nombre
+        )
+
+        subatencion = (
+            gestion.subatencion_nombre
+            or gestion.subatencion.nombre
+        )
+
+        delegacion = gestion.delegacion.nombre
+
+        mes = gestion.fecha.strftime("%m/%Y")
+
+        por_tipo[tipo] = por_tipo.get(tipo, 0) + 1
+        por_subatencion[subatencion] = (
+            por_subatencion.get(subatencion, 0) + 1
+        )
+        por_delegacion[delegacion] = (
+            por_delegacion.get(delegacion, 0) + 1
+        )
+        por_mes[mes] = por_mes.get(mes, 0) + 1
+
     return {
-        "total_gestiones": realizadas.count(),
-        "total_personas": (
-            realizadas.values("usuario_id").distinct().count()
-        ),
-        "por_tipo": list(
-            realizadas.values(
-                "tipo_atencion__nombre"
+        "total_gestiones": len(gestiones),
+
+        "total_personas": len({
+            gestion.usuario_id
+            for gestion in gestiones
+        }),
+
+        "por_tipo": [
+            {
+                "tipo_atencion__nombre": nombre,
+                "total": total,
+            }
+            for nombre, total in sorted(
+                por_tipo.items(),
+                key=lambda x: x[1],
+                reverse=True,
             )
-            .annotate(total=Count("pk"))
-            .order_by("-total")
-        ),
-        "por_subatencion": list(
-            realizadas.values(
-                "subatencion__nombre"
+        ],
+
+        "por_subatencion": [
+            {
+                "subatencion__nombre": nombre,
+                "total": total,
+            }
+            for nombre, total in sorted(
+                por_subatencion.items(),
+                key=lambda x: x[1],
+                reverse=True,
             )
-            .annotate(total=Count("pk"))
-            .order_by("-total")
-        ),
-        "por_delegacion": list(
-            realizadas.values(
-                "delegacion__nombre"
+        ],
+
+        "por_delegacion": [
+            {
+                "delegacion__nombre": nombre,
+                "total": total,
+            }
+            for nombre, total in sorted(
+                por_delegacion.items(),
+                key=lambda x: x[1],
+                reverse=True,
             )
-            .annotate(total=Count("pk"))
-            .order_by("-total")
-        ),
-        "por_mes": list(
-            realizadas.annotate(
-                mes=TruncMonth("fecha")
-            )
-            .values("mes")
-            .annotate(total=Count("pk"))
-            .order_by("mes")
-        ),
+        ],
+
+        "por_mes": [
+            {
+                "mes": mes,
+                "total": total,
+            }
+            for mes, total in sorted(por_mes.items())
+        ],
     }

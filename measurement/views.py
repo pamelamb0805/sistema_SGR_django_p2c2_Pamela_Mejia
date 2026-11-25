@@ -12,24 +12,43 @@ reabrir un período -> solo Administrador; lectura -> Administrador, Coordinador
 """
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.generic import CreateView, DetailView, ListView, UpdateView
 
-from core.decorators import funcionario_requerido
 from core.exceptions import ReglaNegocioError
 from core.mixins import (
     ROLES_CONFIGURACION, ROLES_MEDICION, ROLES_SUPERVISION, AccionPostView, AmbitoDelegacionMixin,
     GuardarMixin, ModoMixin, RolRequeridoMixin, denegar_acceso, es_transversal,
     filtrar_por_ambito, get_funcionario, tiene_rol,
 )
-from organizations.models import Cargo, Delegacion, Funcionario
+from organizations.models import Cargo, Delegacion, Funcionario, ItemMedible
 
-from .forms import AjusteForm, MetaForm, PeriodoForm, ReabrirPeriodoForm
-from .models import Ajuste, Meta as MetaModel, Periodo
+from .forms import (
+    AjusteForm,
+    MetaForm,
+    PeriodoForm,
+    ReabrirPeriodoForm,
+    ReglasCalculoForm,
+)
+from .models import (
+    Ajuste,
+    Meta as MetaModel,
+    MetaVersion,
+    Periodo,
+    ReglaCalculoVersion,
+)
 from .services import CalculoIndicadores, CRUDAjuste, CRUDMeta, CRUDPeriodo
 
+from django.db.models import Q
+from django.http import HttpResponse, JsonResponse
+from openpyxl import Workbook
+from django.core.paginator import Paginator
+from core.pagination import PageSizeMixin, PAGE_SIZE_OPTIONS, get_page_size
+from core.reporting import incorporar_metadatos_informe
+from core.reporting import informe_excel
+from core.decorators import permiso_requerido, funcionario_requerido
 
 class LecturaMixin(RolRequeridoMixin):
     roles_permitidos = ROLES_SUPERVISION
@@ -50,23 +69,122 @@ def _periodo_seleccionado(request):
 # ---------------------------------------------------------------------------
 # Períodos
 # ---------------------------------------------------------------------------
-class PeriodoListView(LecturaMixin, ModoMixin, ListView):
+
+class PeriodoListView(PageSizeMixin, LecturaMixin, ModoMixin, ListView):
+    permisos_permitidos = ('periodos.ver',)
     model = Periodo
     template_name = "measurement/periodo_.html"
     context_object_name = "periodos"
     paginate_by = 10
+    page_size_session_key = "periodo_page_size"
     titulo = "Períodos de medición"
     roles_edicion = ROLES_MEDICION
 
-    def get_context_data(self, **kwargs):
-        contexto = super().get_context_data(**kwargs)
-        contexto["puede_reabrir"] = tiene_rol(self.request.user, *ROLES_CONFIGURACION)
-        contexto["reabrir_form"] = ReabrirPeriodoForm()
-        return contexto
+    def get_queryset(self):
+        qs = super().get_queryset()
+        filtros = self.request.GET
+
+        estado = filtros.get("estado", "").strip()
+        if estado in dict(Periodo.ESTADOS):
+            qs = qs.filter(estado=estado)
+
+        fecha_desde = filtros.get("fecha_desde", "").strip()
+        if fecha_desde:
+            qs = qs.filter(fecha_termino__gte=fecha_desde)
+
+        fecha_hasta = filtros.get("fecha_hasta", "").strip()
+        if fecha_hasta:
+            qs = qs.filter(fecha_inicio__lte=fecha_hasta)
+
+        q = filtros.get("q", "").strip()
+        if q:
+            from datetime import datetime
+
+            fecha_busqueda = None
+            for formato in ("%d/%m/%Y", "%Y-%m-%d"):
+                try:
+                    fecha_busqueda = datetime.strptime(q, formato).date()
+                    break
+                except ValueError:
+                    continue
+
+            if fecha_busqueda:
+                qs = qs.filter(
+                    Q(fecha_inicio=fecha_busqueda)
+                    | Q(fecha_termino=fecha_busqueda)
+                )
+            else:
+                qs = qs.none()
+
+        return qs.order_by("-fecha_inicio")
+
+def get_context_data(self, **kwargs):
+    contexto = super().get_context_data(**kwargs)
+
+    funcionarios = filtrar_por_ambito(
+        Funcionario.objects.filter(
+            estado=Funcionario.ESTADO_ACTIVO
+        ).select_related("cargo", "delegacion"),
+        self.request.user,
+        "delegacion_id",
+    )
+
+    configuracion = []
+
+    for funcionario in funcionarios:
+        suma = CRUDMeta.suma_ponderaciones(
+            funcionario,
+            self.object,
+        )
+
+        faltante = max(0, 100 - suma)
+        excedente = max(0, suma - 100)
+
+        if suma == 100:
+            estado = "Completa"
+        elif suma < 100:
+            estado = "Pendiente"
+        else:
+            estado = "Excedida"
+
+        configuracion.append({
+            "funcionario": funcionario,
+            "suma": suma,
+            "faltante": faltante,
+            "excedente": excedente,
+            "completa": estado == "Completa",
+            "estado": estado,
+            "metas": funcionario.metas.filter(
+                periodo=self.object
+            ).count(),
+        })
+
+    contexto.update(
+        titulo=f"Período {self.object}",
+        configuracion=configuracion,
+        total_metas=self.object.metas.count(),
+        puede_reabrir=tiene_rol(
+            self.request.user,
+            *ROLES_CONFIGURACION,
+        ),
+        puede_configurar_reglas=tiene_rol(
+            self.request.user,
+            *ROLES_CONFIGURACION,
+        ),
+        puede_editar=tiene_rol(
+            self.request.user,
+            *ROLES_MEDICION,
+        ),
+        reabrir_form=ReabrirPeriodoForm(),
+    )
+
+    return contexto
 
 
 class PeriodoDetailView(LecturaMixin, ModoMixin, DetailView):
-    """Resumen del período y estado de la configuración (RN-001) de cada funcionario."""
+    """Resumen del período y estado de ponderaciones por funcionario."""
+    permisos_permitidos = ('periodos.ver',)
+
     model = Periodo
     template_name = "measurement/periodo_.html"
     context_object_name = "periodo"
@@ -75,22 +193,77 @@ class PeriodoDetailView(LecturaMixin, ModoMixin, DetailView):
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
+
         funcionarios = filtrar_por_ambito(
-            Funcionario.objects.filter(estado=Funcionario.ESTADO_ACTIVO).select_related("cargo", "delegacion"),
-            self.request.user, "delegacion_id")
+            Funcionario.objects.filter(
+                estado=Funcionario.ESTADO_ACTIVO
+            ).select_related(
+                "cargo",
+                "delegacion",
+            ),
+            self.request.user,
+            "delegacion_id",
+        )
+
         configuracion = []
-        for f in funcionarios:
-            suma = CRUDMeta.suma_ponderaciones(f, self.object)
-            configuracion.append({"funcionario": f, "suma": suma, "completa": suma == 100,
-                                  "metas": f.metas.filter(periodo=self.object).count()})
+
+        for funcionario in funcionarios:
+            suma = CRUDMeta.suma_ponderaciones(
+                funcionario,
+                self.object,
+            )
+
+            faltante = max(0, 100 - suma)
+            excedente = max(0, suma - 100)
+
+            if suma == 100:
+                estado = "Completa"
+            elif suma < 100:
+                estado = "Pendiente"
+            else:
+                estado = "Excedida"
+
+            configuracion.append({
+                "funcionario": funcionario,
+                "suma": suma,
+                "faltante": faltante,
+                "excedente": excedente,
+                "completa": estado == "Completa",
+                "estado": estado,
+                "metas": funcionario.metas.filter(
+                    periodo=self.object
+                ).count(),
+            })
+
         contexto.update(
-            titulo=f"Período {self.object}", configuracion=configuracion,
+            titulo=f"Período {self.object}",
+            configuracion=configuracion,
             total_metas=self.object.metas.count(),
-            puede_reabrir=tiene_rol(self.request.user, *ROLES_CONFIGURACION),
+
+            puede_configurar_reglas=tiene_rol(
+                self.request.user,
+                *ROLES_CONFIGURACION,
+            ),
+
+            puede_ver_historial_reglas=tiene_rol(
+                self.request.user,
+                *ROLES_SUPERVISION,
+            ),
+
+            puede_editar=tiene_rol(
+                self.request.user,
+                *ROLES_MEDICION,
+            ),
+
+            puede_reabrir=tiene_rol(
+                self.request.user,
+                *ROLES_CONFIGURACION,
+            ),
+
             reabrir_form=ReabrirPeriodoForm(),
         )
-        return contexto
 
+        return contexto
 
 class PeriodoFormMixin(MedicionMixin, ModoMixin, GuardarMixin):
     model = Periodo
@@ -102,6 +275,7 @@ class PeriodoFormMixin(MedicionMixin, ModoMixin, GuardarMixin):
 
 
 class PeriodoCreateView(PeriodoFormMixin, CreateView):
+    permisos_permitidos = ('periodos.editar',)
     titulo = "Nuevo período"
     mensaje_exito = "Período creado. Los días computables se calcularon automáticamente."
 
@@ -110,6 +284,7 @@ class PeriodoCreateView(PeriodoFormMixin, CreateView):
 
 
 class PeriodoUpdateView(PeriodoFormMixin, UpdateView):
+    permisos_permitidos = ('periodos.editar',)
     titulo = "Editar período"
     mensaje_exito = "Período actualizado; los indicadores se recalcularon."
 
@@ -118,6 +293,7 @@ class PeriodoUpdateView(PeriodoFormMixin, UpdateView):
 
 
 class PeriodoCerrarView(AccionPostView):
+    permisos_permitidos = ('periodos.cerrar',)
     roles_permitidos = ROLES_MEDICION
     redirect_name = "measurement:periodo_list"
 
@@ -130,6 +306,7 @@ class PeriodoCerrarView(AccionPostView):
 
 
 class PeriodoReabrirView(AccionPostView):
+    permisos_permitidos = ('periodos.reabrir',)
     roles_permitidos = ROLES_CONFIGURACION        # solo Administrador (RN-013)
     redirect_name = "measurement:periodo_list"
 
@@ -141,7 +318,120 @@ class PeriodoReabrirView(AccionPostView):
         return f"Período {objeto} reabierto. Quedó registrado en la auditoría."
 
 
+@permiso_requerido("periodos.editar")
+def configurar_reglas_periodo(request, pk):
+    """
+    Permite configurar reglas de cálculo para un período abierto
+    y conservar sus versiones históricas.
+    """
+    periodo = get_object_or_404(Periodo, pk=pk)
+
+    if not periodo.abierto:
+        messages.error(
+            request,
+            "No se pueden modificar las reglas de un período cerrado.",
+        )
+        return redirect(
+            "measurement:periodo_detail",
+            pk=periodo.pk,
+        )
+
+    version_actual = (
+        ReglaCalculoVersion.objects
+        .filter(periodo=periodo)
+        .order_by("-numero_version")
+        .first()
+    )
+
+    configuracion = (
+        version_actual.datos
+        if version_actual
+        else CRUDPeriodo._datos_reglas_actuales()
+    )
+
+    if request.method == "POST":
+        form = ReglasCalculoForm(request.POST)
+
+        if form.is_valid():
+            try:
+                nueva_version = CRUDPeriodo.actualizar_reglas_periodo(
+                    periodo,
+                    form.cleaned_data,
+                    request.user,
+                )
+
+                messages.success(
+                    request,
+                    (
+                        "Reglas actualizadas correctamente. "
+                        f"Se registró la versión "
+                        f"{nueva_version.numero_version}."
+                    ),
+                )
+
+                return redirect(
+                    "measurement:periodo_detail",
+                    pk=periodo.pk,
+                )
+
+            except ReglaNegocioError as exc:
+                messages.error(request, str(exc))
+    else:
+        form = ReglasCalculoForm(
+            initial={
+                "tope_cumplimiento": configuracion.get(
+                    "tope_cumplimiento",
+                    150,
+                ),
+                "umbral_colectivo": configuracion.get(
+                    "umbral_colectivo",
+                    60,
+                ),
+                "umbral_ambar": configuracion.get(
+                    "umbral_ambar",
+                    60,
+                ),
+            }
+        )
+
+    return render(
+        request,
+        "measurement/reglas_periodo.html",
+        {
+            "titulo": "Configurar reglas de cálculo",
+            "periodo": periodo,
+            "form": form,
+            "version_actual": version_actual,
+        },
+    )
+@permiso_requerido("periodos.ver")
+def historial_reglas_periodo(request, pk):
+    """
+    Consulta el historial de versiones de reglas de cálculo
+    de un período, sin permitir modificar versiones anteriores.
+    """
+    periodo = get_object_or_404(Periodo, pk=pk)
+
+    versiones = (
+        ReglaCalculoVersion.objects
+        .filter(periodo=periodo)
+        .select_related("creado_por")
+        .order_by("-numero_version")
+    )
+
+    return render(
+        request,
+        "measurement/reglas_historial.html",
+        {
+            "titulo": "Historial de reglas de cálculo",
+            "periodo": periodo,
+            "versiones": versiones,
+            "total_versiones": versiones.count(),
+        },
+    )
+
 class PeriodoRecalcularView(AccionPostView):
+    permisos_permitidos = ('periodos.editar',)
     roles_permitidos = ROLES_MEDICION
     redirect_name = "measurement:periodo_list"
 
@@ -150,18 +440,86 @@ class PeriodoRecalcularView(AccionPostView):
 
     def accion(self, request, objeto):
         if not objeto.abierto:
-            raise ReglaNegocioError("El período está cerrado: sus resultados no se recalculan.")
+            raise ReglaNegocioError(
+                "El período está cerrado: sus resultados no se recalculan."
+            )
+
         cantidad = CalculoIndicadores.recalcular_periodo(objeto)
+
         return f"Se recalcularon {cantidad} indicadores."
 
     def get_redirect(self, objeto):
-        return reverse("measurement:periodo_detail", args=[objeto.pk])
+        return reverse(
+            "measurement:periodo_detail",
+            args=[objeto.pk],
+        )
 
 
+@permiso_requerido("items.ver", respuesta_json=True)
+def items_vigentes_funcionario(request, funcionario_id):
+    """
+    Devuelve exclusivamente los ítems vigentes del cargo
+    del funcionario seleccionado y dentro del ámbito autorizado.
+    """
+    funcionario = (
+        filtrar_por_ambito(
+            Funcionario.objects.select_related(
+                "cargo",
+                "delegacion",
+            ),
+            request.user,
+            "delegacion_id",
+        )
+        .filter(
+            pk=funcionario_id,
+            estado=Funcionario.ESTADO_ACTIVO,
+        )
+        .first()
+    )
+
+    if funcionario is None:
+        return JsonResponse(
+            {
+                "error": (
+                    "Funcionario no encontrado o fuera de tu ámbito."
+                )
+            },
+            status=404,
+        )
+
+    items = (
+        ItemMedible.objects.filter(
+            cargo_id=funcionario.cargo_id,
+            vigencia=True,
+        )
+        .order_by("nombre_item")
+    )
+
+    return JsonResponse({
+        "cargo": funcionario.cargo.nombre_cargo,
+        "items": [
+            {
+                "id": item.pk,
+                "codigo": item.codigo,
+                "nombre": item.nombre_item,
+                "tipo": item.tipo,
+            }
+            for item in items
+        ],
+    })
 # ---------------------------------------------------------------------------
 # Metas
 # ---------------------------------------------------------------------------
-class MetaListView(LecturaMixin, AmbitoDelegacionMixin, ModoMixin, ListView):
+
+
+
+class MetaListView(
+    LecturaMixin,
+    AmbitoDelegacionMixin,
+    ModoMixin,
+    ListView,
+):
+    permisos_permitidos = ('metas.ver',)
     model = MetaModel
     template_name = "measurement/meta_.html"
     context_object_name = "metas"
@@ -171,23 +529,120 @@ class MetaListView(LecturaMixin, AmbitoDelegacionMixin, ModoMixin, ListView):
     roles_edicion = ROLES_MEDICION
 
     def get_queryset(self):
-        qs = super().get_queryset().select_related("periodo", "funcionario", "item", "cargo")
-        g = self.request.GET
-        for campo, filtro in (("periodo", "periodo_id"), ("funcionario", "funcionario_id"),
-                              ("cargo", "cargo_id"), ("item", "item_id")):
-            if g.get(campo):
-                qs = qs.filter(**{filtro: g[campo]})
-        return qs
+        qs = super().get_queryset().select_related(
+            "periodo",
+            "funcionario",
+            "funcionario__delegacion",
+            "item",
+            "cargo",
+        )
+
+        filtros = self.request.GET
+
+        for campo, filtro in (
+            ("periodo", "periodo_id"),
+            ("funcionario", "funcionario_id"),
+            ("cargo", "cargo_id"),
+            ("item", "item_id"),
+        ):
+            valor = filtros.get(campo, "").strip()
+
+            if valor.isdigit():
+                qs = qs.filter(**{filtro: valor})
+
+        return qs.order_by(
+            "periodo",
+            "funcionario__nombre",
+            "item__nombre_item",
+        )
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
-        g = self.request.GET
-        contexto.update(
-            periodos=Periodo.objects.all(), cargos=Cargo.objects.all(),
-            funcionarios=filtrar_por_ambito(Funcionario.objects.all(), self.request.user, "delegacion_id"),
-            periodo_sel=g.get("periodo", ""), funcionario_sel=g.get("funcionario", ""),
-            cargo_sel=g.get("cargo", ""),
+        filtros = self.request.GET
+
+        periodo_sel = filtros.get("periodo", "").strip()
+        funcionario_sel = filtros.get("funcionario", "").strip()
+        cargo_sel = filtros.get("cargo", "").strip()
+        item_sel = filtros.get("item", "").strip()
+
+        # Solo funcionarios dentro del ámbito autorizado.
+        funcionarios_autorizados = filtrar_por_ambito(
+            Funcionario.objects.filter(
+                estado=Funcionario.ESTADO_ACTIVO,
+            ).select_related(
+                "cargo",
+                "delegacion",
+            ),
+            self.request.user,
+            "delegacion_id",
         )
+
+        # Los cargos disponibles se limitan a los de funcionarios
+        # que el usuario está autorizado a consultar.
+        cargos_autorizados = Cargo.objects.filter(
+            pk__in=funcionarios_autorizados.values_list(
+                "cargo_id",
+                flat=True,
+            )
+        ).distinct()
+
+        # Los ítems disponibles también respetan esos cargos.
+        items_autorizados = ItemMedible.objects.filter(
+            cargo__in=cargos_autorizados,
+            vigencia=True,
+        ).select_related(
+            "cargo",
+        ).order_by(
+            "cargo__nombre_cargo",
+            "nombre_item",
+        )
+
+        contexto.update(
+            periodos=Periodo.objects.all(),
+            cargos=cargos_autorizados,
+            funcionarios=funcionarios_autorizados,
+            items=items_autorizados,
+            periodo_sel=periodo_sel,
+            funcionario_sel=funcionario_sel,
+            cargo_sel=cargo_sel,
+            item_sel=item_sel,
+            resumen_ponderaciones=[],
+            cargo_resumen=None,
+            periodo_resumen=None,
+        )
+
+        # El resumen se calcula solamente cuando se seleccionan
+        # un cargo y un período válidos dentro del ámbito autorizado.
+        if cargo_sel.isdigit() and periodo_sel.isdigit():
+            cargo = cargos_autorizados.filter(
+                pk=cargo_sel,
+            ).first()
+
+            periodo = Periodo.objects.filter(
+                pk=periodo_sel,
+            ).first()
+
+            if cargo and periodo:
+                funcionarios_resumen = funcionarios_autorizados.filter(
+                    cargo=cargo,
+                )
+
+                if funcionario_sel.isdigit():
+                    funcionarios_resumen = funcionarios_resumen.filter(
+                        pk=funcionario_sel,
+                    )
+
+                contexto["resumen_ponderaciones"] = (
+                    CRUDMeta.resumen_configuracion_cargo(
+                        cargo,
+                        periodo,
+                        funcionarios_resumen,
+                    )
+                )
+
+                contexto["cargo_resumen"] = cargo
+                contexto["periodo_resumen"] = periodo
+
         return contexto
 
 
@@ -201,6 +656,7 @@ class MetaFormMixin(MedicionMixin, ModoMixin, GuardarMixin):
 
 
 class MetaCreateView(MetaFormMixin, CreateView):
+    permisos_permitidos = ('metas.editar',)
     titulo = "Nueva meta"
     mensaje_exito = "Meta creada."
 
@@ -219,6 +675,7 @@ class MetaCreateView(MetaFormMixin, CreateView):
 
 
 class MetaUpdateView(MetaFormMixin, UpdateView):
+    permisos_permitidos = ('metas.editar',)
     titulo = "Editar meta"
     mensaje_exito = "Meta actualizada y versionada."
 
@@ -227,41 +684,126 @@ class MetaUpdateView(MetaFormMixin, UpdateView):
 
 
 class MetaDeleteView(AccionPostView):
-    roles_permitidos = ROLES_MEDICION
+    permisos_permitidos = ("metas.eliminar",)
+    roles_permitidos = ()
     redirect_name = "measurement:meta_list"
 
     def get_objeto(self, pk):
-        return get_object_or_404(MetaModel, pk=pk)
+        return get_object_or_404(
+            MetaModel,
+            pk=pk,
+        )
 
     def accion(self, request, objeto):
-        CRUDMeta.eliminar_meta(objeto, request.user)
+        CRUDMeta.eliminar_meta(
+            objeto,
+            request.user,
+        )
+
         return "Meta eliminada."
+# ---------------------------------------------------------------------------
+# Historial de versiones de metas (RF-038)
+# ---------------------------------------------------------------------------
 
+@permiso_requerido("metas.ver")
+def meta_historial(request, pk):
+    """
+    Muestra el historial de parámetros de una meta,
+    limitado al ámbito de delegación autorizado.
+    """
+    metas = filtrar_por_ambito(
+        MetaModel.objects.select_related(
+            "funcionario",
+            "funcionario__delegacion",
+            "item",
+            "periodo",
+            "cargo",
+        ),
+        request.user,
+        "funcionario__delegacion_id",
+    )
 
+    meta = get_object_or_404(metas, pk=pk)
+
+    versiones = (
+        MetaVersion.objects
+        .filter(objeto_id=meta.pk)
+        .select_related("creado_por")
+        .order_by("-numero_version")
+    )
+
+    return render(
+        request,
+        "measurement/meta_historial.html",
+        {
+            "titulo": "Historial de versiones",
+            "meta": meta,
+            "versiones": versiones,
+            "total_versiones": versiones.count(),
+        },
+    )
 # ---------------------------------------------------------------------------
 # Ajustes (incentivos y penalizaciones)
 # ---------------------------------------------------------------------------
-class AjusteListView(LecturaMixin, AmbitoDelegacionMixin, ModoMixin, ListView):
+
+class AjusteListView(PageSizeMixin, LecturaMixin, AmbitoDelegacionMixin, ModoMixin, ListView):
+    permisos_permitidos = ('ajustes.ver',)
     model = Ajuste
     template_name = "measurement/ajuste_.html"
     context_object_name = "ajustes"
     ambito_campo = "funcionario__delegacion_id"
     paginate_by = 15
+    page_size_session_key = "ajuste_page_size"
     titulo = "Incentivos y penalizaciones"
     roles_edicion = ROLES_MEDICION
 
     def get_queryset(self):
-        qs = super().get_queryset().select_related("periodo", "funcionario", "meta")
-        periodo = self.request.GET.get("periodo")
-        return qs.filter(periodo_id=periodo) if periodo else qs
+        qs = super().get_queryset().select_related(
+            "periodo", "funcionario", "meta", "meta__item"
+        )
+        filtros = self.request.GET
+
+        periodo = filtros.get("periodo", "").strip()
+        if periodo:
+            qs = qs.filter(periodo_id=periodo)
+
+        funcionario = filtros.get("funcionario", "").strip()
+        if funcionario:
+            qs = qs.filter(funcionario_id=funcionario)
+
+        efecto = filtros.get("efecto", "").strip()
+        if efecto in dict(Ajuste.EFECTOS):
+            qs = qs.filter(efecto=efecto)
+
+        q = filtros.get("q", "").strip()
+        if q:
+            qs = qs.filter(
+                Q(motivo__icontains=q)
+                | Q(funcionario__nombre__icontains=q)
+                | Q(meta__item__nombre_item__icontains=q)
+            )
+
+        return qs.order_by("-id_ajuste")
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
-        contexto.update(periodos=Periodo.objects.all(), periodo_sel=self.request.GET.get("periodo", ""))
+        filtros = self.request.GET
+
+        contexto.update(
+            periodos=Periodo.objects.all(),
+            funcionarios=Funcionario.objects.filter(
+                pk__in=super().get_queryset().values("funcionario_id")
+            ).distinct().order_by("nombre"),
+            periodo_sel=filtros.get("periodo", ""),
+            funcionario_sel=filtros.get("funcionario", ""),
+            efecto_sel=filtros.get("efecto", ""),
+            q=filtros.get("q", ""),
+            total_resultados=self.get_queryset().count(),
+        )
         return contexto
 
-
 class AjusteCreateView(MedicionMixin, ModoMixin, GuardarMixin, CreateView):
+    permisos_permitidos = ('ajustes.editar',)
     model = Ajuste
     form_class = AjusteForm
     template_name = "measurement/ajuste_.html"
@@ -274,7 +816,43 @@ class AjusteCreateView(MedicionMixin, ModoMixin, GuardarMixin, CreateView):
         self.object = CRUDAjuste.crear_ajuste(form.instance, self.request.user)
 
 
+class AjusteUpdateView(MedicionMixin, ModoMixin, GuardarMixin, UpdateView):
+    permisos_permitidos = ('ajustes.editar',)
+    model = Ajuste
+    form_class = AjusteForm
+    template_name = "measurement/ajuste_.html"
+    modo, titulo = "form", "Editar ajuste"
+    roles_edicion = ROLES_MEDICION
+    success_url_name = "measurement:ajuste_list"
+    mensaje_exito = "Ajuste actualizado."
+
+    def get_queryset(self):
+        return filtrar_por_ambito(
+            Ajuste.objects.select_related("funcionario", "periodo", "meta"),
+            self.request.user,
+            "funcionario__delegacion_id"
+        )
+
+    def dispatch(self, request, *args, **kwargs):
+        self.object = self.get_object()
+
+        if not self.object.periodo.abierto:
+            messages.error(
+                request,
+                "No se pueden modificar ajustes de períodos cerrados."
+            )
+            return redirect("measurement:ajuste_list")
+
+        return super().dispatch(request, *args, **kwargs)
+
+    def guardar(self, form):
+        self.object = CRUDAjuste.modificar_ajuste(
+            form.instance,
+            self.request.user
+        )
+
 class AjusteDeleteView(AccionPostView):
+    permisos_permitidos = ('ajustes.editar',)
     roles_permitidos = ROLES_MEDICION
     redirect_name = "measurement:ajuste_list"
 
@@ -289,11 +867,189 @@ class AjusteDeleteView(AccionPostView):
 # ---------------------------------------------------------------------------
 # Paneles de desempeño y semáforo
 # ---------------------------------------------------------------------------
+
+
 def _contexto_panel(request, funcionario, modo, titulo):
+    """
+    Construye el tablero personal o supervisor de desempeño.
+
+    RF-028:
+    - Filtrado por período.
+    - Metas, avance, cumplimiento y ponderación.
+    - Semáforo y estado de evidencias.
+    - Resumen y detalle de compromisos.
+    - Trazabilidad de las actividades que originan el avance.
+    """
+    from collections import defaultdict
+    from django.db.models import Count
+    from activities.models import Actividad, Evidencia
+    from agenda.models import Compromiso
+
     periodo = _periodo_seleccionado(request)
-    resumen = CalculoIndicadores.resumen_funcionario(funcionario, periodo) if periodo else None
-    return {"modo": modo, "titulo": titulo, "funcionario": funcionario, "periodo": periodo,
-            "periodos": Periodo.objects.all(), "resumen": resumen, "hoy": timezone.localdate()}
+
+    resumen = (
+        CalculoIndicadores.resumen_funcionario(funcionario, periodo)
+        if periodo
+        else None
+    )
+
+    evidencias_resumen = {
+        "total": 0,
+        "Pendiente": 0,
+        "Aprobada": 0,
+        "Rechazada": 0,
+        "Corrección": 0,
+    }
+
+    compromisos_resumen = {
+        "total": 0,
+        "Ingresado": 0,
+        "Pendiente": 0,
+        "En_proceso": 0,
+        "Realizado": 0,
+    }
+
+    compromisos = Compromiso.objects.none()
+
+    if periodo:
+        evidencias = (
+            Evidencia.objects
+            .filter(
+                actividad__funcionario=funcionario,
+                actividad__periodo=periodo,
+            )
+            .values("estado_revision")
+            .annotate(total=Count("pk"))
+        )
+
+        for registro in evidencias:
+            estado = registro["estado_revision"]
+            cantidad = registro["total"]
+
+            if estado in evidencias_resumen:
+                evidencias_resumen[estado] = cantidad
+                evidencias_resumen["total"] += cantidad
+
+        compromisos = (
+            Compromiso.objects
+            .filter(
+                funcionario=funcionario,
+                periodo=periodo,
+            )
+            .select_related(
+                "funcionario",
+                "delegacion",
+                "item_medible",
+                "periodo",
+            )
+            .prefetch_related("historial")
+            .order_by(
+                "fecha_comprometida",
+                "id_compromiso",
+            )
+        )
+
+        for compromiso in compromisos:
+            compromisos_resumen["total"] += 1
+
+            if compromiso.estado == Compromiso.ESTADO_INGRESADO:
+                compromisos_resumen["Ingresado"] += 1
+            elif compromiso.estado == Compromiso.ESTADO_PENDIENTE:
+                compromisos_resumen["Pendiente"] += 1
+            elif compromiso.estado == Compromiso.ESTADO_EN_PROCESO:
+                compromisos_resumen["En_proceso"] += 1
+            elif compromiso.estado == Compromiso.ESTADO_REALIZADO:
+                compromisos_resumen["Realizado"] += 1
+
+        if resumen:
+            for fila in resumen["filas"]:
+                item_id = fila["meta"].item_id
+
+                # Evidencias asociadas al ítem y período.
+                conteos = defaultdict(int)
+
+                evidencias_item = (
+                    Evidencia.objects
+                    .filter(
+                        actividad__funcionario=funcionario,
+                        actividad__periodo=periodo,
+                        actividad__item_id=item_id,
+                    )
+                    .values("estado_revision")
+                    .annotate(total=Count("pk"))
+                )
+
+                for registro in evidencias_item:
+                    conteos[registro["estado_revision"]] = (
+                        registro["total"]
+                    )
+
+                fila["evidencias"] = {
+                    "total": sum(conteos.values()),
+                    "Pendiente": conteos["Pendiente"],
+                    "Aprobada": conteos["Aprobada"],
+                    "Rechazada": conteos["Rechazada"],
+                    "Corrección": conteos["Corrección"],
+                }
+
+                # Actividades que originan el avance del ítem.
+                # Solo las Validada aportan al cálculo del avance.
+                fila["actividades_origen"] = list(
+                    Actividad.objects
+                    .filter(
+                        funcionario=funcionario,
+                        periodo=periodo,
+                        item_id=item_id,
+                    )
+                    .prefetch_related("evidencias")
+                    .order_by("-fecha", "-id_actividad")
+                )
+
+                fila["actividades_validas"] = sum(
+                    1
+                    for actividad in fila["actividades_origen"]
+                    if actividad.estado == Actividad.ESTADO_VALIDADA
+                )
+
+                # Compromisos vinculados al mismo ítem.
+                fila["compromisos"] = list(
+                    compromisos.filter(
+                        item_medible_id=item_id,
+                    )
+                )
+
+                fila["compromisos_resumen"] = {
+                    "total": len(fila["compromisos"]),
+                    "Ingresado": sum(
+                        1 for c in fila["compromisos"]
+                        if c.estado == Compromiso.ESTADO_INGRESADO
+                    ),
+                    "Pendiente": sum(
+                        1 for c in fila["compromisos"]
+                        if c.estado == Compromiso.ESTADO_PENDIENTE
+                    ),
+                    "En_proceso": sum(
+                        1 for c in fila["compromisos"]
+                        if c.estado == Compromiso.ESTADO_EN_PROCESO
+                    ),
+                    "Realizado": sum(
+                        1 for c in fila["compromisos"]
+                        if c.estado == Compromiso.ESTADO_REALIZADO
+                    ),
+                }
+
+    return {
+        "modo": modo,
+        "titulo": titulo,
+        "funcionario": funcionario,
+        "periodo": periodo,
+        "periodos": Periodo.objects.all().order_by("-fecha_inicio"),
+        "resumen": resumen,
+        "evidencias_resumen": evidencias_resumen,
+        "compromisos": compromisos,
+        "compromisos_resumen": compromisos_resumen,
+        "hoy": timezone.localdate(),
+    }
 
 
 @login_required
@@ -305,33 +1061,623 @@ def mi_desempeno(request):
                   _contexto_panel(request, funcionario, "personal", "Mi desempeño"))
 
 
-@login_required
+@permiso_requerido("indicadores.ver")
 def desempeno_funcionario(request, pk):
-    """Panel de un funcionario para supervisión, dentro del ámbito del usuario (CA-07)."""
-    if not tiene_rol(request.user, *ROLES_SUPERVISION):
-        return denegar_acceso(request)
-    qs = filtrar_por_ambito(Funcionario.objects.select_related("cargo", "delegacion"), request.user,
-                            "delegacion_id")
+    """
+    Panel de un funcionario para supervisión,
+    respetando el ámbito de delegación autorizado.
+    """
+    qs = filtrar_por_ambito(
+        Funcionario.objects.select_related(
+            "cargo",
+            "delegacion",
+        ),
+        request.user,
+        "delegacion_id",
+    )
+
     funcionario = get_object_or_404(qs, pk=pk)
-    return render(request, "measurement/indicador_.html",
-                  _contexto_panel(request, funcionario, "funcionario", f"Desempeño: {funcionario.nombre}"))
 
-
-@login_required
+    return render(
+        request,
+        "measurement/indicador_.html",
+        _contexto_panel(
+            request,
+            funcionario,
+            "funcionario",
+            f"Desempeño: {funcionario.nombre}",
+        ),
+    )
+@permiso_requerido("indicadores.ver")
 def semaforo(request):
     """Tablero de delegación (RF-029, HU-08, HU-18, HU-21)."""
-    if not tiene_rol(request.user, *ROLES_SUPERVISION):
-        return denegar_acceso(request)
     periodo = _periodo_seleccionado(request)
+
     funcionarios = filtrar_por_ambito(
-        Funcionario.objects.filter(estado=Funcionario.ESTADO_ACTIVO).select_related("cargo", "delegacion"),
-        request.user, "delegacion_id")
+        Funcionario.objects.filter(
+            estado=Funcionario.ESTADO_ACTIVO
+        ).select_related(
+            "cargo",
+            "delegacion",
+        ),
+        request.user,
+        "delegacion_id",
+    )
+
     delegacion_sel = request.GET.get("delegacion", "")
+
     if delegacion_sel and es_transversal(request.user):
-        funcionarios = funcionarios.filter(delegacion_id=delegacion_sel)
-    resumen = CalculoIndicadores.resumen_delegacion(funcionarios, periodo) if periodo else None
-    return render(request, "measurement/semaforo.html", {
-        "titulo": "Semáforo de delegación", "periodo": periodo, "periodos": Periodo.objects.all(),
-        "resumen": resumen, "delegaciones": Delegacion.objects.all() if es_transversal(request.user) else [],
-        "delegacion_sel": delegacion_sel, "hoy": timezone.localdate(),
-    })
+        funcionarios = funcionarios.filter(
+            delegacion_id=delegacion_sel
+        )
+
+    resumen = (
+        CalculoIndicadores.resumen_delegacion(
+            funcionarios,
+            periodo,
+        )
+        if periodo
+        else None
+    )
+
+    page_size = get_page_size(
+        request,
+        "semaforo_page_size",
+    )
+
+    page_obj = None
+
+    if resumen:
+        paginator = Paginator(
+            resumen["filas"],
+            page_size,
+        )
+        page_obj = paginator.get_page(
+            request.GET.get("page")
+        )
+        resumen["filas"] = page_obj.object_list
+
+    return render(
+        request,
+        "measurement/semaforo.html",
+        {
+            "titulo": "Semáforo de delegación",
+            "periodo": periodo,
+            "periodos": Periodo.objects.all(),
+            "resumen": resumen,
+            "delegaciones": (
+                Delegacion.objects.all()
+                if es_transversal(request.user)
+                else []
+            ),
+            "delegacion_sel": delegacion_sel,
+            "hoy": timezone.localdate(),
+            "page_obj": page_obj,
+            "page_size": page_size,
+            "page_size_options": PAGE_SIZE_OPTIONS,
+        },
+    )
+
+@permiso_requerido("indicadores.ver")
+def vista_global_cargos(request):
+    """
+    RF-031: vista global del desempeño agrupado por cargo.
+
+    Consolida funcionarios, metas, resultados y fechas relevantes,
+    respetando el ámbito de acceso del usuario.
+    """
+    periodo = _periodo_seleccionado(request)
+
+    funcionarios = filtrar_por_ambito(
+        Funcionario.objects.filter(
+            estado=Funcionario.ESTADO_ACTIVO
+        ).select_related(
+            "cargo",
+            "delegacion",
+        ),
+        request.user,
+        "delegacion_id",
+    )
+
+    delegacion_sel = request.GET.get(
+        "delegacion",
+        "",
+    ).strip()
+
+    cargo_sel = request.GET.get(
+        "cargo",
+        "",
+    ).strip()
+
+    if delegacion_sel.isdigit() and es_transversal(request.user):
+        funcionarios = funcionarios.filter(
+            delegacion_id=delegacion_sel
+        )
+
+    if cargo_sel.isdigit():
+        funcionarios = funcionarios.filter(
+            cargo_id=cargo_sel
+        )
+
+    cargos_resultado = []
+
+    cargos = Cargo.objects.all().order_by("nombre_cargo")
+
+    if cargo_sel.isdigit():
+        cargos = cargos.filter(pk=cargo_sel)
+
+    for cargo in cargos:
+        funcionarios_cargo = funcionarios.filter(
+            cargo_id=cargo.pk
+        ).order_by("nombre")
+
+        if not funcionarios_cargo.exists():
+            continue
+
+        resumen = (
+            CalculoIndicadores.resumen_delegacion(
+                funcionarios_cargo,
+                periodo,
+            )
+            if periodo
+            else None
+        )
+
+        filas_funcionarios = (
+            resumen["filas"]
+            if resumen
+            else []
+        )
+
+        total_metas = 0
+
+        if periodo:
+            for fila in filas_funcionarios:
+                cantidad_metas = MetaModel.objects.filter(
+                    funcionario=fila["funcionario"],
+                    periodo=periodo,
+                ).count()
+
+                fila["cantidad_metas"] = cantidad_metas
+                total_metas += cantidad_metas
+
+        cargos_resultado.append({
+            "cargo": cargo,
+            "funcionarios": filas_funcionarios,
+            "total_funcionarios": funcionarios_cargo.count(),
+            "total_metas": total_metas,
+            "promedio_resultado": (
+                resumen["promedio"]
+                if resumen
+                else None
+            ),
+            "resultado_global": (
+                resumen["resultado_global"]
+                if resumen
+                else None
+            ),
+            "total_registros_validos": (
+                resumen["total_registros_validos"]
+                if resumen
+                else 0
+            ),
+            "fecha_inicio_periodo": (
+                periodo.fecha_inicio
+                if periodo
+                else None
+            ),
+            "fecha_termino_periodo": (
+                periodo.fecha_termino
+                if periodo
+                else None
+            ),
+        })
+
+    return render(
+        request,
+        "measurement/vista_global_cargos.html",
+        {
+            "titulo": "Vista global por cargos",
+            "periodo": periodo,
+            "periodos": Periodo.objects.all(),
+            "cargos_resultado": cargos_resultado,
+            "cargos": Cargo.objects.all().order_by(
+                "nombre_cargo"
+            ),
+            "delegaciones": (
+                Delegacion.objects.all()
+                if es_transversal(request.user)
+                else []
+            ),
+            "delegacion_sel": delegacion_sel,
+            "cargo_sel": cargo_sel,
+            "hoy": timezone.localdate(),
+        },
+    )
+
+@permiso_requerido("reportes.exportar")
+@informe_excel("Informe de metas")
+def exportar_metas_excel(request):
+    """Exporta metas respetando el nombre histórico del ítem en períodos cerrados."""
+
+    queryset = filtrar_por_ambito(
+        MetaModel.objects.select_related(
+            "periodo",
+            "funcionario",
+            "funcionario__delegacion",
+            "cargo",
+            "item",
+        ),
+        request.user,
+        "funcionario__delegacion_id",
+    )
+
+    g = request.GET
+
+    for campo, filtro in (
+        ("periodo", "periodo_id"),
+        ("funcionario", "funcionario_id"),
+        ("cargo", "cargo_id"),
+        ("item", "item_id"),
+    ):
+        if g.get(campo):
+            queryset = queryset.filter(**{filtro: g[campo]})
+
+    q = g.get("q", "").strip()
+    if q:
+        queryset = queryset.filter(
+            Q(item__nombre_item__icontains=q)
+            | Q(funcionario__nombre__icontains=q)
+            | Q(cargo__nombre_cargo__icontains=q)
+        )
+
+    libro = Workbook()
+    hoja = libro.active
+    hoja.title = "Metas"
+
+    hoja.append([
+        "Período",
+        "Funcionario",
+        "Delegación",
+        "Cargo",
+        "Ítem medible",
+        "Objetivo",
+        "Unidad",
+        "Ponderación (%)",
+        "Umbral mínimo (%)",
+        "Máximo computable (%)",
+    ])
+
+    for meta in queryset.order_by(
+        "periodo",
+        "funcionario__nombre",
+        "item__nombre_item",
+    ):
+        if meta.periodo.abierto:
+            datos_historicos = CRUDMeta._datos_version(meta)
+        else:
+            datos_historicos = CalculoIndicadores._datos_meta_historicos(
+                meta,
+                meta.periodo.fecha_termino,
+            )
+
+        nombre_item = datos_historicos.get(
+            "item_nombre",
+            meta.item.nombre_item,
+        )
+
+        hoja.append([
+            str(meta.periodo),
+            meta.funcionario.nombre,
+            meta.funcionario.delegacion.nombre,
+            meta.cargo.nombre_cargo,
+            nombre_item,
+            float(meta.valor_objetivo),
+            meta.unidad,
+            float(meta.ponderador),
+            float(meta.umbral_minimo),
+            float(meta.maximo_computable),
+        ])
+
+    respuesta = HttpResponse(
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        )
+    )
+    respuesta["Content-Disposition"] = (
+        'attachment; filename="metas_filtradas.xlsx"'
+    )
+    respuesta["Cache-Control"] = "private, no-store"
+
+    libro.save(respuesta)
+    return respuesta
+
+@permiso_requerido("reportes.exportar")
+@informe_excel("Informe de períodos")
+def exportar_periodos_excel(request):
+    """Exporta todos los períodos que coinciden con los filtros."""
+
+    queryset = Periodo.objects.all()
+    filtros = request.GET
+
+    estado = filtros.get("estado", "").strip()
+    if estado in dict(Periodo.ESTADOS):
+        queryset = queryset.filter(estado=estado)
+
+    fecha_desde = filtros.get("fecha_desde", "").strip()
+    if fecha_desde:
+        queryset = queryset.filter(fecha_termino__gte=fecha_desde)
+
+    fecha_hasta = filtros.get("fecha_hasta", "").strip()
+    if fecha_hasta:
+        queryset = queryset.filter(fecha_inicio__lte=fecha_hasta)
+
+    q = filtros.get("q", "").strip()
+    if q:
+        from datetime import datetime
+
+        fecha_busqueda = None
+
+        for formato in ("%d/%m/%Y", "%Y-%m-%d"):
+            try:
+                fecha_busqueda = datetime.strptime(q, formato).date()
+                break
+            except ValueError:
+                continue
+
+        if fecha_busqueda:
+            queryset = queryset.filter(
+                Q(fecha_inicio=fecha_busqueda)
+                | Q(fecha_termino=fecha_busqueda)
+            )
+        else:
+            queryset = queryset.none()
+
+    libro = Workbook()
+    hoja = libro.active
+    hoja.title = "Períodos"
+
+    hoja.append(["Informe de períodos de medición"])
+    hoja.append([
+        "Generado",
+        timezone.localtime().strftime("%d/%m/%Y %H:%M"),
+    ])
+    hoja.append([])
+    hoja.append([
+        "ID",
+        "Fecha de inicio",
+        "Fecha de término",
+        "Días computables",
+        "Estado",
+        "Versión de parámetros",
+    ])
+
+    for periodo in queryset.order_by("-fecha_inicio"):
+        hoja.append([
+            periodo.pk,
+            periodo.fecha_inicio.strftime("%d/%m/%Y"),
+            periodo.fecha_termino.strftime("%d/%m/%Y"),
+            periodo.dias_computables,
+            periodo.estado,
+            periodo.version_parametros,
+        ])
+
+    respuesta = HttpResponse(
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        )
+    )
+    respuesta["Content-Disposition"] = (
+        'attachment; filename="periodos_filtrados.xlsx"'
+    )
+    respuesta["Cache-Control"] = "private, no-store"
+    libro.save(respuesta)
+    return respuesta
+
+
+
+@permiso_requerido("reportes.exportar")
+@informe_excel("Informe de incentivos y penalizaciones")
+def exportar_ajustes_excel(request):
+    """Exporta ajustes respetando el nombre histórico del ítem asociado."""
+
+    queryset = filtrar_por_ambito(
+        Ajuste.objects.select_related(
+            "periodo",
+            "funcionario",
+            "funcionario__delegacion",
+            "meta",
+            "meta__item",
+        ),
+        request.user,
+        "funcionario__delegacion_id",
+    )
+
+    filtros = request.GET
+
+    periodo = filtros.get("periodo", "").strip()
+    if periodo:
+        queryset = queryset.filter(periodo_id=periodo)
+
+    funcionario = filtros.get("funcionario", "").strip()
+    if funcionario:
+        queryset = queryset.filter(funcionario_id=funcionario)
+
+    efecto = filtros.get("efecto", "").strip()
+    if efecto in dict(Ajuste.EFECTOS):
+        queryset = queryset.filter(efecto=efecto)
+
+    q = filtros.get("q", "").strip()
+    if q:
+        queryset = queryset.filter(
+            Q(motivo__icontains=q)
+            | Q(funcionario__nombre__icontains=q)
+            | Q(meta__item__nombre_item__icontains=q)
+        )
+
+    libro = Workbook()
+    hoja = libro.active
+    hoja.title = "Incentivos y penalizaciones"
+
+    hoja.append(["Informe de incentivos y penalizaciones"])
+    hoja.append([
+        "Generado",
+        timezone.localtime().strftime("%d/%m/%Y %H:%M"),
+    ])
+    hoja.append([])
+    hoja.append([
+        "ID",
+        "Funcionario",
+        "Delegación",
+        "Período",
+        "Efecto",
+        "Valor",
+        "Puntos con signo",
+        "Motivo",
+        "Ítem asociado",
+    ])
+
+    for ajuste in queryset.order_by("-id_ajuste"):
+        nombre_item = ""
+
+        if ajuste.meta_id:
+            if ajuste.periodo.abierto:
+                datos_historicos = CRUDMeta._datos_version(
+                    ajuste.meta
+                )
+            else:
+                datos_historicos = (
+                    CalculoIndicadores._datos_meta_historicos(
+                        ajuste.meta,
+                        ajuste.periodo.fecha_termino,
+                    )
+                )
+
+            nombre_item = datos_historicos.get(
+                "item_nombre",
+                ajuste.meta.item.nombre_item,
+            )
+
+        hoja.append([
+            ajuste.pk,
+            ajuste.funcionario.nombre,
+            ajuste.funcionario.delegacion.nombre,
+            str(ajuste.periodo),
+            ajuste.efecto,
+            float(ajuste.valor),
+            float(ajuste.puntos),
+            ajuste.motivo,
+            nombre_item,
+        ])
+
+    respuesta = HttpResponse(
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        )
+    )
+    respuesta["Content-Disposition"] = (
+        'attachment; filename="incentivos_penalizaciones.xlsx"'
+    )
+    respuesta["Cache-Control"] = "private, no-store"
+
+    libro.save(respuesta)
+    return respuesta
+
+
+@permiso_requerido("reportes.exportar")
+@informe_excel("Informe de semáforo")
+def exportar_semaforo_excel(request):
+    """Exporta el semáforo completo de la delegación o ámbito autorizado."""
+
+    periodo = _periodo_seleccionado(request)
+
+    if periodo is None:
+        return HttpResponse(
+            "No existe un período disponible para generar el informe.",
+            status=400,
+        )
+
+    funcionarios = filtrar_por_ambito(
+        Funcionario.objects.filter(
+            estado=Funcionario.ESTADO_ACTIVO
+        ).select_related("cargo", "delegacion"),
+        request.user,
+        "delegacion_id",
+    )
+
+    delegacion_sel = request.GET.get("delegacion", "")
+
+    if delegacion_sel and es_transversal(request.user):
+        funcionarios = funcionarios.filter(
+            delegacion_id=delegacion_sel
+        )
+
+    resumen = CalculoIndicadores.resumen_delegacion(
+        funcionarios,
+        periodo,
+    )
+
+    libro = Workbook()
+    hoja = libro.active
+    hoja.title = "Semáforo"
+
+    hoja.append(["Semáforo de delegación"])
+    hoja.append([
+        "Generado",
+        timezone.localtime().strftime("%d/%m/%Y %H:%M"),
+    ])
+    hoja.append(["Período", str(periodo)])
+    hoja.append([
+        "Meta esperada al día",
+        float(resumen["meta_esperada"]),
+    ])
+    hoja.append(["Promedio ponderado", float(resumen["promedio"])])
+    hoja.append(["Resultado general", resumen["semaforo"]])
+    hoja.append(["Funcionarios evaluados", resumen["total_funcionarios"]])
+    hoja.append([])
+    hoja.append([
+        "Funcionario",
+        "Delegación",
+        "Cargo",
+        "Resultado ponderado",
+        "Ajustes",
+        "Resultado total",
+        "Meta esperada",
+        "Semáforo",
+        "Suma ponderadores",
+        "Configuración completa",
+        "Bajo umbral",
+    ])
+
+    for fila in resumen["filas"]:
+        funcionario = fila["funcionario"]
+
+        hoja.append([
+            funcionario.nombre,
+            funcionario.delegacion.nombre,
+            funcionario.cargo.nombre_cargo,
+            float(fila["total_ponderado"]),
+            float(fila["ajustes"]),
+            float(fila["resultado_total"]),
+            float(fila["meta_esperada"]),
+            fila["semaforo"],
+            float(fila["suma_ponderadores"]),
+            "Sí" if fila["completa"] else "No",
+            "Sí" if fila["bajo_umbral"] else "No",
+        ])
+
+    respuesta = HttpResponse(
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        )
+    )
+    respuesta["Content-Disposition"] = (
+        'attachment; filename="semaforo_delegacion.xlsx"'
+    )
+    respuesta["Cache-Control"] = "private, no-store"
+    libro.save(respuesta)
+    return respuesta

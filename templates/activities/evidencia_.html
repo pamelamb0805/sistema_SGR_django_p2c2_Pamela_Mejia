@@ -1,0 +1,54 @@
+
+{% extends "base.html" %}
+
+{% block title %}Adjuntar evidencia · SGR{% endblock %}
+{% block page_title %}{{ titulo|default:"Adjuntar evidencia" }}{% endblock %}
+
+{% block content %}
+<div class="card shadow-sm">
+  <div class="card-header">
+    Evidencia para {{ actividad.codigo }}
+  </div>
+  <div class="card-body">
+    <div class="alert alert-info">
+      <strong>Actividad:</strong> {{ actividad.accion|truncatechars:180 }}<br>
+      <strong>Estado:</strong> {{ actividad.estado }}
+    </div>
+
+    <form method="post" enctype="multipart/form-data" novalidate>
+      {% csrf_token %}
+      {% if form.non_field_errors %}
+        <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+      {% endif %}
+
+      {% for field in form %}
+        <div class="mb-3">
+          <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {{ field }}
+          {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+          {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+        </div>
+      {% endfor %}
+
+      <p class="form-text">Formatos permitidos: JPG, JPEG, PNG y PDF. Se aplican los límites de tamaño configurados por el sistema.</p>
+
+      <button class="btn btn-primary" type="submit">Adjuntar evidencia</button>
+      <a class="btn btn-outline-secondary" href="{% url 'activities:actividad_detail' actividad.pk %}">Cancelar</a>
+    </form>
+  </div>
+</div>
+
+{% if evidencias %}
+<div class="card shadow-sm mt-3">
+  <div class="card-header">Evidencias ya adjuntadas</div>
+  <ul class="list-group list-group-flush">
+    {% for e in evidencias %}
+      <li class="list-group-item d-flex justify-content-between">
+        <span>{{ e.codigo_evidencia }} · {{ e.fecha_carga|date:"d/m/Y H:i" }}</span>
+        <span>{{ e.estado_revision }}</span>
+      </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+{% endblock %}

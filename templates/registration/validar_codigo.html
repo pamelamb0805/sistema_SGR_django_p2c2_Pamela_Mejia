@@ -1,1 +1,389 @@
-{% extends "base.html" %}{% block title %}Validar código · SGR{% endblock %}{% block page_title %}Validar código de recuperación{% endblock %}{% block content %}<div class="row justify-content-center"><div class="col-md-7 col-lg-5"><div class="card shadow-sm"><div class="card-body p-4"><p>Ingrese el código enviado a su correo. El código vence y tiene un límite de intentos.</p><form method="post" novalidate>{% csrf_token %}{% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}{% for field in form %}<div class="mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}</div>{% endfor %}<button class="btn btn-primary w-100">Validar código</button></form><p class="small text-body-secondary mt-3">El reenvío debe respetar el tiempo de espera definido por el sistema.</p></div></div></div></div>{% endblock %}
+
+{% extends "base.html" %}
+
+{% block title %}Verificar código · SGR{% endblock %}
+
+{% block extra_css %}
+<style>
+body.sgr-guest {
+    min-height: 100vh;
+    background: linear-gradient(135deg, #4D0000 0%, #660000 55%, #870000 100%) !important;
+}
+
+body.sgr-guest main#contenido.container {
+    width: 100%;
+    max-width: none;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem 1rem !important;
+}
+
+.sgr-recovery-card {
+    width: 100%;
+    max-width: 520px;
+    border: 0;
+    border-radius: 16px;
+    background: #fff;
+    box-shadow: 0 12px 40px rgba(0,0,0,.16);
+}
+
+.sgr-recovery-icon {
+    width: 60px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 18px;
+    border-radius: 50%;
+    background: #F9DCDC;
+    color: #660000;
+    font-size: 27px;
+}
+
+.sgr-recovery-title {
+    color: #660000;
+    font-weight: 750;
+}
+
+.sgr-recovery-subtitle {
+    color: #687078;
+}
+
+.sgr-recovery-success {
+    background: #d1e7dd;
+    border: 1px solid #a3cfbb;
+    color: #164b35;
+    border-radius: 6px;
+    padding: 14px 15px;
+    font-size: .9rem;
+}
+
+.sgr-recovery-email {
+    background: #f9dcdc;
+    border: 1px solid #e9b8b8;
+    color: #660000;
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: .84rem;
+}
+
+.sgr-recovery-timer-label {
+    color: #687078;
+    font-size: .85rem;
+}
+
+.sgr-recovery-timer {
+    color: #660000;
+    font-size: 27px;
+    font-weight: 800;
+    letter-spacing: 2px;
+}
+
+.sgr-recovery-timer.warning,
+.sgr-recovery-timer.expired {
+    color: #dc3545;
+}
+
+.sgr-timer-track {
+    width: 100%;
+    height: 6px;
+    overflow: hidden;
+    background: #e9ecef;
+    border-radius: 10px;
+}
+
+.sgr-timer-bar {
+    width: 100%;
+    height: 100%;
+    background: #198754;
+    transition: width .25s linear, background-color .3s ease;
+}
+
+.sgr-code-label {
+    color: #AD0000;
+    font-weight: 500;
+}
+
+.sgr-code-input {
+    min-height: 52px;
+    border: 1px solid #d7dce1;
+    border-radius: 6px;
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: 8px;
+}
+
+.sgr-code-input:focus {
+    border-color: #AD0000;
+    box-shadow: 0 0 0 .2rem rgba(173,0,0,.12);
+}
+
+.sgr-recovery-button {
+    min-height: 40px;
+    color: #fff;
+    background: #AD0000;
+    border: 1px solid #AD0000;
+    border-radius: 6px;
+}
+
+.sgr-recovery-button:hover {
+    color: #fff;
+    background: #660000;
+    border-color: #660000;
+}
+
+.sgr-recovery-button:disabled {
+    opacity: .65;
+    cursor: not-allowed;
+}
+
+.sgr-resend-button {
+    min-height: 38px;
+    color: #660000;
+    background: #fff;
+    border: 1px solid #660000;
+    border-radius: 6px;
+}
+
+.sgr-resend-button:hover {
+    color: #fff;
+    background: #660000;
+}
+
+.sgr-recovery-back {
+    color: #660000;
+    text-decoration: none;
+    font-size: .88rem;
+}
+
+.sgr-recovery-back:hover {
+    color: #AD0000;
+    text-decoration: underline;
+}
+
+@media (max-width: 575px) {
+    .sgr-recovery-card .card-body {
+        padding: 2rem 1.35rem !important;
+    }
+
+    .sgr-code-input {
+        letter-spacing: 5px;
+    }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="sgr-recovery-card card">
+    <div class="card-body p-4 p-md-5">
+
+        <div class="text-center mb-4">
+            <div class="sgr-recovery-icon">
+                <i class="bi bi-shield-lock-fill" aria-hidden="true"></i>
+            </div>
+
+            <h1 class="h3 sgr-recovery-title mb-2">
+                Verificar código
+            </h1>
+
+            <p class="sgr-recovery-subtitle mb-0">
+                Confirma tu identidad para continuar.
+            </p>
+        </div>
+
+        <div class="sgr-recovery-success mb-3" role="status">
+            Si el correo está registrado, recibirás un código de recuperación.
+        </div>
+
+        <div class="sgr-recovery-email text-center mb-3">
+            Si el correo está registrado, recibirás un código.
+            Dirección ingresada:
+            <strong>{{ email_enmascarado }}</strong>
+        </div>
+
+        <!-- Contador regresivo conectado a la expiración del servidor -->
+        <div class="text-center mb-4">
+
+            <p class="sgr-recovery-timer-label mb-1">
+                <i class="bi bi-clock me-1" aria-hidden="true"></i>
+                Tiempo restante para utilizar tu código
+            </p>
+
+            <div
+                id="contador-recuperacion"
+                class="sgr-recovery-timer"
+                role="timer"
+                aria-live="off"
+                data-expira-en="{{ codigo_expira_timestamp }}"
+            >
+                02:00
+            </div>
+
+            <div class="sgr-timer-track mt-2">
+                <div id="barra-contador" class="sgr-timer-bar"></div>
+            </div>
+
+            <small id="mensaje-contador"
+                   class="text-muted d-block mt-2">
+                El código vence en 120 segundos.
+            </small>
+        </div>
+
+        <form method="post" novalidate id="form-verificar-codigo">
+            {% csrf_token %}
+
+            <div class="mb-4">
+                <label class="form-label sgr-code-label"
+                       for="{{ form.codigo.id_for_label }}">
+                    Código de verificación
+                </label>
+
+                <input
+                    type="text"
+                    name="codigo"
+                    id="{{ form.codigo.id_for_label }}"
+                    class="form-control sgr-code-input text-center"
+                    maxlength="6"
+                    minlength="6"
+                    pattern="[0-9]{6}"
+                    inputmode="numeric"
+                    autocomplete="one-time-code"
+                    placeholder="- - - - - -"
+                    required
+                >
+
+                {% for error in form.codigo.errors %}
+                    <div class="text-danger small mt-1">
+                        {{ error }}
+                    </div>
+                {% endfor %}
+            </div>
+
+            {% if form.non_field_errors %}
+                <div class="alert alert-danger">
+                    {{ form.non_field_errors }}
+                </div>
+            {% endif %}
+
+            <button
+                type="submit"
+                class="btn sgr-recovery-button w-100 mb-3"
+                id="btn-verificar"
+            >
+                <i class="bi bi-shield-check me-2" aria-hidden="true"></i>
+                Verificar código
+            </button>
+        </form>
+
+        <form method="post" action="{% url 'recuperar_clave' %}">
+            {% csrf_token %}
+
+            <input type="hidden" name="email" value="{{ email }}">
+
+            <button type="submit"
+                    class="btn sgr-resend-button w-100">
+                <i class="bi bi-arrow-repeat me-2" aria-hidden="true"></i>
+                Reenviar código
+            </button>
+        </form>
+
+        <div class="text-center mt-4">
+            <a href="{% url 'login' %}" class="sgr-recovery-back">
+                <i class="bi bi-arrow-left me-1" aria-hidden="true"></i>
+                Volver al inicio de sesión
+            </a>
+        </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+
+    const contador = document.getElementById("contador-recuperacion");
+
+    if (!contador) {
+        return;
+    }
+
+    const barra = document.getElementById("barra-contador");
+    const mensaje = document.getElementById("mensaje-contador");
+    const botonVerificar = document.getElementById("btn-verificar");
+    const inputCodigo = document.getElementById("{{ form.codigo.id_for_label }}");
+
+    const expiracion = Number(contador.dataset.expiraEn);
+
+    if (!Number.isFinite(expiracion) || expiracion <= 0) {
+        contador.textContent = "--:--";
+        mensaje.textContent = "No se pudo determinar la expiración del código.";
+        barra.style.width = "0%";
+        return;
+    }
+
+    const DURACION_TOTAL = 120;
+
+    let intervalo = null;
+
+    function actualizarContador() {
+
+        const ahora = Date.now();
+
+        const restante = Math.max(
+            0,
+            Math.ceil((expiracion - ahora) / 1000)
+        );
+
+        const minutos = Math.floor(restante / 60);
+        const segundos = restante % 60;
+
+        contador.textContent =
+            String(minutos).padStart(2, "0") + ":" +
+            String(segundos).padStart(2, "0");
+
+        const porcentaje = Math.min(
+            100,
+            (restante / DURACION_TOTAL) * 100
+        );
+
+        barra.style.width = porcentaje + "%";
+
+        if (restante <= 30 && restante > 0) {
+            contador.classList.add("warning");
+            barra.style.backgroundColor = "#dc3545";
+            mensaje.textContent = "¡Atención! Tu código está por expirar.";
+        }
+
+        if (restante <= 0) {
+
+            if (intervalo) {
+                clearInterval(intervalo);
+            }
+
+            contador.textContent = "00:00";
+            contador.classList.remove("warning");
+            contador.classList.add("expired");
+
+            barra.style.width = "0%";
+            barra.style.backgroundColor = "#dc3545";
+
+            mensaje.textContent =
+                "El código ha expirado. Solicita uno nuevo.";
+
+            inputCodigo.disabled = true;
+            botonVerificar.disabled = true;
+
+            botonVerificar.innerHTML =
+                '<i class="bi bi-clock-history me-2"></i>Código expirado';
+        }
+    }
+
+    actualizarContador();
+
+    intervalo = setInterval(actualizarContador, 250);
+});
+</script>
+{% endblock %}

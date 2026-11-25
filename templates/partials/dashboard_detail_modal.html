@@ -1,0 +1,69 @@
+
+<div class="sgr-detail-overlay" id="sgrDetailOverlay" aria-hidden="true">
+    <section class="sgr-detail-modal" role="dialog"
+             aria-modal="true" aria-labelledby="sgrDetailTitle">
+
+        <header class="sgr-detail-header">
+            <div>
+                <span class="sgr-detail-eyebrow">DETALLE DEL INDICADOR</span>
+                <h2 id="sgrDetailTitle">Registros relacionados</h2>
+                <p id="sgrDetailSubtitle">Consulta de registros del sistema</p>
+            </div>
+
+            <button type="button" class="sgr-detail-close"
+                    id="sgrDetailClose" aria-label="Cerrar">
+                &times;
+            </button>
+        </header>
+
+        <div class="sgr-detail-summary">
+            <div>
+                <strong id="sgrDetailTotal">0</strong>
+                <span>registros encontrados</span>
+            </div>
+            <span class="sgr-detail-filter">
+                <i class="bi bi-funnel"></i>
+                Filtro aplicado
+            </span>
+        </div>
+
+        <div class="sgr-detail-content">
+            <div id="sgrDetailLoading" class="sgr-detail-message">
+                <span class="spinner-border spinner-border-sm"></span>
+                Consultando registros...
+            </div>
+
+            <div id="sgrDetailEmpty" class="sgr-detail-message" hidden>
+                <i class="bi bi-inbox"></i>
+                <strong>No hay registros para esta selección.</strong>
+            </div>
+
+            <div id="sgrDetailError" class="alert alert-danger" hidden></div>
+
+            <div class="table-responsive" id="sgrDetailTableWrap" hidden>
+                <table class="table table-hover align-middle">
+                    <thead>
+                        <tr>
+                            <th>Código</th>
+                            <th>Descripción</th>
+                            <th>Responsable</th>
+                            <th>Delegación</th>
+                            <th>Fecha</th>
+                            <th>Estado</th>
+                            <th>Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sgrDetailRows"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <footer class="sgr-detail-footer">
+            <span>Municipalidad de La Serena · SGR</span>
+            <button type="button" class="btn btn-primary"
+                    id="sgrDetailCloseFooter">
+                Cerrar
+            </button>
+        </footer>
+    </section>
+</div>

@@ -154,6 +154,47 @@ class ActividadServicioTests(BaseTestCase):
         _, otro_u = self.crear_func("F2", "Funcionario")
         self.assertIsNone(buscar_por_codigo(a.codigo, otro_u))     # fuera de su ámbito
 
+    def test_servicio_rechaza_accion_vacia(self):
+        with self.assertRaises(ReglaNegocioError):
+            CRUDActividad.crear_actividad(
+                self.nueva(self.f, accion="   "),
+                self.u,
+            )
+
+    def test_servicio_rechaza_telefono_invalido(self):
+        with self.assertRaises(ReglaNegocioError):
+            CRUDActividad.crear_actividad(
+                self.nueva(self.f, telefono="telefono-invalido"),
+                self.u,
+            )
+
+    def test_servicio_rechaza_telefono_sin_contacto(self):
+        with self.assertRaises(ReglaNegocioError):
+            CRUDActividad.crear_actividad(
+                self.nueva(self.f, contacto="", telefono="+56 9 1234 5678"),
+                self.u,
+            )
+
+    def test_servicio_rechaza_tipo_registro_invalido(self):
+        with self.assertRaises(ReglaNegocioError):
+            CRUDActividad.crear_actividad(
+                self.nueva(self.f, tipo_registro="Tipo incorrecto"),
+                self.u,
+            )
+
+    def test_servicio_rechaza_fecha_futura_y_no_guarda(self):
+        cantidad_inicial = Actividad.objects.count()
+
+        with self.assertRaises(ReglaNegocioError):
+            CRUDActividad.crear_actividad(
+                self.nueva(
+                    self.f,
+                    fecha=timezone.localdate() + timedelta(days=1),
+                ),
+                self.u,
+            )
+
+        self.assertEqual(Actividad.objects.count(), cantidad_inicial)
 
 class EvidenciaServicioTests(BaseTestCase):
     def setUp(self):

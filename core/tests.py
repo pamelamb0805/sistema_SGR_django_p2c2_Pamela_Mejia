@@ -21,6 +21,7 @@ from measurement.services import CRUDMeta
 from organizations.models import Cargo, Delegacion, Funcionario, FuncionarioRol, ItemMedible, Rol, Usuario
 
 from .templatetags import ui_extras as ui
+from audit.models import AlertaOperativa
 
 CLAVE = "Clave-Segura-2026"
 HOY = timezone.localdate()
@@ -316,3 +317,116 @@ class DashboardTests(BaseVistas):
         formulario = re.search(r'<form method="post" action="/logout/">(.*?)</form>', html, re.S)
         self.assertIsNotNone(formulario)
         self.assertIn("csrfmiddlewaretoken", formulario.group(1))
+
+
+# ---------------------------------------------------------------------------
+# RF-037: Alertas operativas persistentes
+# ---------------------------------------------------------------------------
+
+class AlertasOperativasTests(BaseVistas):
+
+    def crear_alerta(self, usuario, clave="a" * 64):
+        return AlertaOperativa.objects.create(
+            usuario=usuario,
+            clave=clave,
+            tipo="vencimiento",
+            titulo="Compromiso vencido",
+            motivo="El compromiso todavía no está realizado.",
+            responsable="Funcionario de prueba",
+            fecha=HOY,
+            url="",
+            nivel="danger",
+            prioridad=1,
+        )
+
+    def test_alerta_se_guarda_y_conserva_estado_pendiente(self):
+        _, usuario = self.crear("Funcionario")
+
+        alerta = self.crear_alerta(usuario)
+
+        guardada = AlertaOperativa.objects.get(pk=alerta.pk)
+
+        self.assertEqual(
+            guardada.estado,
+            AlertaOperativa.ESTADO_PENDIENTE,
+        )
+        self.assertIsNone(guardada.fecha_atencion)
+        self.assertIsNone(guardada.atendida_por)
+
+    def test_usuario_puede_marcar_su_alerta_como_atendida(self):
+        _, usuario = self.crear("Funcionario")
+        alerta = self.crear_alerta(usuario)
+
+        self.entrar("funcionario")
+
+        respuesta = self.client.post(
+            reverse(
+                "marcar_alerta_atendida",
+                args=[alerta.pk],
+            )
+        )
+
+        self.assertRedirects(
+            respuesta,
+            reverse("dashboard"),
+            fetch_redirect_response=False,
+        )
+
+        alerta.refresh_from_db()
+
+        self.assertEqual(
+            alerta.estado,
+            AlertaOperativa.ESTADO_ATENDIDA,
+        )
+        self.assertIsNotNone(alerta.fecha_atencion)
+        self.assertEqual(alerta.atendida_por_id, usuario.pk)
+
+    def test_usuario_no_puede_atender_alerta_de_otro_usuario(self):
+        _, propietario = self.crear("Delegado")
+        self.crear("Funcionario")
+
+        alerta = self.crear_alerta(
+            propietario,
+            clave="b" * 64,
+        )
+
+        self.entrar("funcionario")
+
+        respuesta = self.client.post(
+            reverse(
+                "marcar_alerta_atendida",
+                args=[alerta.pk],
+            )
+        )
+
+        self.assertEqual(respuesta.status_code, 404)
+
+        alerta.refresh_from_db()
+
+        self.assertEqual(
+            alerta.estado,
+            AlertaOperativa.ESTADO_PENDIENTE,
+        )
+        self.assertIsNone(alerta.fecha_atencion)
+
+    def test_marcar_alerta_no_acepta_peticion_get(self):
+        _, usuario = self.crear("Funcionario")
+        alerta = self.crear_alerta(usuario)
+
+        self.entrar("funcionario")
+
+        respuesta = self.client.get(
+            reverse(
+                "marcar_alerta_atendida",
+                args=[alerta.pk],
+            )
+        )
+
+        self.assertEqual(respuesta.status_code, 405)
+
+        alerta.refresh_from_db()
+
+        self.assertEqual(
+            alerta.estado,
+            AlertaOperativa.ESTADO_PENDIENTE,
+        )

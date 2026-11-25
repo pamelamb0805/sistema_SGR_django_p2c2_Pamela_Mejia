@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+
+{% block title %}Historial de notificaciones{% endblock %}
+
+{% block page_title %}Historial de notificaciones{% endblock %}
+
+{% block page_actions %}
+<a href="{% url 'dashboard' %}" class="btn btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>
+    Volver al inicio
+</a>
+{% endblock %}
+
+{% block content %}
+
+<div class="row g-3 mb-4">
+
+    <div class="col-md-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-muted small">
+                    Total de notificaciones registradas
+                </div>
+                <div class="fs-3 fw-bold">
+                    {{ total_notificaciones }}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-muted small">
+                    Notificaciones pendientes
+                </div>
+                <div class="fs-3 fw-bold text-primary">
+                    {{ total_pendientes }}
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<div class="card shadow-sm">
+
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">
+            <i class="bi bi-bell me-2"></i>
+            Registro histórico
+        </h5>
+
+        <span class="text-muted small">
+            Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}
+        </span>
+    </div>
+
+    <div class="card-body">
+
+        {% if notificaciones %}
+
+        <div class="table-responsive">
+
+            <table class="table table-hover align-middle">
+
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Fecha y hora</th>
+                        <th>Evento</th>
+                        <th>Entidad</th>
+                        <th>Responsable</th>
+                        <th>Delegación</th>
+                        <th>Estado</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+
+                    {% for notificacion in notificaciones %}
+
+                    <tr>
+
+                        <td>
+                            {{ notificacion.id_notificacion }}
+                        </td>
+
+                        <td class="text-nowrap">
+                            {{ notificacion.fecha_creacion|date:"d/m/Y H:i:s" }}
+                        </td>
+
+                        <td>
+                            <span class="fw-semibold">
+                                {{ notificacion.auditoria.evento }}
+                            </span>
+                        </td>
+
+                        <td>
+                            {{ notificacion.auditoria.entidad_afectada|default:"Sistema" }}
+                            #{{ notificacion.auditoria.id_entidad_afectada }}
+                        </td>
+
+                        <td>
+                            {% if notificacion.auditoria.funcionario %}
+                                {{ notificacion.auditoria.funcionario.nombre }}
+                            {% else %}
+                                Sistema / técnico
+                            {% endif %}
+                        </td>
+
+                        <td>
+                            {% if notificacion.delegacion %}
+                                {{ notificacion.delegacion.nombre }}
+                            {% else %}
+                                General
+                            {% endif %}
+                        </td>
+
+                        <td>
+                            {% if notificacion.leida %}
+                                <span class="badge text-bg-secondary">
+                                    Leída
+                                </span>
+                            {% else %}
+                                <span class="badge text-bg-primary">
+                                    Pendiente
+                                </span>
+                            {% endif %}
+                        </td>
+
+                    </tr>
+
+                    {% endfor %}
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+        {% else %}
+
+        <div class="text-center text-muted py-5">
+            <i class="bi bi-bell-slash fs-1 d-block mb-3"></i>
+            No existen notificaciones registradas.
+        </div>
+
+        {% endif %}
+
+    </div>
+
+    {% if is_paginated %}
+
+    <div class="card-footer">
+
+        <nav aria-label="Paginación del historial">
+
+            <ul class="pagination justify-content-center mb-0">
+
+                {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link"
+                       href="?page=1">
+                        Primera
+                    </a>
+                </li>
+
+                <li class="page-item">
+                    <a class="page-link"
+                       href="?page={{ page_obj.previous_page_number }}">
+                        Anterior
+                    </a>
+                </li>
+                {% else %}
+                <li class="page-item disabled">
+                    <span class="page-link">Primera</span>
+                </li>
+                <li class="page-item disabled">
+                    <span class="page-link">Anterior</span>
+                </li>
+                {% endif %}
+
+                <li class="page-item active">
+                    <span class="page-link">
+                        {{ page_obj.number }}
+                    </span>
+                </li>
+
+                {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link"
+                       href="?page={{ page_obj.next_page_number }}">
+                        Siguiente
+                    </a>
+                </li>
+
+                <li class="page-item">
+                    <a class="page-link"
+                       href="?page={{ page_obj.paginator.num_pages }}">
+                        Última
+                    </a>
+                </li>
+                {% else %}
+                <li class="page-item disabled">
+                    <span class="page-link">Siguiente</span>
+                </li>
+                <li class="page-item disabled">
+                    <span class="page-link">Última</span>
+                </li>
+                {% endif %}
+
+            </ul>
+
+        </nav>
+
+    </div>
+
+    {% endif %}
+
+</div>
+
+{% endblock %}

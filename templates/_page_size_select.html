@@ -1,0 +1,22 @@
+
+<div class="col-12 col-md-3">
+    <label for="page_size" class="form-label">
+        Registros por página
+    </label>
+
+    <select
+        class="form-select"
+        id="page_size"
+        name="page_size"
+        onchange="this.form.submit()"
+    >
+        {% for cantidad in page_size_options %}
+            <option
+                value="{{ cantidad }}"
+                {% if page_size == cantidad %}selected{% endif %}
+            >
+                {{ cantidad }}
+            </option>
+        {% endfor %}
+    </select>
+</div>

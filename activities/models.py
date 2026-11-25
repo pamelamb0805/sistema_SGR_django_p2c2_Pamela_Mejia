@@ -20,7 +20,12 @@ from django.utils import timezone
 
 from catalogs.models import Catalogo
 from measurement.models import Periodo
-from organizations.models import Funcionario, ItemMedible
+from organizations.models import (
+    Funcionario,
+    ItemMedible,
+    ItemMedibleVersion,
+)
+from django.db.models import Q
 
 validar_telefono = RegexValidator(
     r"^\+?\d[\d\s-]{7,14}$", "Teléfono inválido. Use solo números, espacios o guiones (8 a 15 dígitos).")
@@ -59,6 +64,13 @@ class Actividad(models.Model):
                              related_name="actividades", verbose_name="ítem medible")
     catalogo = models.ForeignKey(Catalogo, on_delete=models.PROTECT, db_column="id_catalogo",
                                  related_name="actividades", verbose_name="actividad / servicio")
+    # Nombre histórico del catálogo al registrar la actividad (RF-038).
+    catalogo_nombre = models.CharField(
+        max_length=150,
+        blank=True,
+        default="",
+        editable=False,
+    )
     periodo = models.ForeignKey(Periodo, on_delete=models.PROTECT, db_column="id_periodo",
                                 related_name="actividades", editable=False)
 
@@ -74,6 +86,74 @@ class Actividad(models.Model):
     def codigo(self):
         """Identificador único e inmutable de la actividad (RF-011)."""
         return f"ACT-{self.pk:07d}" if self.pk else ""
+    
+    @property
+    def item_nombre_historico(self):
+        """
+        Recupera el nombre del ítem medible vigente en la fecha
+        de la actividad. No utiliza el nombre actual si existe
+        una versión histórica correspondiente.
+        """
+        if not self.item_id:
+            return ""
+
+        versiones = (
+            ItemMedibleVersion.objects
+            .filter(
+                objeto_id=self.item_id,
+                vigente_desde__date__lte=self.fecha,
+            )
+            .filter(
+                Q(vigente_hasta__isnull=True)
+                | Q(vigente_hasta__date__gt=self.fecha)
+            )
+            .order_by("-numero_version")
+        )
+
+        version = versiones.first()
+
+        if version:
+            return (
+                version.datos.get("nombre_item")
+                or self.item.nombre_item
+            )
+
+        return self.item.nombre_item
+
+    @property
+    def fecha_registro_historica(self):
+        """
+        Obtiene la fecha y hora original de creación desde auditoría.
+        """
+        from audit.models import Auditoria
+
+        evento = (
+            Auditoria.objects
+            .filter(
+                entidad_afectada="actividad",
+                id_entidad_afectada=self.pk,
+            )
+            .order_by("fecha", "id_auditoria")
+            .first()
+        )
+
+        return evento.fecha if evento else self.fecha
+
+    @property
+    def delegacion_historica(self):
+        """
+        Recupera la versión histórica de la delegación asociada
+        al funcionario cuando se registró la actividad.
+        """
+        if not self.funcionario_id or not self.funcionario.delegacion_id:
+            return None
+
+        return (
+            self.funcionario.delegacion.obtener_version_historica(
+                self.fecha_registro_historica
+            )
+            or self.funcionario.delegacion.obtener_datos_actuales()
+        )
 
     @property
     def editable(self):
@@ -85,13 +165,27 @@ class Actividad(models.Model):
 
     def clean(self):
         if self.telefono and not self.contacto.strip():
-            raise ValidationError({"contacto": "Indique el nombre del contacto cuando registra un teléfono."})
+            raise ValidationError({
+                "contacto": (
+                    "Indique el nombre del contacto cuando registra "
+                    "un teléfono."
+                )
+            })
+
         if self.fecha and self.fecha > timezone.localdate():
-            raise ValidationError({"fecha": "La fecha de la actividad no puede ser futura."})
-        if self.funcionario_id and self.item_id and self.item.cargo_id != self.funcionario.cargo_id:
-            raise ValidationError({"item": "El ítem no corresponde al cargo del funcionario."})
+            raise ValidationError({
+                "fecha": "La fecha de la actividad no puede ser futura."
+            })
 
-
+        if (
+            self.funcionario_id
+            and self.item_id
+            and self.item.cargo_id != self.funcionario.cargo_id
+        ):
+            raise ValidationError({
+                "item": "El ítem no corresponde al cargo del funcionario."
+            })
+        
 # ---------------------------------------------------------------------------
 # EVIDENCIA
 # ---------------------------------------------------------------------------

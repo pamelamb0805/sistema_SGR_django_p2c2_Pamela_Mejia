@@ -9,17 +9,17 @@ from django.db.models import Q
 from django.http import JsonResponse, HttpResponse
 from openpyxl import Workbook
 from django.shortcuts import get_object_or_404
-from django.views.generic import CreateView, ListView, UpdateView
-
+from django.views.generic import CreateView, DetailView, ListView, UpdateView
 from core.mixins import (
     ROLES_CONFIGURACION, ROLES_SUPERVISION, AccionPostView, GuardarMixin, ModoMixin, RolRequeridoMixin,
 )
 
 from .forms import CatalogoForm
-from .models import Catalogo
+from .models import Catalogo, CatalogoVersion
 from .services import CRUDCatalogo
 from core.mixins import ModalFormPageMixin
-
+from core.pagination import PageSizeMixin   
+from core.decorators import permiso_requerido
 
 class LecturaMixin(RolRequeridoMixin):
     roles_permitidos = ROLES_SUPERVISION
@@ -33,34 +33,49 @@ def _areas():
     return list(Catalogo.objects.order_by("area").values_list("area", flat=True).distinct())
 
 
-class CatalogoListView(LecturaMixin, ModoMixin, ListView):
+class CatalogoListView(PageSizeMixin, LecturaMixin, ModoMixin, ListView):
+    permisos_permitidos = ('catalogos.ver',)
     model = Catalogo
     template_name = "catalogs/catalogo_.html"
     context_object_name = "elementos"
     paginate_by = 15
+    page_size_session_key = "catalogo_page_size"
     titulo = "Catálogos de actividades y servicios"
 
     def get_queryset(self):
         qs = super().get_queryset()
         g = self.request.GET
+
         if g.get("q", "").strip():
             term = g["q"].strip()
-            qs = qs.filter(Q(nombre__icontains=term) | Q(codigo__icontains=term) | Q(descripcion__icontains=term))
+            qs = qs.filter(
+                Q(nombre__icontains=term)
+                | Q(codigo__icontains=term)
+                | Q(descripcion__icontains=term)
+            )
+
         for campo in ("tipo_catalogo", "area", "estado"):
             if g.get(campo):
                 qs = qs.filter(**{campo: g[campo]})
+
         return qs
 
     def get_context_data(self, **kwargs):
         contexto = super().get_context_data(**kwargs)
         g = self.request.GET
+
         contexto.update(
             total_resultados=self.get_queryset().count(),
-            q=g.get("q", ""), tipo_sel=g.get("tipo_catalogo", ""), area_sel=g.get("area", ""),
-            estado_sel=g.get("estado", ""), tipos=Catalogo.TIPOS, estados=Catalogo.ESTADOS, areas=_areas(),
+            q=g.get("q", ""),
+            tipo_sel=g.get("tipo_catalogo", ""),
+            area_sel=g.get("area", ""),
+            estado_sel=g.get("estado", ""),
+            tipos=Catalogo.TIPOS,
+            estados=Catalogo.ESTADOS,
+            areas=_areas(),
         )
-        return contexto
 
+        return contexto
 
 class CatalogoFormMixin(EscrituraMixin, ModalFormPageMixin, ModoMixin, GuardarMixin):
     model = Catalogo
@@ -77,6 +92,7 @@ class CatalogoFormMixin(EscrituraMixin, ModalFormPageMixin, ModoMixin, GuardarMi
 
 
 class CatalogoCreateView(CatalogoFormMixin, CreateView):
+    permisos_permitidos = ('catalogos.editar',)
     titulo = "Nuevo elemento de catálogo"
     mensaje_exito = "Elemento creado."
 
@@ -85,6 +101,7 @@ class CatalogoCreateView(CatalogoFormMixin, CreateView):
 
 
 class CatalogoUpdateView(CatalogoFormMixin, UpdateView):
+    permisos_permitidos = ('catalogos.editar',)
     titulo = "Editar elemento de catálogo"
     mensaje_exito = "Elemento actualizado. Los registros históricos no se alteran."
 
@@ -93,6 +110,7 @@ class CatalogoUpdateView(CatalogoFormMixin, UpdateView):
 
 
 class CatalogoToggleView(AccionPostView):
+    permisos_permitidos = ('catalogos.editar',)
     redirect_name = "catalogs:catalogo_list"
 
     def get_objeto(self, pk):
@@ -104,37 +122,122 @@ class CatalogoToggleView(AccionPostView):
             return f"«{objeto.nombre}» desactivado: no se ofrecerá en registros nuevos."
         CRUDCatalogo.activar_elemento_catalogo(objeto, request.user)
         return f"«{objeto.nombre}» activado."
+class CatalogoHistorialView(LecturaMixin, DetailView):
+    permisos_permitidos = ('catalogos.ver',)
+    model = Catalogo
+    template_name = "catalogs/catalogo_historial.html"
+    context_object_name = "elemento"
 
+    def get_context_data(self, **kwargs):
+        contexto = super().get_context_data(**kwargs)
 
+        versiones = (
+            CatalogoVersion.objects
+            .filter(objeto_id=self.object.pk)
+            .select_related("creado_por")
+            .order_by("-numero_version")
+        )
+
+        contexto["versiones"] = versiones
+        contexto["total_versiones"] = versiones.count()
+        contexto["titulo"] = (
+            f"Historial del catálogo: {self.object.nombre}"
+        )
+
+        return contexto
+    
 @login_required
+@permiso_requerido(
+    "catalogos.ver",
+    respuesta_json=True,
+)
 def catalogo_por_area(request):
-    """JSON con los elementos activos aplicables a un área: /catalogs/api/por-area/?area=Social&tipo=Actividad"""
+    """Devuelve los elementos activos del catálogo para el área indicada."""
+
     elementos = CRUDCatalogo.mostrar_catalogo_por_area(
-        request.GET.get("area") or None, request.GET.get("tipo") or None)
-    return JsonResponse({"resultados": [
-        {"id": e.pk, "nombre": e.nombre, "tipo": e.tipo_catalogo, "area": e.area} for e in elementos
-    ]})
+        request.GET.get("area") or None,
+        request.GET.get("tipo") or None,
+    )
 
+    return JsonResponse({
+        "resultados": [
+            {
+                "id": elemento.pk,
+                "nombre": elemento.nombre,
+                "tipo": elemento.tipo_catalogo,
+                "area": elemento.area,
+            }
+            for elemento in elementos
+        ]
+    })
 
-@login_required
+@permiso_requerido("catalogos.ver")
 def exportar_catalogos_excel(request):
-    """Exporta todos los resultados filtrados; no exporta secretos ni datos de autenticación."""
-    if not any(request.user.is_superuser or request.user.is_staff for _ in [0]):
-        from core.mixins import tiene_rol, ROLES_SUPERVISION
-        if not tiene_rol(request.user, *ROLES_SUPERVISION):
-            return JsonResponse({"error": "No autorizado"}, status=403)
-    qs = Catalogo.objects.all()
-    g = request.GET
-    term = g.get("q", "").strip()
-    if term:
-        qs = qs.filter(Q(nombre__icontains=term) | Q(codigo__icontains=term) | Q(descripcion__icontains=term))
-    for field in ("tipo_catalogo", "area", "estado"):
-        if g.get(field): qs = qs.filter(**{field: g[field]})
-    wb = Workbook(); ws = wb.active; ws.title = "Catalogos"
-    ws.append(["Código", "Tipo", "Nombre", "Descripción", "Tipo de atención padre", "Área", "Estado"])
-    for item in qs.select_related("tipo_atencion_padre"):
-        ws.append([item.codigo, item.tipo_catalogo, item.nombre, item.descripcion,
-                   item.tipo_atencion_padre.nombre if item.tipo_atencion_padre_id else "", item.area, item.estado])
-    response = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    response["Content-Disposition"] = 'attachment; filename="catalogos_filtrados.xlsx"'
-    wb.save(response); return response
+    """Exporta los catálogos que coinciden con los filtros recibidos."""
+
+    queryset = Catalogo.objects.all()
+    filtros = request.GET
+
+    termino = filtros.get("q", "").strip()
+
+    if termino:
+        queryset = queryset.filter(
+            Q(nombre__icontains=termino)
+            | Q(codigo__icontains=termino)
+            | Q(descripcion__icontains=termino)
+        )
+
+    for campo in (
+        "tipo_catalogo",
+        "area",
+        "estado",
+    ):
+        valor = filtros.get(campo, "").strip()
+
+        if valor:
+            queryset = queryset.filter(**{campo: valor})
+
+    libro = Workbook()
+    hoja = libro.active
+    hoja.title = "Catalogos"
+
+    hoja.append([
+        "Código",
+        "Tipo",
+        "Nombre",
+        "Descripción",
+        "Tipo de atención padre",
+        "Área",
+        "Estado",
+    ])
+
+    for item in queryset.select_related("tipo_atencion_padre"):
+        hoja.append([
+            item.codigo,
+            item.tipo_catalogo,
+            item.nombre,
+            item.descripcion,
+            (
+                item.tipo_atencion_padre.nombre
+                if item.tipo_atencion_padre_id
+                else ""
+            ),
+            item.area,
+            item.estado,
+        ])
+
+    respuesta = HttpResponse(
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        )
+    )
+
+    respuesta["Content-Disposition"] = (
+        'attachment; filename="catalogos_filtrados.xlsx"'
+    )
+    respuesta["Cache-Control"] = "private, no-store"
+
+    libro.save(respuesta)
+
+    return respuesta

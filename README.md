@@ -30,19 +30,21 @@ Condiciones generales:
 
 Estado posible: **Operativo** (persistencia y lógica reales), **Simulado** (solo interfaz) o **Pendiente**.
 
-| Componente | Alcance requerido | Estado |
+| Componente | Alcance requerido | Estado en código recibido |
 | --- | --- | --- |
-| Login | Usuario o correo y contraseña; validación y acceso según perfil. | Implementación presente; falta prueba integrada |
-| Recuperar contraseña | Código por correo, validación, expiración, intentos y nueva clave. | Código implementado; requiere SMTP y prueba integrada |
-| Validar código | Ingreso y comprobación del código, vigencia, reenvío y tratamiento de intentos fallidos. | Por definir |
-| Crear nueva contraseña | Nueva clave, confirmación, validación de requisitos y retorno al login. | Por definir |
-| CRUD Delegaciones | Código, nombre, dirección, comuna y estado. | Parcial: modelo actual usa nombre, ámbito y estado |
-| CRUD Roles | Nombre, descripción, permisos y alcance autorizado. | Parcial: nombre y descripción; permisos/alcance no modelados |
-| CRUD Usuarios | Nombre, correo, rol, delegación(es) autorizada(s) y estado. | Parcial: se agregó correo; modelo permite una delegación por funcionario |
-| CRUD Ítems y metas | Código, nombre, descripción y estado (mantenedor de Ítems). | Por definir |
-| CRUD Tipo de Atención | Código, nombre, descripción y estado. | Por definir |
-| CRUD Sub Atención | Código, nombre, Tipo de Atención asociado y estado. | Por definir |
-| Ingreso de atención | Solicitante, tipo, subatención, descripción, delegación, usuario responsable y fecha de registro. | Por definir |
+| Login | Usuario o correo y contraseña; validación y acceso según perfil. | Implementado; requiere ejecución integrada de pruebas |
+| Recuperar contraseña | Código por correo, validación, expiración, intentos y nueva clave. | Implementado; SMTP real depende de configuración |
+| Validar código | Código válido/incorrecto/vencido, intentos y reenvío. | Implementado; requiere validación integrada |
+| Crear nueva contraseña | Nueva clave, confirmación, validadores y retorno al login. | Implementado; requiere validación integrada |
+| CRUD Delegaciones | Código, nombre, dirección, comuna y estado. | Implementado con auditoría, filtros, paginación y Excel |
+| CRUD Roles | Nombre, descripción, permisos y alcance autorizado. | Implementado con permisos y restricciones de delegación de privilegios |
+| CRUD Usuarios | Nombre, correo, rol, delegación(es) autorizada(s) y estado. | Implementado mediante Usuario/Funcionario y asignación de roles/delegaciones |
+| CRUD Ítems y metas | Código, nombre, descripción y estado (mantenedor de Ítems). | Ítems implementados vinculados a Cargo; metas administradas en `measurement` |
+| CRUD Tipo de Atención | Código, nombre, descripción y estado. | Implementado como tipo de `Catalogo` |
+| CRUD Sub Atención | Código, nombre, Tipo de Atención asociado y estado. | Implementado como `Catalogo` con FK autorreferente al Tipo de Atención |
+| Ingreso de atención | Solicitante, tipo, subatención, descripción, delegación, responsable y fecha. | Implementado como caso + primera gestión en `social` |
+
+La rama de trabajo conserva la arquitectura de modelos existente. La selección de delegación activa se valida en servidor y limita las consultas del contexto actual.
 
 Los diseños se basan en `mockups.pdf` (páginas 1 a 6). Los catálogos de Vecinos y Tipo de Gestión que aparecen en los mockups son solo contexto y no se incorporan como requisito adicional en esta entrega.
 
@@ -78,7 +80,7 @@ La identidad visual de todas las pantallas (login, recuperación de contraseña,
 
 ## Pruebas
 
-El plan de pruebas de esta entrega (casos de acceso, recuperación de contraseña, mantenedores, listados, ingreso de atención, perfil y delegación, SweetAlert2, pruebas de estrés y registro de defectos) está en [`PLAN_DE_PRUEBAS.md`](docs/PLAN_DE_PRUEBAS.md).
+El plan de pruebas de esta entrega, el estado de los RNF y las limitaciones de validación están documentados en [`ENTREGA_ANEXO_A.md`](docs/ENTREGA_ANEXO_A.md).
 
 Las pruebas pendientes por falta de Backend se declaran como **Pendiente** con su justificación; no se informan como aprobadas.
 
@@ -164,7 +166,6 @@ Pamela Mejía – Ingeniería en Informática, INACAP.
 ## Notas de implementación para la entrega
 
 - Se agregó flujo de recuperación con código de seis dígitos, vencimiento de 10 minutos, máximo de 5 intentos y formulario de nueva contraseña. El código se envía por correo si se configura SMTP; sin `EMAIL_HOST`, Django lo imprime en la consola local y **no se envía un correo real**.
-- Para iniciar sesión con correo, cada funcionario debe tener un correo registrado en `organizations.Funcionario.email`.
-- **Cambio de base de datos:** se agregó el campo `email` al modelo `Funcionario`. En una base nueva, ejecutar `python manage.py migrate --run-syncdb`. Si la base MySQL ya existía y la tabla `funcionario` ya está creada, aplicar una vez: `ALTER TABLE funcionario ADD COLUMN email VARCHAR(254) NOT NULL DEFAULT '';` y después retirar el valor por defecto si se desea. Respaldar la base antes de modificarla.
-- El repositorio original no contiene migraciones Django de las aplicaciones propias. Por eso hay que probar los cambios contra una copia de la base real antes de desplegar; no se debe asumir que la modificación del esquema ya está aplicada.
+- El correo de acceso está modelado en `organizations.Usuario.email`; el usuario de acceso mantiene relación 1:1 con `Funcionario`.
+- Las aplicaciones propias incluyen migraciones Django. Antes de desplegar, revisar `python manage.py showmigrations` y ejecutar las migraciones pendientes en una copia de la base de datos.
 - Para producción, definir `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS` y `DEFAULT_FROM_EMAIL` en `.env`, nunca publicar esos valores en Git.

@@ -10,12 +10,22 @@
 {% block page_actions %}
     {% if modo == "lista" or not modo %}
         <a
-            class="btn btn-primary"
-            href="{% url 'organizations:funcionario_create' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}"
+            class="btn btn-outline-success"
+            href="{% url 'organizations:funcionario_exportar_excel' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}"
         >
-            <i class="bi bi-person-plus me-1"></i>
-            Nuevo funcionario
+            <i class="bi bi-file-earmark-excel me-1"></i>
+            Exportar Excel
         </a>
+
+        {% if puede_editar %}
+            <a
+                class="btn btn-primary"
+                href="{% url 'organizations:funcionario_create' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}"
+            >
+                <i class="bi bi-person-plus me-1"></i>
+                Nuevo funcionario
+            </a>
+        {% endif %}
     {% endif %}
 {% endblock %}
 
@@ -64,13 +74,15 @@
                 </dl>
 
                 <div class="d-flex flex-wrap gap-2">
-                    <a
-                        class="btn btn-primary"
-                        href="{% url 'organizations:funcionario_update' funcionario.pk %}"
-                    >
-                        <i class="bi bi-pencil me-1"></i>
-                        Editar funcionario
-                    </a>
+                    {% if puede_editar %}
+                        <a
+                            class="btn btn-primary"
+                            href="{% url 'organizations:funcionario_update' funcionario.pk %}"
+                        >
+                            <i class="bi bi-pencil me-1"></i>
+                            Editar funcionario
+                        </a>
+                    {% endif %}
 
                     <a
                         class="btn btn-outline-secondary"
@@ -276,13 +288,15 @@
                                             Ver
                                         </a>
 
-                                        <a
-                                            class="btn btn-sm btn-outline-secondary"
-                                            href="{% url 'organizations:funcionario_update' f.pk %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}"
-                                        >
-                                            <i class="bi bi-pencil me-1"></i>
-                                            Editar
-                                        </a>
+                                        {% if puede_editar %}
+                                            <a
+                                                class="btn btn-sm btn-outline-secondary"
+                                                href="{% url 'organizations:funcionario_update' f.pk %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}"
+                                            >
+                                                <i class="bi bi-pencil me-1"></i>
+                                                Editar
+                                            </a>
+                                        {% endif %}
 
                                         <form
                                             method="post"

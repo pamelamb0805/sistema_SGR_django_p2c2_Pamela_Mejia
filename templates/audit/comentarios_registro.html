@@ -1,0 +1,186 @@
+
+{% extends "base.html" %}
+
+{% block title %}Conversación · SGR{% endblock %}
+
+{% block page_title %}
+    {{ titulo }}
+{% endblock %}
+
+{% block content %}
+
+<div class="card shadow-sm mb-4">
+    <div class="card-header">
+        <strong>
+            <i class="bi bi-link-45deg me-1"></i>
+            Registro relacionado
+        </strong>
+    </div>
+
+    <div class="card-body">
+        <div class="mb-2">
+            <span class="text-body-secondary">Tipo de registro:</span>
+            <strong>{{ tipo_registro|capfirst }}</strong>
+        </div>
+
+        <div class="mb-2">
+            <span class="text-body-secondary">Identificador:</span>
+            <strong>#{{ registro.pk }}</strong>
+        </div>
+
+        <div>
+            <span class="text-body-secondary">Referencia:</span>
+            <strong>{{ registro }}</strong>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>
+            <i class="bi bi-chat-dots me-1"></i>
+            Conversación del registro
+        </strong>
+
+        <span class="badge text-bg-secondary">
+            {{ comentarios|length }} mensajes
+        </span>
+    </div>
+
+    <div class="card-body">
+
+        {% for comentario in comentarios %}
+            <article
+                class="border rounded p-3 mb-3"
+                id="comentario-{{ comentario.pk }}"
+            >
+                <div class="d-flex justify-content-between flex-wrap gap-2 mb-2">
+                    <div>
+                        <strong>
+                            {% if comentario.funcionario %}
+                                {{ comentario.funcionario.nombre }}
+                            {% else %}
+                                {{ comentario.autor.get_username }}
+                            {% endif %}
+                        </strong>
+
+                        {% if comentario.respuesta_a %}
+                            <span class="badge text-bg-info ms-1">
+                                Respuesta
+                            </span>
+                        {% else %}
+                            <span class="badge text-bg-secondary ms-1">
+                                Comentario
+                            </span>
+                        {% endif %}
+                    </div>
+
+                    <small class="text-body-secondary">
+                        {{ comentario.fecha_creacion|date:"d/m/Y H:i" }}
+                    </small>
+                </div>
+
+                {% if comentario.respuesta_a %}
+                    <div class="small text-body-secondary border-start border-3 ps-2 mb-2">
+                        Responde al comentario
+                        #{{ comentario.respuesta_a.pk }}:
+                        {{ comentario.respuesta_a.mensaje|truncatechars:140 }}
+                    </div>
+                {% endif %}
+
+                <div class="mb-3">
+                    {{ comentario.mensaje|linebreaksbr }}
+                </div>
+
+                <a
+                    class="btn btn-sm btn-outline-primary"
+                    href="?responder={{ comentario.pk }}#form-comentario"
+                >
+                    <i class="bi bi-reply me-1"></i>
+                    Responder
+                </a>
+            </article>
+        {% empty %}
+            <div class="text-center text-body-secondary py-5">
+                <i class="bi bi-chat-square-text fs-1 d-block mb-3"></i>
+                Todavía no hay comentarios.
+                <div class="small">
+                    Inicie la conversación con una consulta u observación.
+                </div>
+            </div>
+        {% endfor %}
+
+    </div>
+</div>
+
+<div class="card shadow-sm mb-4" id="form-comentario">
+    <div class="card-header">
+        <strong>
+            <i class="bi bi-pencil-square me-1"></i>
+            Nuevo comentario
+        </strong>
+    </div>
+
+    <div class="card-body">
+
+        <form method="post" novalidate>
+            {% csrf_token %}
+
+            {% if form.non_field_errors %}
+                <div class="alert alert-danger">
+                    {{ form.non_field_errors }}
+                </div>
+            {% endif %}
+
+            {% if form.respuesta_a.value %}
+                <div class="alert alert-info">
+                    Está respondiendo al comentario
+                    #{{ form.respuesta_a.value }}.
+                    <a
+                        href="{% url 'audit:comentarios_registro' app_label model_name registro.pk %}"
+                        class="alert-link"
+                    >
+                        Cancelar respuesta
+                    </a>
+                </div>
+            {% endif %}
+
+            {{ form.respuesta_a }}
+
+            <label
+                class="form-label"
+                for="{{ form.mensaje.id_for_label }}"
+            >
+                {{ form.mensaje.label }}
+            </label>
+
+            {{ form.mensaje }}
+
+            {% for error in form.mensaje.errors %}
+                <div class="text-danger small mt-1">
+                    {{ error }}
+                </div>
+            {% endfor %}
+
+            <div class="form-text mb-3">
+                El comentario quedará asociado al registro y conservará
+                el autor y la fecha de publicación.
+            </div>
+
+            <button class="btn btn-primary" type="submit">
+                <i class="bi bi-send me-1"></i>
+                Publicar comentario
+            </button>
+
+            <a
+                class="btn btn-outline-secondary"
+                href="{% url 'dashboard' %}"
+            >
+                Volver
+            </a>
+        </form>
+
+    </div>
+</div>
+
+{% endblock %}

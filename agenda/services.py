@@ -17,22 +17,42 @@ from django.utils import timezone
 
 from core.exceptions import ReglaNegocioError
 from core.mixins import (
-    ROLES_SUPERVISION, auditar, es_transversal, get_funcionario, tiene_rol, filtrar_por_ambito,
+    ROLES_SUPERVISION,
+    auditar,
+    es_transversal,
+    get_funcionario,
+    tiene_rol,
+    tiene_permiso,
+    filtrar_por_ambito,
 )
-from core.services import guardar, snapshot
+from core.services import (
+    guardar,
+    snapshot,
+    _notificar_crud,
+)
 from measurement.models import Periodo
 from measurement.services import CalculoIndicadores
 from organizations.models import Funcionario
 
 from .models import Compromiso, HistorialTransiciones
 
-
+def _exigir_permiso(actor, permiso, mensaje=None):
+    if not tiene_permiso(actor, permiso):
+        raise ReglaNegocioError(
+            mensaje or "No tiene permiso para realizar esta operación."
+        )
+    
 # ---------------------------------------------------------------------------
 # Visibilidad y permisos (CA-07)
 # ---------------------------------------------------------------------------
+def _exigir_permiso(actor, permiso, mensaje):
+    """Valida permisos funcionales en la capa de servicios."""
+    if not tiene_permiso(actor, permiso):
+        raise ReglaNegocioError(mensaje)
+
 def compromisos_visibles(user):
     """Agenda colectiva: todo el equipo de la delegación la ve; Administrador/Coordinador ven todas."""
-    qs = Compromiso.objects.select_related("funcionario", "delegacion", "item_medible", "periodo")
+    qs = Compromiso.objects.select_related("funcionario", "delegacion", "item_medible", "periodo").filter(tipo_solicitud="")
     return filtrar_por_ambito(qs, user, "delegacion_id")
 
 
@@ -41,31 +61,58 @@ def _es_responsable(actor, compromiso):
     return f is not None and f.pk == compromiso.funcionario_id
 
 
+
 def supervisa(actor, delegacion_id):
-    """Rol de supervisión dentro del ámbito (Delegado de esa delegación, Administrador, Coordinador)."""
+    """
+    Comprueba si el actor tiene un rol de supervisión y autorización
+    sobre la delegación indicada.
+    """
+    if not getattr(actor, "is_authenticated", False):
+        return False
+
+    if getattr(actor, "is_superuser", False):
+        return True
+
     if not tiene_rol(actor, *ROLES_SUPERVISION):
         return False
-    if es_transversal(actor):
-        return True
-    f = get_funcionario(actor)
-    return f is not None and f.delegacion_id == delegacion_id
 
+    if delegacion_id is None:
+        return False
+
+    return filtrar_por_ambito(
+        Funcionario.objects.filter(delegacion_id=delegacion_id),
+        actor,
+        "delegacion_id",
+    ).exists()
 
 def puede_gestionar(actor, compromiso):
     return _es_responsable(actor, compromiso) or supervisa(actor, compromiso.delegacion_id)
 
 
+
 def funcionarios_asignables(actor):
-    """Responsables que el usuario puede elegir: él mismo, o su equipo si supervisa."""
-    activos = Funcionario.objects.filter(estado=Funcionario.ESTADO_ACTIVO).select_related("cargo", "delegacion")
-    f = get_funcionario(actor)
-    if f is None:
+    """
+    Devuelve únicamente funcionarios activos que el actor puede asignar.
+    La supervisión respeta los alcances propia, multiples y global.
+    """
+    activos = Funcionario.objects.filter(
+        estado=Funcionario.ESTADO_ACTIVO
+    ).select_related("cargo", "delegacion")
+
+    if not getattr(actor, "is_authenticated", False):
         return activos.none()
-    if es_transversal(actor):
+
+    if getattr(actor, "is_superuser", False):
         return activos
+
+    funcionario = get_funcionario(actor)
+    if funcionario is None or not funcionario.activo:
+        return activos.none()
+
     if tiene_rol(actor, *ROLES_SUPERVISION):
-        return activos.filter(delegacion_id=f.delegacion_id)
-    return activos.filter(pk=f.pk)
+        return filtrar_por_ambito(activos, actor, "delegacion_id")
+
+    return activos.filter(pk=funcionario.pk)
 
 
 def _validar_item(compromiso):
@@ -108,120 +155,363 @@ class CRUDHistorialTransiciones:
 class CRUDCompromiso:
     @staticmethod
     def crear_compromiso(compromiso, actor=None):
+        _exigir_permiso(
+            actor,
+            "agenda.registrar",
+            "No tiene permiso para registrar compromisos.",
+        )
+
         creador = get_funcionario(actor)
         if creador is None:
-            raise ReglaNegocioError("Su usuario no tiene un funcionario asociado.")
+            raise ReglaNegocioError(
+                "Su usuario no tiene un funcionario asociado."
+            )
+
         responsable = compromiso.funcionario
-        if not funcionarios_asignables(actor).filter(pk=responsable.pk).exists():
-            raise ReglaNegocioError("No puede asignar compromisos a ese funcionario.")
+
+        if not funcionarios_asignables(actor).filter(
+            pk=responsable.pk
+        ).exists():
+            raise ReglaNegocioError(
+                "No puede asignar compromisos a ese funcionario."
+            )
+
         if compromiso.fecha_comprometida < timezone.localdate():
-            raise ReglaNegocioError("La fecha comprometida no puede estar en el pasado.")
+            raise ReglaNegocioError(
+                "La fecha comprometida no puede estar en el pasado."
+            )
+
         _validar_item(compromiso)
+
         with transaction.atomic():
             compromiso.estado = Compromiso.ESTADO_INGRESADO
             compromiso.delegacion_id = responsable.delegacion_id
-            compromiso.periodo = Periodo.objects.para_fecha(compromiso.fecha_comprometida)
-            guardar(compromiso, actor, "compromiso")
-            CRUDHistorialTransiciones.registrar_cambio_estado(
-                compromiso, "", Compromiso.ESTADO_INGRESADO, "Compromiso registrado.", creador)
-        return compromiso
+            compromiso.periodo = Periodo.objects.para_fecha(
+                compromiso.fecha_comprometida
+            )
 
+            guardar(compromiso, actor, "compromiso")
+
+            CRUDHistorialTransiciones.registrar_cambio_estado(
+                compromiso,
+                "",
+                Compromiso.ESTADO_INGRESADO,
+                "Compromiso registrado.",
+                creador,
+            )
+
+        return compromiso
     @staticmethod
     def mostrar_compromisos_por_delegacion(delegacion):
         return Compromiso.objects.filter(delegacion=delegacion).select_related("funcionario", "item_medible")
 
     @staticmethod
     def modificar_compromiso(compromiso, actor=None):
+        _exigir_permiso(
+            actor,
+            "agenda.editar",
+            "No tiene permiso para editar compromisos.",
+        )
+
         original = Compromiso.objects.get(pk=compromiso.pk)
+
         if not puede_gestionar(actor, original):
-            raise ReglaNegocioError("No tiene permiso para modificar este compromiso.")
+            raise ReglaNegocioError(
+                "No tiene autorización sobre este compromiso."
+            )
+
         if original.realizado:
-            raise ReglaNegocioError("Un compromiso realizado no puede modificarse.")
+            raise ReglaNegocioError(
+                "Un compromiso realizado no puede modificarse."
+            )
+
         if compromiso.funcionario_id != original.funcionario_id:
-            raise ReglaNegocioError("Para cambiar el responsable use la opción «Reasignar».")
+            raise ReglaNegocioError(
+                "Para cambiar el responsable use la opción «Reasignar»."
+            )
+
         _validar_item(compromiso)
-        cambia_fecha = compromiso.fecha_comprometida != original.fecha_comprometida
+
+        cambia_fecha = (
+            compromiso.fecha_comprometida
+            != original.fecha_comprometida
+        )
+
         if cambia_fecha:
             if compromiso.fecha_comprometida < timezone.localdate():
-                raise ReglaNegocioError("La nueva fecha comprometida no puede estar en el pasado.")
-            if not (compromiso.observacion or "").strip() or compromiso.observacion == original.observacion:
-                raise ReglaNegocioError("Indique en la observación el motivo del cambio de fecha.")
+                raise ReglaNegocioError(
+                    "La nueva fecha comprometida no puede estar en el pasado."
+                )
+
+            if (
+                not (compromiso.observacion or "").strip()
+                or compromiso.observacion == original.observacion
+            ):
+                raise ReglaNegocioError(
+                    "Indique en la observación el motivo del cambio de fecha."
+                )
+
         with transaction.atomic():
-            compromiso.periodo = Periodo.objects.para_fecha(compromiso.fecha_comprometida)
+            compromiso.periodo = Periodo.objects.para_fecha(
+                compromiso.fecha_comprometida
+            )
+
             guardar(compromiso, actor, "compromiso")
+
             if cambia_fecha:
                 CRUDHistorialTransiciones.registrar_cambio_estado(
-                    compromiso, original.estado, original.estado,
-                    f"Fecha reprogramada del {original.fecha_comprometida:%d/%m/%Y} al "
-                    f"{compromiso.fecha_comprometida:%d/%m/%Y}. {compromiso.observacion}".strip(),
-                    get_funcionario(actor))
-        return compromiso
+                    compromiso,
+                    original.estado,
+                    original.estado,
+                    (
+                        f"Fecha reprogramada del "
+                        f"{original.fecha_comprometida:%d/%m/%Y} al "
+                        f"{compromiso.fecha_comprometida:%d/%m/%Y}. "
+                        f"{compromiso.observacion}"
+                    ).strip(),
+                    get_funcionario(actor),
+                )
 
+        return compromiso
+    
     @staticmethod
-    def actualizar_estado(compromiso, nuevo_estado, observacion="", actor=None):
-        """Transición controlada (RF-018). Conserva estado anterior, nuevo, autor, fecha y observación."""
+    def actualizar_estado(
+        compromiso,
+        nuevo_estado,
+        observacion="",
+        actor=None,
+    ):
+        """
+        Actualiza el estado del compromiso, conserva la transición,
+        recalcula resultados cuando corresponde y publica el evento.
+        """
+        _exigir_permiso(
+            actor,
+            "agenda.estado",
+            "No tiene permiso para cambiar estados de compromisos.",
+        )
+
         observacion = (observacion or "").strip()
         autor = get_funcionario(actor)
+
         with transaction.atomic():
-            c = Compromiso.objects.select_for_update().get(pk=compromiso.pk)
+            c = Compromiso.objects.select_for_update().get(
+                pk=compromiso.pk
+            )
+
             if not puede_gestionar(actor, c):
-                raise ReglaNegocioError("No tiene permiso para cambiar el estado de este compromiso.")
+                raise ReglaNegocioError(
+                    "No tiene permiso para cambiar el estado "
+                    "de este compromiso."
+                )
+
             anterior = c.estado
+
             if nuevo_estado == anterior:
-                raise ReglaNegocioError(f"El compromiso ya está en estado «{anterior}».")
-            if nuevo_estado not in Compromiso.TRANSICIONES.get(anterior, ()):
-                raise ReglaNegocioError(f"Transición no permitida: de «{anterior}» a «{nuevo_estado}».")
-            if nuevo_estado == Compromiso.ESTADO_PENDIENTE and not observacion:
-                raise ReglaNegocioError("Indique en la observación por qué queda pendiente.")
+                raise ReglaNegocioError(
+                    f"El compromiso ya está en estado «{anterior}»."
+                )
+
+            if nuevo_estado not in Compromiso.TRANSICIONES.get(
+                anterior, ()
+            ):
+                raise ReglaNegocioError(
+                    f"Transición no permitida: de «{anterior}» "
+                    f"a «{nuevo_estado}»."
+                )
+
+            if (
+                nuevo_estado == Compromiso.ESTADO_PENDIENTE
+                and not observacion
+            ):
+                raise ReglaNegocioError(
+                    "Indique en la observación por qué queda pendiente."
+                )
+
             if anterior == Compromiso.ESTADO_REALIZADO:
                 if not supervisa(actor, c.delegacion_id):
-                    raise ReglaNegocioError("Solo la supervisión puede reabrir un compromiso realizado.")
+                    raise ReglaNegocioError(
+                        "Solo la supervisión puede reabrir "
+                        "un compromiso realizado."
+                    )
+
                 if not observacion:
-                    raise ReglaNegocioError("Indique el motivo de la reapertura.")
-            if nuevo_estado == Compromiso.ESTADO_REALIZADO and c.periodo_id is None:
-                c.periodo = Periodo.objects.para_fecha(c.fecha_comprometida)
-            toca_resultados = Compromiso.ESTADO_REALIZADO in (anterior, nuevo_estado)
+                    raise ReglaNegocioError(
+                        "Indique el motivo de la reapertura."
+                    )
+
+            if (
+                nuevo_estado == Compromiso.ESTADO_REALIZADO
+                and c.periodo_id is None
+            ):
+                c.periodo = Periodo.objects.para_fecha(
+                    c.fecha_comprometida
+                )
+
+            toca_resultados = (
+                Compromiso.ESTADO_REALIZADO in (
+                    anterior,
+                    nuevo_estado,
+                )
+            )
+
             if toca_resultados and _periodo_cerrado_con_item(c):
-                raise ReglaNegocioError("El período está cerrado: el compromiso no puede alterar sus resultados.")
+                raise ReglaNegocioError(
+                    "El período está cerrado: el compromiso "
+                    "no puede alterar sus resultados."
+                )
 
             c.estado = nuevo_estado
+            
             if observacion:
                 c.observacion = observacion
-            c.save(update_fields=["estado", "observacion", "periodo"])
-            CRUDHistorialTransiciones.registrar_cambio_estado(c, anterior, nuevo_estado, observacion, autor)
-            auditar(actor, "CAMBIO_ESTADO_COMPROMISO", "compromiso", c.pk, anterior,
-                    json.dumps({"estado": nuevo_estado, "observacion": observacion}, ensure_ascii=False))
+
+            c.save(
+                update_fields=[
+                    "estado",
+                    "observacion",
+                    "periodo",
+                ]
+            )
+
+            CRUDHistorialTransiciones.registrar_cambio_estado(
+                c,
+                anterior,
+                nuevo_estado,
+                observacion,
+                autor,
+            )
+
+            auditar(
+                actor,
+                "CAMBIO_ESTADO_COMPROMISO",
+                "compromiso",
+                c.pk,
+                anterior,
+                json.dumps(
+                    {
+                        "estado": nuevo_estado,
+                        "observacion": observacion,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+
             if toca_resultados:
                 _recalcular(c)
+
+            _notificar_crud(
+                "compromiso",
+                "actualizar",
+                actor,
+                c,
+            )
+
         return c
 
     @staticmethod
-    def reasignar_responsable(compromiso, nuevo_responsable, motivo, actor=None):
-        """Continuidad operativa (HU-15): conserva responsable anterior, nuevo, autor, fecha y motivo."""
+    def reasignar_responsable(
+        compromiso,
+        nuevo_responsable,
+        motivo,
+        actor=None,
+    ):
+        _exigir_permiso(
+            actor,
+            "agenda.reasignar",
+            "No tiene permiso para reasignar compromisos.",
+        )
+
         motivo = (motivo or "").strip()
+
         if not motivo:
-            raise ReglaNegocioError("Debe indicar el motivo de la reasignación.")
+            raise ReglaNegocioError(
+                "Debe indicar el motivo de la reasignación."
+            )
+
         with transaction.atomic():
-            c = Compromiso.objects.select_for_update().get(pk=compromiso.pk)
+            c = Compromiso.objects.select_for_update().get(
+                pk=compromiso.pk
+            )
+
             if not supervisa(actor, c.delegacion_id):
-                raise ReglaNegocioError("Solo la supervisión puede reasignar compromisos.")
+                raise ReglaNegocioError(
+                    "Solo la supervisión puede reasignar compromisos."
+                )
+
             if c.realizado:
-                raise ReglaNegocioError("No se puede reasignar un compromiso realizado.")
+                raise ReglaNegocioError(
+                    "No se puede reasignar un compromiso realizado."
+                )
+
             if nuevo_responsable.pk == c.funcionario_id:
-                raise ReglaNegocioError("El compromiso ya está asignado a ese funcionario.")
-            if not funcionarios_asignables(actor).filter(pk=nuevo_responsable.pk).exists():
-                raise ReglaNegocioError("No puede reasignar a ese funcionario.")
+                raise ReglaNegocioError(
+                    "El compromiso ya está asignado a ese funcionario."
+                )
+
+            if not funcionarios_asignables(actor).filter(
+                pk=nuevo_responsable.pk
+            ).exists():
+                raise ReglaNegocioError(
+                    "No puede reasignar a ese funcionario."
+                )
+
             anterior = c.funcionario
+            delegacion_anterior_id = c.delegacion_id
             anterior_snapshot = snapshot(c)
+
             c.funcionario = nuevo_responsable
             c.delegacion_id = nuevo_responsable.delegacion_id
+
             _validar_item(c)
-            c.save(update_fields=["funcionario", "delegacion"])
+
+            c.save(
+                update_fields=[
+                    "funcionario",
+                    "delegacion",
+                ]
+            )
+
             CRUDHistorialTransiciones.registrar_cambio_estado(
-                c, c.estado, c.estado,
-                f"Reasignado de {anterior.nombre} a {nuevo_responsable.nombre}. Motivo: {motivo}",
-                get_funcionario(actor))
-            auditar(actor, "REASIGNAR_COMPROMISO", "compromiso", c.pk, anterior_snapshot, snapshot(c))
+                c,
+                c.estado,
+                c.estado,
+                (
+                    f"Reasignado de {anterior.nombre} "
+                    f"a {nuevo_responsable.nombre}. "
+                    f"Motivo: {motivo}"
+                ),
+                get_funcionario(actor),
+            )
+
+            auditar(
+                actor,
+                "REASIGNAR_COMPROMISO",
+                "compromiso",
+                c.pk,
+                anterior_snapshot,
+                snapshot(c),
+            )
+
+            # Notificar a la delegación nueva.
+            _notificar_crud(
+                "compromiso",
+                "actualizar",
+                actor,
+                c,
+                delegacion_id=c.delegacion_id,
+            )
+
+            # Si cambió de delegación, notificar también a la anterior.
+            if delegacion_anterior_id != c.delegacion_id:
+                _notificar_crud(
+                    "compromiso",
+                    "actualizar",
+                    actor,
+                    c,
+                    delegacion_id=delegacion_anterior_id,
+                )
+
         return c
 
     @staticmethod

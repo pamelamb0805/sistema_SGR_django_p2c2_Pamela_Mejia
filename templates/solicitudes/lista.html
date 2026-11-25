@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Solicitudes vecinales · SGR{% endblock %}
+{% block page_title %}Solicitudes vecinales{% endblock %}
+{% block content %}
+<div class="card shadow-sm"><div class="card-body">
+  <form method="get" class="row g-2 mb-3">
+    <div class="col-md-5"><input class="form-control" name="q" value="{{ filtros.q }}" placeholder="Buscar por vecino, RUT, sector o descripción"></div>
+    <div class="col-md-3"><select class="form-select" name="estado"><option value="">Todos los estados</option>{% for v,l in estados %}<option value="{{ v }}" {% if filtros.estado == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+    <div class="col-md-2"><input class="form-control" name="categoria" value="{{ filtros.categoria }}" placeholder="Área"></div>
+    <div class="col-md-2 d-flex gap-1"><button class="btn btn-primary">Filtrar</button><a class="btn btn-outline-secondary" href="{% url 'solicitudes:lista' %}">Limpiar</a></div>
+  </form>
+  <div class="d-flex justify-content-between mb-2"><span class="text-muted small">{{ page_obj.paginator.count }} solicitudes en total</span><a href="{% url 'solicitudes:exportar_excel' %}?{{ request.GET.urlencode }}" class="btn btn-sm btn-outline-success"><i class="bi bi-file-earmark-excel"></i> Exportar Excel</a></div>
+  <div class="table-responsive"><table class="table table-hover align-middle"><thead><tr><th>Folio</th><th>Fecha creación</th><th>Solicitante</th><th>Delegación</th><th>Área</th><th>Estado</th><th></th></tr></thead><tbody>
+  {% for s in solicitudes %}<tr><td>#{{ s.pk }}</td><td>{{ s.fecha_creacion|date:"d/m/Y H:i" }}</td><td>{{ s.solicitante }}</td><td>{{ s.delegacion.nombre }}</td><td>{{ s.categoria_solicitud }}</td><td><span class="badge text-bg-secondary">{{ s.estado_solicitud }}</span></td><td><a class="btn btn-sm btn-outline-primary" href="{% url 'solicitudes:detalle' s.pk %}">Ver</a></td></tr>{% empty %}<tr><td colspan="7" class="text-center text-muted py-4">No hay solicitudes para los filtros seleccionados.</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% if page_obj.paginator.num_pages > 1 %}
+  <nav aria-label="Paginación de solicitudes"><ul class="pagination pagination-sm justify-content-end">
+    {% if page_obj.has_previous %}<li class="page-item"><a class="page-link" href="?{% for k,v in filtros.items %}{% if k != 'page' %}{{ k }}={{ v|urlencode }}&{% endif %}{% endfor %}page={{ page_obj.previous_page_number }}">Anterior</a></li>{% endif %}
+    <li class="page-item disabled"><span class="page-link">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span></li>
+    {% if page_obj.has_next %}<li class="page-item"><a class="page-link" href="?{% for k,v in filtros.items %}{% if k != 'page' %}{{ k }}={{ v|urlencode }}&{% endif %}{% endfor %}page={{ page_obj.next_page_number }}">Siguiente</a></li>{% endif %}
+  </ul></nav>
+  {% endif %}
+</div></div>
+{% endblock %}

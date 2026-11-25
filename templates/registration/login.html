@@ -1,71 +1,279 @@
+
 {% extends "base.html" %}
-{% load ui_extras %}
+{% load static ui_extras %}
 
 {% block title %}Ingresar · SGR{% endblock %}
 
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/sgr-login.css' %}?v=20261118-2">
+{% endblock %}
+
 {% block content %}
-<div class="row justify-content-center">
-  <div class="col-12 col-sm-10 col-md-7 col-lg-5 col-xl-4">
+<div class="sgr-login-page">
 
-    <div class="text-center mb-4">
-      <i class="bi bi-bar-chart-steps sgr-login-logo" aria-hidden="true"></i>
-      <h1 class="h3 mt-2 mb-1">Sistema de Gestión de Resultados</h1>
-      <p class="text-body-secondary mb-0">Delegaciones municipales · La Serena</p>
-    </div>
+    <!-- PANEL IZQUIERDO: IDENTIDAD INSTITUCIONAL -->
+    <section class="sgr-login-welcome" aria-labelledby="sgr-welcome-title">
 
-    <div class="card shadow-sm sgr-login-card">
-      <div class="card-body p-4">
-        <h2 class="h5 mb-3">Iniciar sesión</h2>
+        <div class="sgr-login-welcome-content">
 
-        {# Los errores de credenciales se muestran con SweetAlert (los envía la vista); aquí van los errores por campo #}
-        <form method="post" action="{% url 'login' %}" novalidate>
-          {% csrf_token %}
-          <input type="hidden" name="next" value="{{ next }}">
-
-          {% include "partials/_form_field.html" with field=form.username label="Usuario" %}
-
-          <div class="mb-3">
-            <label class="form-label" for="{{ form.password.id_for_label }}">Contraseña</label>
-            <div class="input-group has-validation">
-              {{ form.password|bs_campo }}
-              <button class="btn btn-outline-secondary" type="button" id="btn-ver-clave"
-                      aria-label="Mostrar contraseña" aria-pressed="false" title="Mostrar u ocultar contraseña">
-                <i class="bi bi-eye" aria-hidden="true"></i>
-              </button>
-              {% for error in form.password.errors %}
-              <div class="invalid-feedback">{{ error }}</div>
-              {% endfor %}
+            <div class="sgr-login-brand">
+                <div class="sgr-login-brand-icon">
+                    <i class="bi bi-bar-chart-steps" aria-hidden="true"></i>
+                </div>
+                <span>SGR</span>
             </div>
-          </div>
 
-          <button type="submit" class="btn btn-primary w-100">
-            <i class="bi bi-box-arrow-in-right me-1" aria-hidden="true"></i> Ingresar
-          </button>
-        </form>
-      </div>
-    </div>
+            <div class="sgr-login-welcome-text">
+                <span class="sgr-login-eyebrow">
+                    MUNICIPALIDAD DE LA SERENA
+                </span>
 
-    <p class="text-center text-body-secondary small mt-3 mb-0">
-      ¿No tiene acceso o olvidó su contraseña? Solicítelo al administrador del sistema.
-    </p>
-    <p class="text-center text-body-secondary small">Proyecto académico INACAP · solo datos ficticios.</p>
-  </div>
+                <h1 id="sgr-welcome-title">
+                    Sistema de Gestión de Resultados
+                </h1>
+
+                <div class="sgr-login-separator"></div>
+
+                <p>
+                    Una plataforma para gestionar, supervisar y evaluar
+                    los resultados de la gestión municipal.
+                </p>
+            </div>
+
+            <!-- ILUSTRACIÓN DE LA SERENA -->
+            <div class="sgr-login-illustration">
+                <img
+                    src="{% static 'img/logo_la_serena_icon_login.jpg' %}"
+                    alt="Ilustración arquitectónica de La Serena"
+                >
+            </div>
+
+            <div class="sgr-login-welcome-footer">
+                <i class="bi bi-geo-alt-fill" aria-hidden="true"></i>
+                Delegaciones municipales · La Serena
+            </div>
+
+        </div>
+
+        <div class="sgr-login-decoration sgr-login-decoration-one"></div>
+        <div class="sgr-login-decoration sgr-login-decoration-two"></div>
+
+    </section>
+
+
+    <!-- PANEL DERECHO: ACCESO AL SISTEMA -->
+    <section class="sgr-login-access" aria-labelledby="sgr-login-title">
+
+        <div class="sgr-login-access-content">
+
+            <div class="sgr-login-heading">
+                <span class="sgr-login-heading-label">
+                    BIENVENIDO/A
+                </span>
+
+                <h2 id="sgr-login-title">
+                    Iniciar sesión
+                </h2>
+
+                <p>
+                    Ingresa tus credenciales para acceder al sistema.
+                </p>
+            </div>
+
+
+            <div class="sgr-login-form-card">
+
+                {% if form.non_field_errors %}
+                    <div class="alert alert-danger" role="alert">
+                        <i class="bi bi-exclamation-circle-fill me-2"></i>
+                        {{ form.non_field_errors }}
+                    </div>
+                {% endif %}
+
+
+                <form method="post" action="{% url 'login' %}" novalidate>
+
+                    {% csrf_token %}
+
+                    <input
+                        type="hidden"
+                        name="next"
+                        value="{{ next }}"
+                    >
+
+
+                    <!-- USUARIO -->
+                    <div class="mb-4">
+
+                        <label
+                            class="form-label"
+                            for="{{ form.username.id_for_label }}"
+                        >
+                            Usuario o correo electrónico
+                        </label>
+
+                        <div class="sgr-login-input-wrapper">
+                            <i class="bi bi-person" aria-hidden="true"></i>
+
+                            {{ form.username|bs_campo }}
+                        </div>
+
+                        {% for error in form.username.errors %}
+                            <div class="invalid-feedback d-block">
+                                {{ error }}
+                            </div>
+                        {% endfor %}
+
+                    </div>
+
+
+                    <!-- CONTRASEÑA -->
+                    <div class="mb-3">
+
+                        <label
+                            class="form-label"
+                            for="{{ form.password.id_for_label }}"
+                        >
+                            Contraseña
+                        </label>
+
+                        <div class="sgr-login-input-wrapper sgr-login-password">
+
+                            <i class="bi bi-lock" aria-hidden="true"></i>
+
+                            {{ form.password|bs_campo }}
+
+                            <button
+                                class="sgr-login-toggle-password"
+                                type="button"
+                                id="btn-ver-clave"
+                                aria-label="Mostrar contraseña"
+                                aria-pressed="false"
+                                title="Mostrar u ocultar contraseña"
+                            >
+                                <i class="bi bi-eye" aria-hidden="true"></i>
+                            </button>
+
+                        </div>
+
+                        {% for error in form.password.errors %}
+                            <div class="invalid-feedback d-block">
+                                {{ error }}
+                            </div>
+                        {% endfor %}
+
+                    </div>
+
+
+                    <!-- RECUPERACIÓN DE CONTRASEÑA -->
+                    <div class="sgr-login-forgot">
+                        <a href="{% url 'recuperar_clave' %}">
+                            ¿Olvidaste tu contraseña?
+                        </a>
+                    </div>
+
+
+                    <!-- BOTÓN INGRESAR -->
+                    <button
+                        type="submit"
+                        class="sgr-login-submit"
+                    >
+                        <span>Ingresar al sistema</span>
+                        <i class="bi bi-arrow-right" aria-hidden="true"></i>
+                    </button>
+
+                </form>
+
+
+                <!-- ACCESO A SOLICITUDES VECINALES -->
+                <div class="sgr-login-divider">
+                    <span>O TAMBIÉN</span>
+                </div>
+
+                <a
+                    href="{% url 'solicitudes:publica' %}"
+                    class="sgr-login-citizen"
+                >
+
+                    <span class="sgr-login-citizen-icon">
+                        <i class="bi bi-megaphone" aria-hidden="true"></i>
+                    </span>
+
+                    <span class="sgr-login-citizen-text">
+                        <strong>Ingresar solicitud vecinal</strong>
+                        <small>
+                            Accede sin necesidad de iniciar sesión
+                        </small>
+                    </span>
+
+                    <i class="bi bi-chevron-right sgr-login-citizen-arrow"
+                       aria-hidden="true"></i>
+
+                </a>
+
+            </div>
+
+
+            <!-- PIE DEL PANEL DERECHO -->
+            <div class="sgr-login-access-footer">
+                <p>
+                    ¿No tienes acceso al sistema?<br>
+                    Solicítalo al administrador.
+                </p>
+
+                <span>
+                    Proyecto académico INACAP · Solo datos ficticios
+                </span>
+            </div>
+
+        </div>
+
+    </section>
+
 </div>
 {% endblock %}
 
+
 {% block extra_js %}
 <script>
-  (function () {
-    var boton = document.getElementById("btn-ver-clave");
-    var campo = document.getElementById("{{ form.password.id_for_label }}");
-    if (!boton || !campo) { return; }
+(function () {
+
+    const boton = document.getElementById("btn-ver-clave");
+
+    const campo = document.getElementById(
+        "{{ form.password.id_for_label }}"
+    );
+
+    if (!boton || !campo) {
+        return;
+    }
+
     boton.addEventListener("click", function () {
-      var oculto = campo.type === "password";
-      campo.type = oculto ? "text" : "password";
-      boton.setAttribute("aria-pressed", oculto ? "true" : "false");
-      boton.setAttribute("aria-label", oculto ? "Ocultar contraseña" : "Mostrar contraseña");
-      boton.firstElementChild.className = oculto ? "bi bi-eye-slash" : "bi bi-eye";
+
+        const mostrar = campo.type === "password";
+
+        campo.type = mostrar ? "text" : "password";
+
+        boton.setAttribute(
+            "aria-pressed",
+            mostrar ? "true" : "false"
+        );
+
+        boton.setAttribute(
+            "aria-label",
+            mostrar ? "Ocultar contraseña" : "Mostrar contraseña"
+        );
+
+        const icono = boton.querySelector("i");
+
+        if (icono) {
+            icono.className = mostrar
+                ? "bi bi-eye-slash"
+                : "bi bi-eye";
+        }
+
     });
-  })();
+
+})();
 </script>
 {% endblock %}

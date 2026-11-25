@@ -8,22 +8,28 @@ verificador recalcula los indicadores mediante measurement.CalculoIndicadores.re
 import hashlib
 import json
 import re
-
 from django.conf import settings
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 
 from core.exceptions import ReglaNegocioError
 from core.mixins import (
-    ROLES_VALIDACION, ROL_CONSULTA, ROL_DELEGADO, ROL_VERIFICADOR,
-    auditar, es_transversal, get_funcionario, tiene_rol,
+    ROLES_VALIDACION,
+    ROL_CONSULTA,
+    ROL_DELEGADO,
+    ROL_VERIFICADOR,
+    auditar,
+    es_transversal,
+    get_funcionario,
+    tiene_rol,
+    tiene_permiso,
 )
-from core.services import guardar, snapshot
+from core.services import guardar, snapshot, _notificar_crud
 from catalogs.models import Catalogo
 from measurement.models import Periodo
 from measurement.services import CalculoIndicadores
-
 from .models import Actividad, Evidencia, Validacion
+from django.core.exceptions import ValidationError as DjangoValidationError
 
 TIPOS_CATALOGO_ACTIVIDAD = (Catalogo.TIPO_ACTIVIDAD, Catalogo.TIPO_SERVICIO)
 
@@ -34,6 +40,15 @@ FIRMAS_ARCHIVO = {
 }
 CODIGO_RE = re.compile(r"^ACT-(\d+)(?:-E(\d+))?$", re.IGNORECASE)
 
+def _exigir_permiso(actor, permiso, mensaje=None):
+    """
+    Verifica permisos funcionales en el servicio.
+    La autorización no depende únicamente de los botones o vistas.
+    """
+    if not tiene_permiso(actor, permiso):
+        raise ReglaNegocioError(
+            mensaje or "No tiene permiso para realizar esta operación."
+        )
 
 # ---------------------------------------------------------------------------
 # Visibilidad (ámbito por rol y delegación, CA-07)
@@ -103,41 +118,124 @@ def _recalcular_estado(actividad):
 class CRUDActividad:
     @staticmethod
     def validar_campos_actividad(actividad, original=None):
-        """Obligatoriedad, formatos y coherencia (RF-010). Asigna el período según la fecha."""
+        """
+        Validación integral RF-010:
+        - Campos obligatorios y formatos.
+        - Fecha y período de medición.
+        - Estado y tipo de registro.
+        - Teléfono y coherencia con el contacto.
+        - Vigencia y correspondencia del ítem.
+        - Vigencia y tipo del catálogo.
+        """
+        # Normalizar textos antes de validar.
+        actividad.accion = (actividad.accion or "").strip()
+        actividad.contacto = (actividad.contacto or "").strip()
+        actividad.telefono = (actividad.telefono or "").strip()
+
         if not actividad.fecha:
-            raise ReglaNegocioError("La fecha es obligatoria.")
+            raise ReglaNegocioError("La fecha de la actividad es obligatoria.")
+
         if actividad.fecha > timezone.localdate():
-            raise ReglaNegocioError("La fecha de la actividad no puede ser futura.")
+            raise ReglaNegocioError(
+                "La fecha de la actividad no puede ser futura."
+            )
+
         periodo = Periodo.objects.para_fecha(actividad.fecha)
+
         if periodo is None:
-            raise ReglaNegocioError("No existe un período de medición para esa fecha.")
+            raise ReglaNegocioError(
+                "No existe un período de medición para la fecha indicada."
+            )
+
         if not periodo.abierto:
-            raise ReglaNegocioError(f"El período {periodo} está cerrado: no se pueden registrar actividades.")
+            raise ReglaNegocioError(
+                f"El período {periodo} está cerrado: "
+                "no se pueden registrar ni modificar actividades."
+            )
+
+        # Asignar el período antes de ejecutar la validación completa.
+        actividad.periodo = periodo
+
+        # Ejecuta validadores de campos, choices y clean() del modelo.
+        # Así también se validan los guardados que no pasan por el formulario.
+        try:
+            actividad.full_clean()
+        except DjangoValidationError as exc:
+            errores = []
+
+            for campo, mensajes in exc.message_dict.items():
+                if campo == "__all__":
+                    etiqueta = "Registro"
+                else:
+                    etiqueta = (
+                        actividad._meta.get_field(campo)
+                        .verbose_name.capitalize()
+                    )
+
+                for mensaje in mensajes:
+                    errores.append(f"{etiqueta}: {mensaje}")
+
+            raise ReglaNegocioError(
+                "Corrija los siguientes datos: " + " ".join(errores)
+            )
+
         funcionario = actividad.funcionario
+
         if not funcionario.activo:
-            raise ReglaNegocioError("El funcionario está inactivo.")
+            raise ReglaNegocioError(
+                "El funcionario está inactivo y no puede registrar actividades."
+            )
+
         if actividad.item.cargo_id != funcionario.cargo_id:
-            raise ReglaNegocioError("El ítem no corresponde al cargo del funcionario.")
-        cambia_item = original is None or original.item_id != actividad.item_id
-        cambia_catalogo = original is None or original.catalogo_id != actividad.catalogo_id
+            raise ReglaNegocioError(
+                "El ítem medible no corresponde al cargo del funcionario."
+            )
+
+        cambia_item = (
+            original is None
+            or original.item_id != actividad.item_id
+        )
+
+        cambia_catalogo = (
+            original is None
+            or original.catalogo_id != actividad.catalogo_id
+        )
+
         if cambia_item and not actividad.item.vigencia:
-            raise ReglaNegocioError("El ítem medible no está vigente.")
+            raise ReglaNegocioError(
+                "El ítem medible seleccionado no está vigente."
+            )
+
         if cambia_catalogo:
             if not actividad.catalogo.activo:
-                raise ReglaNegocioError("El elemento de catálogo está desactivado.")
-            if actividad.catalogo.tipo_catalogo not in TIPOS_CATALOGO_ACTIVIDAD:
-                raise ReglaNegocioError("El catálogo debe ser de tipo Actividad o Servicio.")
-        actividad.periodo = periodo
-        return periodo
+                raise ReglaNegocioError(
+                    "El elemento del catálogo seleccionado está desactivado."
+                )
 
+            if actividad.catalogo.tipo_catalogo not in TIPOS_CATALOGO_ACTIVIDAD:
+                raise ReglaNegocioError(
+                    "El catálogo debe ser de tipo Actividad o Servicio."
+                )
+
+        return periodo
     @staticmethod
     def crear_actividad(actividad, actor=None):
+        _exigir_permiso(
+            actor,
+            "actividades.registrar",
+            "No tiene permiso para registrar actividades.",
+        )
+
         with transaction.atomic():
             actividad.estado = Actividad.ESTADO_REGISTRADA
-            CRUDActividad.validar_campos_actividad(actividad)
-            guardar(actividad, actor, "actividad")
-        return actividad
 
+            CRUDActividad.validar_campos_actividad(actividad)
+
+            actividad.catalogo_nombre = actividad.catalogo.nombre
+
+            guardar(actividad, actor, "actividad")
+
+        return actividad
     @staticmethod
     def mostrar_actividades_por_funcionario(funcionario, periodo=None):
         qs = Actividad.objects.filter(funcionario=funcionario).select_related("item", "catalogo", "periodo")
@@ -147,36 +245,105 @@ class CRUDActividad:
     def buscar_actividad_id(id_actividad):
         return Actividad.objects.filter(pk=id_actividad).first()
 
+
     @staticmethod
     def modificar_actividad(actividad, actor=None):
-        original = Actividad.objects.get(pk=actividad.pk)
+        _exigir_permiso(
+            actor,
+            "actividades.editar",
+            "No tiene permiso para editar actividades.",
+        )
+
+        original = Actividad.objects.select_related("catalogo").get(
+            pk=actividad.pk
+        )
+
         _exigir_autor(original, actor)
+
         if not original.editable:
-            raise ReglaNegocioError(f"Una actividad en estado «{original.estado}» no puede modificarse.")
+            raise ReglaNegocioError(
+                f"Una actividad en estado «{original.estado}» "
+                "no puede modificarse."
+            )
+
         with transaction.atomic():
-            CRUDActividad.validar_campos_actividad(actividad, original)
+            CRUDActividad.validar_campos_actividad(
+                actividad,
+                original,
+            )
+
+            if actividad.catalogo_id != original.catalogo_id:
+                actividad.catalogo_nombre = actividad.catalogo.nombre
+            else:
+                actividad.catalogo_nombre = (
+                    original.catalogo_nombre
+                    or original.catalogo.nombre
+                )
+
             guardar(actividad, actor, "actividad")
+
         return actividad
 
     @staticmethod
     def anular_actividad(actividad, motivo, actor=None):
-        """Anula el registro: deja de aportar al avance (RF-022, RN-009). Conserva su historial."""
+        _exigir_permiso(
+            actor,
+            "actividades.anular",
+            "No tiene permiso para anular actividades.",
+        )
+
         motivo = (motivo or "").strip()
+
         if not motivo:
-            raise ReglaNegocioError("Debe indicar el motivo de la anulación.")
+            raise ReglaNegocioError(
+                "Debe indicar el motivo de la anulación."
+            )
+
         with transaction.atomic():
-            actividad = Actividad.objects.select_for_update().get(pk=actividad.pk)
+            actividad = Actividad.objects.select_for_update().get(
+                pk=actividad.pk
+            )
+
             if actividad.estado == Actividad.ESTADO_ANULADA:
-                raise ReglaNegocioError("La actividad ya está anulada.")
-            _exigir_periodo_abierto(actividad.periodo_id, "anular actividades")
+                raise ReglaNegocioError(
+                    "La actividad ya está anulada."
+                )
+
+            _exigir_periodo_abierto(
+                actividad.periodo_id,
+                "anular actividades",
+            )
+
             anterior = snapshot(actividad)
+
             actividad.estado = Actividad.ESTADO_ANULADA
             actividad.save(update_fields=["estado"])
-            auditar(actor, "ANULAR_ACTIVIDAD", "actividad", actividad.pk, anterior,
-                    json.dumps({"motivo": motivo, "estado": actividad.estado}, ensure_ascii=False))
-            _recalcular_indicadores(actividad)
-        return actividad
 
+            auditar(
+                actor,
+                "ANULAR_ACTIVIDAD",
+                "actividad",
+                actividad.pk,
+                anterior,
+                json.dumps(
+                    {
+                        "motivo": motivo,
+                        "estado": actividad.estado,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+
+            _recalcular_indicadores(actividad)
+
+            _notificar_crud(
+                "actividad",
+                "actualizar",
+                actor,
+                actividad,
+            )
+
+        return actividad
 
 # ---------------------------------------------------------------------------
 # CRUDEvidencia (RF-011, RF-012, HU-09, HU-10)
@@ -215,31 +382,67 @@ class CRUDEvidencia:
 
     @staticmethod
     def adjuntar_evidencia(actividad, archivo, actor=None):
-        """Vincula el archivo al código de la actividad; la actividad pasa a 'En revisión'."""
+        _exigir_permiso(
+            actor,
+            "evidencias.registrar",
+            "No tiene permiso para registrar evidencias.",
+        )
+
         funcionario = get_funcionario(actor)
+        if funcionario is None:
+            raise ReglaNegocioError(
+                "Su usuario no tiene un funcionario asociado."
+            )
+
         metadatos = CRUDEvidencia.validar_formato_archivo(archivo)
         evidencia = None
+
         try:
             with transaction.atomic():
-                actividad = Actividad.objects.select_for_update().get(pk=actividad.pk)
+                actividad = Actividad.objects.select_for_update().get(
+                    pk=actividad.pk
+                )
+
                 _exigir_autor(actividad, actor)
+
                 if not actividad.admite_evidencia:
                     raise ReglaNegocioError(
-                        f"Una actividad en estado «{actividad.estado}» no admite nuevas evidencias.")
-                _exigir_periodo_abierto(actividad.periodo_id, "adjuntar evidencias")
+                        f"Una actividad en estado «{actividad.estado}» "
+                        "no admite nuevas evidencias."
+                    )
+
+                _exigir_periodo_abierto(
+                    actividad.periodo_id,
+                    "adjuntar evidencias",
+                )
+
                 evidencia = Evidencia(
-                    actividad=actividad, funcionario=funcionario, archivo_vinculo=archivo, metadatos=metadatos,
-                    codigo_evidencia=CRUDEvidencia.generar_codigo_evidencia(actividad),
-                    estado_revision=Evidencia.ESTADO_PENDIENTE)
+                    actividad=actividad,
+                    funcionario=funcionario,
+                    archivo_vinculo=archivo,
+                    metadatos=metadatos,
+                    codigo_evidencia=(
+                        CRUDEvidencia.generar_codigo_evidencia(actividad)
+                    ),
+                    estado_revision=Evidencia.ESTADO_PENDIENTE,
+                )
+
                 guardar(evidencia, actor, "evidencia")
                 _recalcular_estado(actividad)
                 _recalcular_indicadores(actividad)
-        except Exception:
-            if evidencia is not None and evidencia.archivo_vinculo and evidencia.archivo_vinculo.name:
-                evidencia.archivo_vinculo.storage.delete(evidencia.archivo_vinculo.name)   # sin archivos huérfanos
-            raise
-        return evidencia
 
+        except Exception:
+            if (
+                evidencia is not None
+                and evidencia.archivo_vinculo
+                and evidencia.archivo_vinculo.name
+            ):
+                evidencia.archivo_vinculo.storage.delete(
+                    evidencia.archivo_vinculo.name
+                )
+            raise
+
+        return evidencia
     @staticmethod
     def mostrar_evidencia_por_actividad(actividad):
         return actividad.evidencias.prefetch_related("validaciones")
@@ -249,42 +452,153 @@ class CRUDEvidencia:
 # CRUDValidacion (RF-013, RF-014, HU-11)
 # ---------------------------------------------------------------------------
 class CRUDValidacion:
+
     @staticmethod
     def _decidir(evidencia, decision, observacion, actor):
+        """
+        Registra una decisión inmutable sobre una evidencia.
+
+        RF-013:
+        - Solo permite aprobar, rechazar o solicitar corrección.
+        - Exige un verificador autorizado.
+        - Impide validar evidencias propias.
+        - Solo permite revisar evidencias pendientes.
+        - Exige observación para rechazo o corrección.
+        - Conserva verificador, fecha, decisión y observación.
+        - Genera versiones consecutivas del historial.
+        - Recalcula los indicadores y notifica el cambio.
+        """
         observacion = (observacion or "").strip()
-        if not tiene_rol(actor, *ROLES_VALIDACION):
-            raise ReglaNegocioError("No tiene el rol de verificador.")
+
+        decisiones_permitidas = {
+            Validacion.DECISION_APROBADA,
+            Validacion.DECISION_RECHAZADA,
+            Validacion.DECISION_CORRECCION,
+        }
+
+        if decision not in decisiones_permitidas:
+            raise ReglaNegocioError(
+                "La decisión seleccionada no es válida."
+            )
+
+        _exigir_permiso(
+            actor,
+            "validaciones.gestionar",
+            "No tiene permiso para validar evidencias.",
+        )
+
         verificador = get_funcionario(actor)
+
         if verificador is None:
-            raise ReglaNegocioError("Su usuario no tiene un funcionario asociado.")
-        if decision != Validacion.DECISION_APROBADA and not observacion:
-            raise ReglaNegocioError("Debe registrar una observación para rechazar o solicitar corrección.")
+            raise ReglaNegocioError(
+                "Su usuario no tiene un funcionario asociado."
+            )
+
+        if (
+            decision != Validacion.DECISION_APROBADA
+            and not observacion
+        ):
+            raise ReglaNegocioError(
+                "Debe registrar una observación para rechazar "
+                "o solicitar corrección."
+            )
 
         with transaction.atomic():
-            evidencia = Evidencia.objects.select_for_update().get(pk=evidencia.pk)
-            if not evidencias_visibles(actor).filter(pk=evidencia.pk).exists():
-                raise ReglaNegocioError("La evidencia está fuera de su ámbito.")
-            actividad = Actividad.objects.select_for_update().get(pk=evidencia.actividad_id)
-            if verificador.pk == actividad.funcionario_id:
-                raise ReglaNegocioError("No puede validar sus propias actividades (segregación de funciones).")
-            if actividad.estado == Actividad.ESTADO_ANULADA:
-                raise ReglaNegocioError("La actividad está anulada.")
-            _exigir_periodo_abierto(actividad.periodo_id, "validar evidencias")
+            evidencia = Evidencia.objects.select_for_update().get(
+                pk=evidencia.pk
+            )
 
-            version = evidencia.validaciones.count() + 1
-            anterior = evidencia.estado_revision
-            Validacion.objects.create(evidencia=evidencia, funcionario=verificador, decision=decision,
-                                      observacion=observacion, version=version)
-            evidencia.estado_revision = decision
-            evidencia.save(update_fields=["estado_revision"])
+            if not evidencias_visibles(actor).filter(
+                pk=evidencia.pk
+            ).exists():
+                raise ReglaNegocioError(
+                    "La evidencia está fuera de su ámbito autorizado."
+                )
+
+            if evidencia.estado_revision != Evidencia.ESTADO_PENDIENTE:
+                raise ReglaNegocioError(
+                    "Esta evidencia ya fue revisada. "
+                    "No se puede registrar otra decisión."
+                )
+
+            actividad = Actividad.objects.select_for_update().get(
+                pk=evidencia.actividad_id
+            )
+
+            if actividad.estado == Actividad.ESTADO_ANULADA:
+                raise ReglaNegocioError(
+                    "No se puede validar una evidencia de una "
+                    "actividad anulada."
+                )
+
+            if verificador.pk == actividad.funcionario_id:
+                raise ReglaNegocioError(
+                    "No puede validar sus propias actividades."
+                )
+
+            _exigir_periodo_abierto(
+                actividad.periodo_id,
+                "validar evidencias"
+            )
+
+            version = (
+                evidencia.validaciones.aggregate(
+                    ultima=models.Max("version")
+                )["ultima"] or 0
+            ) + 1
+
+            estado_anterior = evidencia.estado_revision
             estado_anterior_actividad = actividad.estado
+
+            validacion = Validacion(
+                evidencia=evidencia,
+                funcionario=verificador,
+                decision=decision,
+                observacion=observacion,
+                version=version,
+            )
+            validacion.full_clean()
+            validacion.save()
+
+            evidencia.estado_revision = decision
+            evidencia.save(
+                update_fields=["estado_revision"]
+            )
+
             _recalcular_estado(actividad)
-            auditar(actor, "VALIDAR_EVIDENCIA", "evidencia", evidencia.pk,
-                    json.dumps({"estado_revision": anterior, "estado_actividad": estado_anterior_actividad}),
-                    json.dumps({"decision": decision, "version": version, "observacion": observacion,
-                                "estado_actividad": actividad.estado}, ensure_ascii=False))
+
+            auditar(
+                actor,
+                "VALIDAR_EVIDENCIA",
+                "evidencia",
+                evidencia.pk,
+                json.dumps({
+                    "estado_revision": estado_anterior,
+                    "estado_actividad": estado_anterior_actividad,
+                }, ensure_ascii=False),
+                json.dumps({
+                    "decision": decision,
+                    "version": version,
+                    "observacion": observacion,
+                    "verificador": verificador.pk,
+                    "fecha": timezone.localtime(
+                        validacion.fecha
+                    ).isoformat(),
+                    "estado_actividad": actividad.estado,
+                }, ensure_ascii=False),
+            )
+
             _recalcular_indicadores(actividad)
+
+            _notificar_crud(
+                "validacion",
+                "actualizar",
+                actor,
+                evidencia,
+            )
+
         return evidencia
+
 
     @staticmethod
     def aprobar_evidencia(evidencia, observacion="", actor=None):

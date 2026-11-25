@@ -64,6 +64,11 @@ urlpatterns = [
         views.ItemToggleView.as_view(),
         name="item_toggle",
     ),
+    path(
+    "items/<int:pk>/historial/",
+    views.ItemHistorialView.as_view(),
+    name="item_historial",
+    ),
 
     # Roles
     path(
@@ -140,4 +145,40 @@ urlpatterns = [
         views.UsuarioToggleView.as_view(),
         name="usuario_toggle",
     ),
-]
+
+        # Exportaciones Excel
+    path(
+        "delegaciones/exportar-excel/",
+        views.exportar_delegaciones_excel,
+        name="delegacion_exportar_excel",
+    ),
+    path(
+        "roles/exportar-excel/",
+        views.exportar_roles_excel,
+        name="rol_exportar_excel",
+    ),
+    path(
+        "usuarios/exportar-excel/",
+        views.exportar_usuarios_excel,
+        name="usuario_exportar_excel",
+    ),
+
+        path(
+        "cargos/<int:pk>/items/exportar-excel/",
+        views.exportar_items_excel,
+        name="item_exportar_excel",
+    ),
+
+
+    path(
+        "funcionarios/exportar-excel/",
+        views.exportar_funcionarios_excel,
+        name="funcionario_exportar_excel",
+    ),
+    path(
+        "cargos/exportar-excel/",
+        views.exportar_cargos_excel,
+        name="cargo_exportar_excel",
+    ),
+
+    ]

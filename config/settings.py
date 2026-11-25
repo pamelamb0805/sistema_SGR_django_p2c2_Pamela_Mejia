@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -22,30 +23,46 @@ def env_bool(name, default=False):
 # ---------------------------------------------------------------------------
 # Seguridad
 # ---------------------------------------------------------------------------
-SECRET_KEY = os.getenv("SECRET_KEY", "cambia-esta-clave-solo-para-desarrollo")
-DEBUG = env_bool("DEBUG", True)
+DEBUG = env_bool("DEBUG", False)
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = "clave-insegura-solo-desarrollo-local"
+    else:
+        raise ImproperlyConfigured(
+            "Define SECRET_KEY en el entorno antes de iniciar el sistema."
+        )
 ALLOWED_HOSTS = [h.strip() for h in os.getenv("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",") if h.strip()]
 
 # ---------------------------------------------------------------------------
 # Aplicaciones (carpetas en inglés, según estructura del proyecto)
 # ---------------------------------------------------------------------------
+
 INSTALLED_APPS = [
+    "daphne",
+    "channels",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+
+    # API REST
+    "rest_framework",
+    "sgr_api",
     # Apps del SGR
     "core",
-    "organizations",   # Delegacion, Cargo, ItemMedible, Funcionario, Rol, FuncionarioRol, Usuario
-    "catalogs",        # Catalogo
-    "measurement",     # Periodo, Meta, Indicador, Ajuste
-    "activities",      # Actividad, Evidencia, Validacion
-    "agenda",          # Compromiso, HistorialTransiciones
-    "social",          # UsuarioSocial, AtencionSocial
-    "audit",           # Auditoria
+    "organizations",
+    "catalogs",
+    "measurement",
+    "activities",
+    "agenda",
+    "social",
+    "audit",
+    "websocket",
 ]
+
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -53,6 +70,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "core.middleware.DelegacionActivaMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -92,7 +110,7 @@ DATABASES = {
         "PORT": os.getenv("DB_PORT", "3306"),
         "OPTIONS": {
             "charset": "utf8mb4",
-            "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
+            "init_command": "SET default_storage_engine=INNODB",
         },
     }
 }
@@ -134,6 +152,11 @@ if not DEBUG:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", True)
+    SECURE_HSTS_SECONDS = int(os.getenv("SECURE_HSTS_SECONDS", "31536000"))
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool("SECURE_HSTS_INCLUDE_SUBDOMAINS", True)
+    SECURE_HSTS_PRELOAD = env_bool("SECURE_HSTS_PRELOAD", False)
+    SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 # ---------------------------------------------------------------------------
 # Internacionalización
@@ -150,7 +173,7 @@ STATIC_URL = "static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-MEDIA_URL = "media/"
+MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
@@ -179,10 +202,48 @@ SGR_UMBRAL_COLECTIVO = float(os.getenv("SGR_UMBRAL_COLECTIVO", 80))      # % umb
 SGR_SEMAFORO_AMBAR = float(os.getenv("SGR_SEMAFORO_AMBAR", 60))          # % del esperado para ámbar
 SGR_SUMA_PONDERADORES = float(os.getenv("SGR_SUMA_PONDERADORES", 100))   # RN-001
 SGR_MAX_GESTIONES_SOCIAL = int(os.getenv("SGR_MAX_GESTIONES_SOCIAL", 3)) # RN-012
+SGR_RESET_CODE_LIFETIME_SECONDS = int(os.getenv("SGR_RESET_CODE_LIFETIME_SECONDS", 600))
+SGR_RESET_CODE_RESEND_SECONDS = int(os.getenv("SGR_RESET_CODE_RESEND_SECONDS", 45))
+SGR_RESET_CODE_MAX_ATTEMPTS = int(os.getenv("SGR_RESET_CODE_MAX_ATTEMPTS", 5))
+SGR_RESET_CODE_MAX_RESENDS = int(os.getenv("SGR_RESET_CODE_MAX_RESENDS", 3))
 SGR_DIAS_ALERTA_VENCIMIENTO = int(os.getenv("SGR_DIAS_ALERTA_VENCIMIENTO", 3))
+SGR_DIAS_SIN_REGISTRO_ALERTA = int(
+    os.getenv("SGR_DIAS_SIN_REGISTRO_ALERTA", 7)
+)
 
 # Evidencias (RNF-017)
 SGR_EVIDENCIA_MAX_MB = int(os.getenv("SGR_EVIDENCIA_MAX_MB", 5))
 SGR_EVIDENCIA_EXTENSIONES = ["jpg", "jpeg", "png", "pdf"]
 FILE_UPLOAD_MAX_MEMORY_SIZE = SGR_EVIDENCIA_MAX_MB * 1024 * 1024
 DATA_UPLOAD_MAX_MEMORY_SIZE = FILE_UPLOAD_MAX_MEMORY_SIZE
+
+# ---------------------------------------------------------
+# WebSockets: Redis en producción e InMemory en desarrollo
+# ---------------------------------------------------------
+
+REDIS_URL = os.getenv("REDIS_URL", "").strip()
+
+if REDIS_URL:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {
+                "hosts": [REDIS_URL],
+                "capacity": 1500,
+                "expiry": 10,
+            },
+        },
+    }
+
+elif DEBUG:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels.layers.InMemoryChannelLayer",
+        },
+    }
+
+else:
+    raise ImproperlyConfigured(
+        "En producción debes configurar REDIS_URL "
+        "para utilizar Django Channels con Redis."
+    )

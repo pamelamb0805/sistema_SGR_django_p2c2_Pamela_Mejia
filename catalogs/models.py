@@ -9,6 +9,9 @@ Cumple RF-004 y HU-27:
 """
 from django.core.exceptions import ValidationError
 import uuid
+from django.conf import settings
+from django.utils import timezone
+
 
 def generar_codigo_catalogo():
     return "CAT-" + uuid.uuid4().hex[:16].upper()
@@ -21,14 +24,36 @@ class CatalogoQuerySet(models.QuerySet):
 
     def disponibles(self, area=None, tipo=None):
         """
-        Opciones que un formulario debe mostrar: solo activas y aplicables al área
-        (las del área indicada más las de área 'General').
+        Devuelve elementos activos y aplicables al área.
+        Las subatenciones requieren además un Tipo de Atención padre activo.
         """
         qs = self.activos()
+
         if area:
-            qs = qs.filter(models.Q(area__iexact=area) | models.Q(area__iexact=Catalogo.AREA_GENERAL))
+            qs = qs.filter(
+                models.Q(area__iexact=area)
+                | models.Q(area__iexact=Catalogo.AREA_GENERAL)
+            )
+
         if tipo:
             qs = qs.filter(tipo_catalogo=tipo)
+
+        if tipo == Catalogo.TIPO_SUBATENCION:
+            qs = qs.filter(
+                tipo_atencion_padre__tipo_catalogo=Catalogo.TIPO_ATENCION,
+                tipo_atencion_padre__estado=Catalogo.ESTADO_ACTIVO,
+            )
+
+            if area:
+                qs = qs.filter(
+                    models.Q(
+                        tipo_atencion_padre__area__iexact=area
+                    )
+                    | models.Q(
+                        tipo_atencion_padre__area__iexact=Catalogo.AREA_GENERAL
+                    )
+                )
+
         return qs
 
 
@@ -84,19 +109,98 @@ class Catalogo(models.Model):
     def clean(self):
         self.nombre = (self.nombre or "").strip()
         self.area = (self.area or "").strip()
-        if self.tipo_catalogo == self.TIPO_SUBATENCION and not self.tipo_atencion_padre_id:
-            raise ValidationError({"tipo_atencion_padre": "Seleccione el Tipo de Atención al que pertenece esta subatención."})
-        if self.tipo_catalogo != self.TIPO_SUBATENCION and self.tipo_atencion_padre_id:
-            raise ValidationError({"tipo_atencion_padre": "Solo las subatenciones pueden tener un Tipo de Atención padre."})
-        if self.tipo_atencion_padre_id and self.tipo_atencion_padre.tipo_catalogo != self.TIPO_ATENCION:
-            raise ValidationError({"tipo_atencion_padre": "La relación debe apuntar a un Tipo de Atención."})
+
+        errores = {}
+
+        original = None
+
+        if self.pk:
+            original = (
+                Catalogo.objects
+                .filter(pk=self.pk)
+                .only(
+                    "tipo_catalogo",
+                    "area",
+                    "tipo_atencion_padre_id",
+                    "estado",
+                )
+                .first()
+            )
+
+        relacion_padre_sin_cambios = (
+            original is not None
+            and original.tipo_atencion_padre_id
+            == self.tipo_atencion_padre_id
+        )
+
+        if not self.nombre:
+            errores["nombre"] = "El nombre es obligatorio."
+
+        if not self.area:
+            errores["area"] = "El área es obligatoria."
+
+        if self.tipo_catalogo not in dict(self.TIPOS):
+            errores["tipo_catalogo"] = "Seleccione un tipo de catálogo válido."
+
+        if self.estado not in dict(self.ESTADOS):
+            errores["estado"] = "Seleccione un estado válido."
+
+        if (
+            self.tipo_catalogo == self.TIPO_SUBATENCION
+            and not self.tipo_atencion_padre_id
+        ):
+            errores["tipo_atencion_padre"] = (
+                "Seleccione el Tipo de Atención al que pertenece "
+                "esta subatención."
+            )
+
+        if (
+            self.tipo_catalogo != self.TIPO_SUBATENCION
+            and self.tipo_atencion_padre_id
+        ):
+            errores["tipo_atencion_padre"] = (
+                "Solo las subatenciones pueden tener un "
+                "Tipo de Atención padre."
+            )
+
+        if self.tipo_atencion_padre_id:
+            padre = self.tipo_atencion_padre
+
+            if padre.tipo_catalogo != self.TIPO_ATENCION:
+                errores["tipo_atencion_padre"] = (
+                    "La relación debe apuntar a un Tipo de Atención."
+                )
+
+            elif not padre.activo and not relacion_padre_sin_cambios:
+                errores["tipo_atencion_padre"] = (
+                    "No puede asociar una subatención nueva a un "
+                    "Tipo de Atención inactivo."
+                )
+
+            elif (
+                padre.area != self.AREA_GENERAL
+                and padre.area.casefold() != self.area.casefold()
+            ):
+                errores["tipo_atencion_padre"] = (
+                    "El Tipo de Atención debe pertenecer a la misma "
+                    "área de la subatención o al área General."
+                )
+
         if self.nombre and self.area and self.tipo_catalogo:
             duplicado = Catalogo.objects.filter(
-                tipo_catalogo=self.tipo_catalogo, area__iexact=self.area, nombre__iexact=self.nombre,
+                tipo_catalogo=self.tipo_catalogo,
+                area__iexact=self.area,
+                nombre__iexact=self.nombre,
             ).exclude(pk=self.pk).exists()
-            if duplicado:
-                raise ValidationError("Ya existe un elemento con ese nombre en el mismo catálogo y área.")
 
+            if duplicado:
+                errores["nombre"] = (
+                    "Ya existe un elemento con ese nombre "
+                    "en el mismo catálogo y área."
+                )
+
+        if errores:
+            raise ValidationError(errores)
     def en_uso(self):
         """True si algún registro (actividad, atención social...) ya referencia este elemento."""
         if not self.pk:
@@ -105,3 +209,41 @@ class Catalogo(models.Model):
             if relacion.one_to_many and getattr(self, relacion.get_accessor_name()).exists():
                 return True
         return False
+
+class CatalogoVersion(models.Model):
+    """
+    Conserva las versiones históricas de los elementos del catálogo.
+    RF-038: los cambios posteriores no deben alterar la información histórica.
+    """
+
+    objeto_id = models.PositiveIntegerField(db_index=True)
+    numero_version = models.PositiveIntegerField()
+
+    vigente_desde = models.DateTimeField(default=timezone.now)
+    vigente_hasta = models.DateTimeField(null=True, blank=True)
+
+    datos = models.JSONField(default=dict)
+
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="versiones_catalogo_creadas",
+    )
+
+    class Meta:
+        db_table = "catalogo_version"
+        ordering = ["objeto_id", "-numero_version"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["objeto_id", "numero_version"],
+                name="uq_catalogo_version_numero",
+            )
+        ]
+
+    def __str__(self):
+        return (
+            f"Catálogo {self.objeto_id} "
+            f"- versión {self.numero_version}"
+        )
