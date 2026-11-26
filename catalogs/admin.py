@@ -1,7 +1,7 @@
 from django.contrib import admin
 
 from .models import Catalogo
-
+#hola es un comentario de prueba
 
 @admin.register(Catalogo)
 class CatalogoAdmin(admin.ModelAdmin):
