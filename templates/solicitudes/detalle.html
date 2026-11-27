@@ -1,10 +1,343 @@
+
 {% extends "base.html" %}
-{% block title %}Solicitud #{{ solicitud.pk }} · SGR{% endblock %}
-{% block page_title %}Solicitud vecinal #{{ solicitud.pk }}{% endblock %}
+
+{% block title %}
+Solicitud #{{ solicitud.pk }} · SGR
+{% endblock %}
+
+{% block page_title %}
+Solicitud vecinal #{{ solicitud.pk }}
+{% endblock %}
+
 {% block content %}
-<div class="row g-3"><div class="col-lg-7"><div class="card shadow-sm"><div class="card-body">
-  <dl class="row"><dt class="col-sm-4">Solicitante</dt><dd class="col-sm-8">{{ solicitud.solicitante }}</dd><dt class="col-sm-4">RUT</dt><dd class="col-sm-8">{{ solicitud.rut_solicitante }}</dd><dt class="col-sm-4">Relación vecinal</dt><dd class="col-sm-8">{{ solicitud.get_relacion_vecinal_display }}</dd><dt class="col-sm-4">Delegación</dt><dd class="col-sm-8">{{ solicitud.delegacion.nombre }}</dd><dt class="col-sm-4">Tipo</dt><dd class="col-sm-8">{{ solicitud.tipo_solicitud }}</dd><dt class="col-sm-4">Creada</dt><dd class="col-sm-8">{{ solicitud.fecha_creacion|date:"d/m/Y H:i:s" }}</dd><dt class="col-sm-4">Descripción</dt><dd class="col-sm-8">{{ solicitud.descripcion_solicitud|linebreaksbr }}</dd><dt class="col-sm-4">Solución</dt><dd class="col-sm-8">{{ solicitud.solucion|default:"Sin solución registrada"|linebreaksbr }}</dd><dt class="col-sm-4">Fecha propuesta</dt><dd class="col-sm-8">{{ solicitud.fecha_propuesta_solucion|date:"d/m/Y"|default:"No definida" }}</dd></dl>
-  {% if puede_gestionar %}<hr><h2 class="h6">Actualizar gestión</h2><form method="post" action="{% url 'solicitudes:actualizar' solicitud.pk %}">{% csrf_token %}<label class="form-label">Estado</label><select class="form-select mb-2" name="estado_solicitud">{% for v,l in estados %}<option value="{{ v }}" {% if solicitud.estado_solicitud == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select><label class="form-label">Solución asignada</label><textarea class="form-control mb-2" name="solucion" rows="3">{{ solicitud.solucion }}</textarea><label class="form-label">Fecha propuesta de solución</label><input class="form-control mb-2" type="date" name="fecha_propuesta_solucion" value="{{ solicitud.fecha_propuesta_solucion|date:'Y-m-d' }}"><label class="form-label">Observación del cambio</label><textarea class="form-control mb-2" name="observacion" rows="2"></textarea><button class="btn btn-primary">Guardar cambios</button></form>{% endif %}
-</div></div></div><div class="col-lg-5"><div class="card shadow-sm"><div class="card-body"><h2 class="h6">Trazabilidad cronológica</h2><ol class="list-group list-group-numbered list-group-flush">{% for e in historial %}<li class="list-group-item"><div class="fw-semibold">{{ e.estado_anterior|default:"Inicio" }} → {{ e.estado_nuevo }}</div><div class="small text-muted">{{ e.fecha|date:"d/m/Y H:i:s" }} · {{ e.funcionario.nombre }}</div><div>{{ e.observacion|linebreaksbr }}</div></li>{% empty %}<li class="list-group-item">Sin eventos.</li>{% endfor %}</ol>{% if puede_gestionar %}<hr><form method="post" action="{% url 'solicitudes:evento' solicitud.pk %}">{% csrf_token %}<label class="form-label" for="id_observacion">Agregar evento</label><textarea class="form-control mb-2" id="id_observacion" name="observacion" rows="3" required></textarea><button class="btn btn-outline-primary">Registrar evento</button></form>{% endif %}</div></div></div></div>
-<a class="btn btn-outline-secondary mt-3" href="{% url 'solicitudes:lista' %}">Volver al listado</a>
+
+<div class="row g-3">
+
+  <div class="col-lg-7">
+
+    <div class="card shadow-sm">
+      <div class="card-body">
+
+        <h2 class="h5 mb-3">Datos de la solicitud</h2>
+
+        <dl class="row">
+
+          <dt class="col-sm-4">Solicitante</dt>
+          <dd class="col-sm-8">
+            {{ solicitud.solicitante|default:"No informado" }}
+          </dd>
+
+          <dt class="col-sm-4">RUT</dt>
+          <dd class="col-sm-8">
+            {{ solicitud.rut_solicitante }}
+          </dd>
+
+          <dt class="col-sm-4">Relación vecinal</dt>
+          <dd class="col-sm-8">
+            {{ solicitud.get_relacion_vecinal_display }}
+          </dd>
+
+          <dt class="col-sm-4">Delegación</dt>
+          <dd class="col-sm-8">
+            {{ solicitud.delegacion.nombre|default:"No asignada" }}
+          </dd>
+
+          <dt class="col-sm-4">Tipo</dt>
+          <dd class="col-sm-8">
+            {{ solicitud.get_tipo_display }}
+          </dd>
+
+          <dt class="col-sm-4">Categoría</dt>
+          <dd class="col-sm-8">
+            {{ solicitud.categoria }}
+          </dd>
+
+          <dt class="col-sm-4">Estado</dt>
+          <dd class="col-sm-8">
+            <span class="badge text-bg-secondary">
+              {{ solicitud.estado_solicitud }}
+            </span>
+          </dd>
+
+          <dt class="col-sm-4">Creada</dt>
+          <dd class="col-sm-8">
+            {{ solicitud.fecha_creacion|date:"d/m/Y H:i:s" }}
+          </dd>
+
+          <dt class="col-sm-4">Descripción</dt>
+          <dd class="col-sm-8">
+            {{ solicitud.descripcion|linebreaksbr }}
+          </dd>
+
+          <dt class="col-sm-4">Solución</dt>
+          <dd class="col-sm-8">
+            {{ solicitud.solucion|default:"Sin solución registrada"|linebreaksbr }}
+          </dd>
+
+          <dt class="col-sm-4">Fecha propuesta</dt>
+          <dd class="col-sm-8">
+            {{ solicitud.fecha_propuesta_solucion|date:"d/m/Y"|default:"No definida" }}
+          </dd>
+
+          {% if solicitud.tipo == "Regalo / evento día festivo" %}
+            <dt class="col-sm-4">RUT del menor</dt>
+            <dd class="col-sm-8">{{ solicitud.rut_menor }}</dd>
+
+            <dt class="col-sm-4">Nombre del menor</dt>
+            <dd class="col-sm-8">{{ solicitud.nombre_menor }}</dd>
+          {% endif %}
+
+        </dl>
+
+        {% if puede_gestionar and solicitud.estado_solicitud != "Concluido" %}
+
+          <hr>
+
+          <h2 class="h6">Actualizar gestión</h2>
+
+          <form
+            method="post"
+            action="{% url 'solicitudes:actualizar' solicitud.pk %}"
+          >
+            {% csrf_token %}
+
+            <label class="form-label" for="estado_solicitud">
+              Estado de la solicitud
+            </label>
+
+            <select
+              class="form-select mb-3"
+              id="estado_solicitud"
+              name="estado_solicitud"
+              required
+            >
+              {% for valor, etiqueta in estados %}
+                <option
+                  value="{{ valor }}"
+                  {% if solicitud.estado_solicitud == valor %}selected{% endif %}
+                >
+                  {{ etiqueta }}
+                </option>
+              {% endfor %}
+            </select>
+
+            <label class="form-label" for="solucion">
+              Solución asignada
+            </label>
+
+            <textarea
+              class="form-control mb-3"
+              id="solucion"
+              name="solucion"
+              rows="3"
+            >{{ solicitud.solucion }}</textarea>
+
+            <label
+              class="form-label"
+              for="fecha_propuesta_solucion"
+            >
+              Fecha propuesta de solución
+            </label>
+
+            <input
+              class="form-control mb-3"
+              type="date"
+              id="fecha_propuesta_solucion"
+              name="fecha_propuesta_solucion"
+              value="{{ solicitud.fecha_propuesta_solucion|date:'Y-m-d' }}"
+            >
+
+            <label class="form-label" for="observacion">
+              Observación del cambio
+            </label>
+
+            <textarea
+              class="form-control mb-3"
+              id="observacion"
+              name="observacion"
+              rows="2"
+            ></textarea>
+
+            <button class="btn btn-primary" type="submit">
+              Guardar cambios
+            </button>
+
+          </form>
+
+        {% endif %}
+
+      </div>
+    </div>
+
+    <div class="card shadow-sm mt-3">
+      <div class="card-body">
+
+        <h2 class="h5 mb-3">
+          Compromisos asociados en Agenda colectiva
+        </h2>
+
+        <div class="table-responsive">
+
+          <table class="table table-hover align-middle">
+
+            <thead>
+              <tr>
+                <th>Compromiso</th>
+                <th>Responsable</th>
+                <th>Delegación</th>
+                <th>Fecha</th>
+                <th>Estado</th>
+                <th></th>
+              </tr>
+            </thead>
+
+            <tbody>
+
+              {% for compromiso in compromisos %}
+
+                <tr>
+                  <td>#{{ compromiso.pk }}</td>
+
+                  <td>
+                    {{ compromiso.funcionario.nombre }}
+                  </td>
+
+                  <td>
+                    {{ compromiso.delegacion.nombre }}
+                  </td>
+
+                  <td>
+                    {{ compromiso.fecha_comprometida|date:"d/m/Y" }}
+                  </td>
+
+                  <td>
+                    <span class="badge text-bg-secondary">
+                      {{ compromiso.estado }}
+                    </span>
+                  </td>
+
+                  <td>
+                    <a
+                      class="btn btn-sm btn-outline-primary"
+                      href="{% url 'agenda:compromiso_detail' compromiso.pk %}"
+                    >
+                      Ver agenda
+                    </a>
+                  </td>
+                </tr>
+
+              {% empty %}
+
+                <tr>
+                  <td colspan="6" class="text-center text-muted py-3">
+                    Esta solicitud todavía no tiene compromisos asociados.
+                  </td>
+                </tr>
+
+              {% endfor %}
+
+            </tbody>
+
+          </table>
+
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <div class="col-lg-5">
+
+    <div class="card shadow-sm">
+      <div class="card-body">
+
+        <h2 class="h5 mb-3">
+          Trazabilidad cronológica
+        </h2>
+
+        <ol class="list-group list-group-numbered list-group-flush">
+
+          {% for evento in historial %}
+
+            <li class="list-group-item">
+
+              <div class="fw-semibold">
+                {{ evento.estado_anterior|default:"Inicio" }}
+                →
+                {{ evento.estado_nuevo }}
+              </div>
+
+              <div class="small text-muted">
+                {{ evento.fecha|date:"d/m/Y H:i:s" }}
+                · {{ evento.funcionario.nombre }}
+                · Compromiso #{{ evento.compromiso_id }}
+              </div>
+
+              <div>
+                {{ evento.observacion|linebreaksbr }}
+              </div>
+
+            </li>
+
+          {% empty %}
+
+            <li class="list-group-item">
+              Sin eventos registrados.
+            </li>
+
+          {% endfor %}
+
+        </ol>
+
+        {% if puede_gestionar %}
+
+          <hr>
+
+          <form
+            method="post"
+            action="{% url 'solicitudes:evento' solicitud.pk %}"
+          >
+            {% csrf_token %}
+
+            <label
+              class="form-label"
+              for="id_observacion_evento"
+            >
+              Agregar evento
+            </label>
+
+            <textarea
+              class="form-control mb-2"
+              id="id_observacion_evento"
+              name="observacion"
+              rows="3"
+              required
+            ></textarea>
+
+            <button
+              class="btn btn-outline-primary"
+              type="submit"
+            >
+              Registrar evento
+            </button>
+
+          </form>
+
+        {% endif %}
+
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<a
+  class="btn btn-outline-secondary mt-3"
+  href="{% url 'solicitudes:lista' %}"
+>
+  Volver al listado
+</a>
+
 {% endblock %}

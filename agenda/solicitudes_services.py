@@ -1,91 +1,52 @@
+
 import re
 import unicodedata
-from datetime import timedelta
-from django.db import IntegrityError, transaction
+
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
-from core.mixins import get_funcionario, tiene_rol, es_transversal
+
+from core.mixins import (
+    get_funcionario,
+    es_transversal,
+)
 from organizations.models import Funcionario
 from social.models import UsuarioSocial
-from .models import Compromiso, HistorialTransiciones
 
-
+from .models import (
+    Compromiso,
+    SolicitudVecinal,
+    HistorialTransiciones,
+)
+from datetime import timedelta
 
 def normalizar_rut(valor):
-    """
-    Normaliza un RUT chileno.
-
-    Acepta:
-    - 12345678-5
-    - 12.345.678-5
-    - 123456785
-
-    Rechaza letras distintas de K en el dígito verificador,
-    caracteres especiales y letras dentro del cuerpo.
-    """
-
     valor = str(valor or "").strip().upper()
 
-    if not valor:
+    if not valor or not re.fullmatch(r"[0-9K.\-\s]+", valor):
         return ""
-
-    # No eliminar letras o símbolos inválidos silenciosamente.
-    if not re.fullmatch(r"[0-9K.\-\s]+", valor):
-        return ""
-
-    limpio = re.sub(r"[.\-\s]", "", valor)
-
-    if len(limpio) < 8 or len(limpio) > 9:
-        return ""
-
-    cuerpo = limpio[:-1]
-    digito_verificador = limpio[-1]
-
-    if not cuerpo.isdigit():
-        return ""
-
-    if len(cuerpo) not in (7, 8):
-        return ""
-
-    if not (digito_verificador.isdigit() or digito_verificador == "K"):
-        return ""
-
-    return f"{cuerpo}-{digito_verificador}"
-
-
-def rut_valido(valor):
-    """
-    Valida estructura y dígito verificador mediante módulo 11.
-    No corrige entradas inválidas eliminando caracteres.
-    """
-
-    valor = str(valor or "").strip().upper()
-
-    if not valor:
-        return False
-
-    if not re.fullmatch(r"[0-9K.\-\s]+", valor):
-        return False
 
     limpio = re.sub(r"[.\-\s]", "", valor)
 
     if len(limpio) not in (8, 9):
-        return False
+        return ""
 
     cuerpo = limpio[:-1]
-    digito_verificador = limpio[-1]
+    dv = limpio[-1]
 
-    if not cuerpo.isdigit():
+    if not cuerpo.isdigit() or dv not in "0123456789K":
+        return ""
+
+    return f"{cuerpo}-{dv}"
+
+
+def rut_valido(valor):
+    rut = normalizar_rut(valor)
+
+    if not rut:
         return False
 
-    if len(cuerpo) not in (7, 8):
-        return False
-
-    if not (
-        digito_verificador.isdigit()
-        or digito_verificador == "K"
-    ):
-        return False
+    cuerpo, dv = rut.split("-")
 
     suma = 0
     factor = 2
@@ -103,160 +64,521 @@ def rut_valido(valor):
     else:
         esperado = str(resto)
 
-    return digito_verificador == esperado
-
+    return dv == esperado
 
 
 def tutor_registrado(rut):
-    return UsuarioSocial.objects.filter(rut=normalizar_rut(rut)).select_related("delegacion").first()
+    return (
+        UsuarioSocial.objects
+        .filter(rut=normalizar_rut(rut))
+        .select_related("delegacion")
+        .first()
+    )
 
 
 def funcionario_responsable(delegacion):
-    base = Funcionario.objects.filter(delegacion=delegacion, estado=Funcionario.ESTADO_ACTIVO)
-    delegado = base.filter(funcionario_roles__rol__nombre_rol="Delegado").distinct().first()
-    return delegado or base.order_by("id_funcionario").first()
+    funcionarios = Funcionario.objects.filter(
+        delegacion=delegacion,
+        estado=Funcionario.ESTADO_ACTIVO,
+    )
+
+    delegado = (
+        funcionarios
+        .filter(funcionario_roles__rol__nombre_rol="Delegado")
+        .distinct()
+        .first()
+    )
+
+    return delegado or funcionarios.order_by(
+        "id_funcionario"
+    ).first()
 
 
 def crear_solicitud(data):
     tipo = data["tipo_solicitud"]
-    tutor = None
-    delegacion = data["delegacion"]
+    delegacion = data.get("delegacion")
+    rut_solicitante = normalizar_rut(
+        data.get("rut_solicitante")
+    )
+
+    nombre_solicitante = (
+        data.get("nombre_solicitante") or ""
+    ).strip()
+
+    territorio = (
+        data.get("territorio") or ""
+    ).strip()
+
+    categoria = data["categoria_solicitud"]
     rut_menor = None
     nombre_menor = ""
-    nombre_solicitante = data["nombre_solicitante"].strip()
-    territorio = data["territorio"].strip()
-    categoria = data["categoria_solicitud"]
-    if tipo == Compromiso.TIPO_REGALO:
-        tutor = tutor_registrado(data["rut_solicitante"])
+
+    if tipo == SolicitudVecinal.TIPO_REGALO:
+        tutor = tutor_registrado(rut_solicitante)
+
         if tutor is None:
-            raise ValueError("El adulto/tutor debe existir en el registro social antes de solicitar el regalo.")
+            raise ValueError(
+                "El adulto/tutor debe existir en el registro "
+                "social antes de solicitar el regalo."
+            )
+
         delegacion = tutor.delegacion
         nombre_solicitante = tutor.nombre
         territorio = tutor.territorio
         categoria = "Social"
-        rut_menor = normalizar_rut(data["rut_menor"])
-        nombre_menor = data["nombre_menor"].strip()
+
+        rut_menor = normalizar_rut(
+            data.get("rut_menor")
+        )
+        nombre_menor = (
+            data.get("nombre_menor") or ""
+        ).strip()
+
+    if delegacion is None:
+        raise ValueError(
+            "Debe seleccionar una delegación municipal."
+        )
+
     responsable = funcionario_responsable(delegacion)
+
     if responsable is None:
-        raise ValueError("La delegación seleccionada no tiene funcionarios activos para recibir la solicitud.")
-    fecha_propuesta = data.get("fecha_propuesta_solucion")
+        raise ValueError(
+            "La delegación seleccionada no tiene funcionarios "
+            "activos para recibir la solicitud."
+        )
+
+    fecha_propuesta = data.get(
+        "fecha_propuesta_solucion"
+    )
+
+    descripcion = (
+        data["descripcion_solicitud"] or ""
+    ).strip()
+
     with transaction.atomic():
-        compromiso = Compromiso(
-            origen="Solicitud vecinal",
-            solicitante=nombre_solicitante,
-            territorio=territorio,
-            fecha_comprometida=fecha_propuesta or (timezone.localdate() + timedelta(days=30)),
-            area_apoyo=categoria,
-            estado=Compromiso.ESTADO_INGRESADO,
-            observacion=data["descripcion_solicitud"].strip(),
-            funcionario=responsable,
-            delegacion=delegacion,
-            rut_solicitante=normalizar_rut(data["rut_solicitante"]),
+        solicitud = SolicitudVecinal(
+            rut_solicitante=rut_solicitante,
             relacion_vecinal=data["relacion_vecinal"],
-            canal_solicitud=Compromiso.CANAL_PRESENCIAL,
-            tipo_solicitud=tipo,
-            categoria_solicitud=categoria,
-            descripcion_solicitud=data["descripcion_solicitud"].strip(),
-            estado_solicitud=Compromiso.ESTADO_SOLICITUD_CREADO,
+            canal=SolicitudVecinal.CANAL_PRESENCIAL,
+            tipo=tipo,
+            categoria=categoria,
+            descripcion=descripcion,
+            estado_solicitud=SolicitudVecinal.ESTADO_CREADO,
             fecha_propuesta_solucion=fecha_propuesta,
             rut_menor=rut_menor,
             nombre_menor=nombre_menor,
         )
+
+        solicitud.full_clean()
+        solicitud.save()
+
+        from measurement.models import Periodo
+
+        fecha_comprometida = (
+            fecha_propuesta
+            or timezone.localdate() + timedelta(days=30)
+        )
+
+        compromiso = Compromiso(
+            origen="Solicitud vecinal",
+            solicitante=nombre_solicitante,
+            territorio=territorio,
+            fecha_comprometida=fecha_comprometida,
+            area_apoyo=categoria,
+            estado=Compromiso.ESTADO_INGRESADO,
+            observacion=descripcion,
+            funcionario=responsable,
+            delegacion=delegacion,
+            periodo=Periodo.objects.para_fecha(
+                fecha_comprometida
+            ),
+            solicitud_vecinal=solicitud,
+        )
+
         compromiso.full_clean()
         compromiso.save()
-        HistorialTransiciones.objects.create(
-            compromiso=compromiso,
-            funcionario=responsable,
-            estado_anterior="",
-            estado_nuevo=Compromiso.ESTADO_SOLICITUD_CREADO,
-            observacion="Solicitud vecinal ingresada públicamente. Canal: Presencial.",
-        )
-    return compromiso
+
+    return solicitud
 
 
 def solicitudes_visibles(user):
-    funcionario = get_funcionario(user)
-    qs = Compromiso.objects.filter(tipo_solicitud__in=[Compromiso.TIPO_GENERAL, Compromiso.TIPO_REGALO]).select_related("delegacion", "funcionario")
     if not getattr(user, "is_authenticated", False):
-        return qs.none()
+        return SolicitudVecinal.objects.none()
+
+    qs = (
+        SolicitudVecinal.objects
+        .filter(compromisos__isnull=False)
+        .prefetch_related(
+            "compromisos__funcionario",
+            "compromisos__delegacion",
+            "compromisos__item_medible",
+            "compromisos__periodo",
+        )
+        .distinct()
+    )
+
     if getattr(user, "is_superuser", False):
         return qs
+
+    funcionario = get_funcionario(user)
+
     if funcionario is None or not funcionario.activo:
         return qs.none()
-    roles = set(funcionario.roles.values_list("nombre_rol", flat=True))
-    cargo = unicodedata.normalize("NFKD", funcionario.cargo.nombre_cargo).encode("ascii", "ignore").decode().lower()
-    # El Delegado siempre queda acotado a su delegación, incluso si otro rol
-    # asociado al usuario tiene alcance transversal.
+
+    roles = set(
+        funcionario.roles.values_list(
+            "nombre_rol",
+            flat=True,
+        )
+    )
+
+    cargo_nombre = (
+        funcionario.cargo.nombre_cargo
+        if funcionario.cargo_id
+        else ""
+    )
+
+    cargo = (
+        unicodedata.normalize("NFKD", cargo_nombre)
+        .encode("ascii", "ignore")
+        .decode()
+        .lower()
+    )
+
     if "Delegado" in roles:
-        return qs.filter(delegacion_id=funcionario.delegacion_id)
+        return qs.filter(
+            compromisos__delegacion_id=funcionario.delegacion_id
+        ).distinct()
+
     if es_transversal(user):
         return qs
-    qs = qs.filter(delegacion_id=funcionario.delegacion_id)
-    if "Administrador" in roles or "Coordinador" in roles:
-        return qs
+
+    qs = qs.filter(
+        compromisos__delegacion_id=funcionario.delegacion_id
+    )
+
+    if roles.intersection({"Administrador", "Coordinador"}):
+        return qs.distinct()
+
     if "gestor social" in cargo:
-        return qs.filter(Q(categoria_solicitud__icontains="social") | Q(funcionario=funcionario))
+        return qs.filter(
+            Q(categoria__icontains="social")
+            | Q(compromisos__funcionario=funcionario)
+        ).distinct()
+
     if "organizaciones comunitarias" in cargo:
-        return qs.filter(categoria_solicitud__icontains="organizacion")
+        return qs.filter(
+            categoria__icontains="organizacion"
+        ).distinct()
+
     if "coordinador de servicios comunitarios" in cargo:
-        return qs.filter(Q(categoria_solicitud__icontains="aseo") | Q(categoria_solicitud__icontains="ornato") | Q(categoria_solicitud__icontains="espacios") | Q(categoria_solicitud__icontains="servicios comunitarios"))
-    if "apoyo administrativo" in cargo or "gestion y planificacion" in cargo:
-        return qs
+        return qs.filter(
+            Q(categoria__icontains="aseo")
+            | Q(categoria__icontains="ornato")
+            | Q(categoria__icontains="espacios")
+            | Q(categoria__icontains="servicios comunitarios")
+        ).distinct()
+
+    if (
+        "apoyo administrativo" in cargo
+        or "gestion y planificacion" in cargo
+    ):
+        return qs.distinct()
+
     return qs.none()
 
 
 def puede_gestionar_solicitud(user, solicitud):
     if not getattr(user, "is_authenticated", False):
         return False
+
     if getattr(user, "is_superuser", False):
         return True
+
     funcionario = get_funcionario(user)
+
     if funcionario is None or not funcionario.activo:
         return False
-    if funcionario.delegacion_id != solicitud.delegacion_id and not es_transversal(user):
+
+    compromisos = solicitud.compromisos.all()
+
+    if not es_transversal(user):
+        compromisos = compromisos.filter(
+            delegacion_id=funcionario.delegacion_id
+        )
+
+    if not compromisos.exists():
         return False
-    if funcionario.pk == solicitud.funcionario_id:
+
+    if compromisos.filter(
+        funcionario=funcionario
+    ).exists():
         return True
-    roles = set(funcionario.roles.values_list("nombre_rol", flat=True))
-    if roles.intersection({"Administrador", "Coordinador", "Delegado"}):
+
+    roles = set(
+        funcionario.roles.values_list(
+            "nombre_rol",
+            flat=True,
+        )
+    )
+
+    if roles.intersection({
+        "Administrador",
+        "Coordinador",
+        "Delegado",
+    }):
         return True
-    cargo = unicodedata.normalize("NFKD", funcionario.cargo.nombre_cargo).encode("ascii", "ignore").decode().lower()
-    categoria = (solicitud.categoria_solicitud or "").lower()
+
+    cargo_nombre = (
+        funcionario.cargo.nombre_cargo
+        if funcionario.cargo_id
+        else ""
+    )
+
+    cargo = (
+        unicodedata.normalize("NFKD", cargo_nombre)
+        .encode("ascii", "ignore")
+        .decode()
+        .lower()
+    )
+
+    categoria = (solicitud.categoria or "").lower()
+
     if "gestor social" in cargo:
         return "social" in categoria
+
     if "organizaciones comunitarias" in cargo:
         return "organizacion" in categoria
+
     if "coordinador de servicios comunitarios" in cargo:
-        return any(x in categoria for x in ("aseo", "ornato", "espacios", "servicios comunitarios"))
+        return any(
+            palabra in categoria
+            for palabra in (
+                "aseo",
+                "ornato",
+                "espacios",
+                "servicios comunitarios",
+            )
+        )
+
     return False
 
 
-def cambiar_estado(compromiso, nuevo_estado, actor, observacion=""):
-    permitidos = dict(Compromiso.ESTADOS_SOLICITUD)
-    if nuevo_estado not in permitidos:
-        raise ValueError("Estado de solicitud no válido.")
+def cambiar_estado(
+    solicitud,
+    nuevo_estado,
+    actor,
+    observacion="",
+):
     transiciones = {
-        Compromiso.ESTADO_SOLICITUD_CREADO: {Compromiso.ESTADO_SOLICITUD_PENDIENTE},
-        Compromiso.ESTADO_SOLICITUD_PENDIENTE: {Compromiso.ESTADO_SOLICITUD_PROCESO},
-        Compromiso.ESTADO_SOLICITUD_PROCESO: {Compromiso.ESTADO_SOLICITUD_PENDIENTE, Compromiso.ESTADO_SOLICITUD_CONCLUIDO},
-        Compromiso.ESTADO_SOLICITUD_CONCLUIDO: set(),
+        SolicitudVecinal.ESTADO_CREADO: {
+            SolicitudVecinal.ESTADO_PENDIENTE,
+        },
+        SolicitudVecinal.ESTADO_PENDIENTE: {
+            SolicitudVecinal.ESTADO_PROCESO,
+        },
+        SolicitudVecinal.ESTADO_PROCESO: {
+            SolicitudVecinal.ESTADO_PENDIENTE,
+            SolicitudVecinal.ESTADO_CONCLUIDO,
+        },
+        SolicitudVecinal.ESTADO_CONCLUIDO: set(),
     }
-    with transaction.atomic():
-        compromiso = Compromiso.objects.select_for_update().get(pk=compromiso.pk)
-        anterior = compromiso.estado_solicitud
-        if nuevo_estado != anterior and nuevo_estado not in transiciones.get(anterior, set()):
-            raise ValueError("La transición de estado solicitada no está permitida.")
-        compromiso.estado_solicitud = nuevo_estado
-        compromiso.save(update_fields=["estado_solicitud"])
-        funcionario = get_funcionario(actor)
-        if funcionario is None:
-            raise ValueError("No se pudo identificar al funcionario que realiza el cambio.")
-        HistorialTransiciones.objects.create(compromiso=compromiso, funcionario=funcionario, estado_anterior=anterior, estado_nuevo=nuevo_estado, observacion=(observacion or "Cambio de estado").strip())
-    return compromiso
 
+    if nuevo_estado not in dict(SolicitudVecinal.ESTADOS):
+        raise ValueError("Estado de solicitud no válido.")
 
-def agregar_evento(compromiso, actor, observacion):
     funcionario = get_funcionario(actor)
-    if funcionario is None or not observacion.strip():
-        raise ValueError("El evento y el funcionario responsable son obligatorios.")
-    return HistorialTransiciones.objects.create(compromiso=compromiso, funcionario=funcionario, estado_anterior=compromiso.estado_solicitud, estado_nuevo=compromiso.estado_solicitud, observacion=observacion.strip())
+
+    if funcionario is None:
+        raise ValueError(
+            "No se pudo identificar al funcionario que realiza el cambio."
+        )
+
+    with transaction.atomic():
+        solicitud = (
+            SolicitudVecinal.objects
+            .select_for_update()
+            .get(pk=solicitud.pk)
+        )
+
+        anterior = solicitud.estado_solicitud
+
+        if nuevo_estado == anterior:
+            return solicitud
+
+        if nuevo_estado not in transiciones.get(anterior, set()):
+            raise ValueError(
+                "La transición de estado solicitada no está permitida."
+            )
+
+        if (
+            nuevo_estado == SolicitudVecinal.ESTADO_CONCLUIDO
+            and not (solicitud.solucion or "").strip()
+        ):
+            raise ValueError(
+                "Para concluir la solicitud debe registrar la solución."
+            )
+
+        equivalencias = {
+            SolicitudVecinal.ESTADO_PENDIENTE:
+                Compromiso.ESTADO_PENDIENTE,
+            SolicitudVecinal.ESTADO_PROCESO:
+                Compromiso.ESTADO_EN_PROCESO,
+            SolicitudVecinal.ESTADO_CONCLUIDO:
+                Compromiso.ESTADO_REALIZADO,
+        }
+
+        estado_compromiso = equivalencias.get(nuevo_estado)
+
+        if estado_compromiso:
+            from .services import CRUDCompromiso
+            from core.exceptions import ReglaNegocioError
+
+            for compromiso in solicitud.compromisos.select_related(
+                "funcionario",
+                "delegacion",
+                "periodo",
+                "item_medible",
+            ):
+                if compromiso.estado == estado_compromiso:
+                    continue
+
+                try:
+                    CRUDCompromiso.actualizar_estado(
+                        compromiso,
+                        estado_compromiso,
+                        observacion or (
+                            f"Estado actualizado desde la solicitud "
+                            f"vecinal #{solicitud.pk}."
+                        ),
+                        actor,
+                        sincronizar_solicitud=False,
+                    )
+                except ReglaNegocioError as exc:
+                    raise ValueError(str(exc)) from exc
+
+        solicitud.estado_solicitud = nuevo_estado
+        solicitud.save(update_fields=["estado_solicitud"])
+
+        HistorialTransiciones.objects.create(
+            compromiso=solicitud.compromisos.order_by(
+                "id_compromiso"
+            ).first(),
+            funcionario=funcionario,
+            estado_anterior=anterior,
+            estado_nuevo=nuevo_estado,
+            observacion=(
+                observacion.strip()
+                or "Cambio de estado de solicitud vecinal."
+            ),
+        )
+
+    return solicitud
+
+
+def actualizar_datos_solicitud(
+    solicitud,
+    solucion,
+    fecha_propuesta,
+    actor,
+):
+    funcionario = get_funcionario(actor)
+
+    if funcionario is None:
+        raise ValueError(
+            "No se pudo identificar al funcionario."
+        )
+
+    with transaction.atomic():
+        solicitud = (
+            SolicitudVecinal.objects
+            .select_for_update()
+            .get(pk=solicitud.pk)
+        )
+
+        if solicitud.estado_solicitud == SolicitudVecinal.ESTADO_CONCLUIDO:
+            raise ValueError(
+                "La solicitud concluida no admite modificaciones."
+            )
+
+        solucion_anterior = solicitud.solucion
+        fecha_anterior = solicitud.fecha_propuesta_solucion
+
+        solicitud.solucion = (solucion or "").strip()
+        solicitud.fecha_propuesta_solucion = fecha_propuesta
+
+        solicitud.save(update_fields=[
+            "solucion",
+            "fecha_propuesta_solucion",
+        ])
+
+        if fecha_propuesta != fecha_anterior:
+            from measurement.models import Periodo
+
+            for compromiso in solicitud.compromisos.select_related(
+                "periodo"
+            ):
+                compromiso.fecha_comprometida = (
+                    fecha_propuesta or timezone.localdate()
+                )
+                compromiso.periodo = Periodo.objects.para_fecha(
+                    compromiso.fecha_comprometida
+                )
+                compromiso.save(update_fields=[
+                    "fecha_comprometida",
+                    "periodo",
+                ])
+
+        if (
+            solucion_anterior != solicitud.solucion
+            or fecha_anterior != fecha_propuesta
+        ):
+            detalle = (
+                "Se actualizaron los datos de la solicitud. "
+                f"Solución anterior: {solucion_anterior or 'Sin asignar'}. "
+                f"Nueva solución: {solicitud.solucion or 'Sin asignar'}. "
+                f"Fecha anterior: {fecha_anterior or 'Sin definir'}. "
+                f"Nueva fecha: {fecha_propuesta or 'Sin definir'}."
+            )
+
+            agregar_evento(
+                solicitud,
+                actor,
+                detalle,
+            )
+
+    return solicitud
+
+
+def agregar_evento(solicitud, actor, observacion):
+    funcionario = get_funcionario(actor)
+    observacion = (observacion or "").strip()
+
+    if funcionario is None or not observacion:
+        raise ValueError(
+            "El evento y el funcionario responsable son obligatorios."
+        )
+
+    compromisos = list(
+        solicitud.compromisos.all().order_by("id_compromiso")
+    )
+
+    if not compromisos:
+        raise ValueError(
+            "La solicitud no tiene compromisos asociados."
+        )
+
+    eventos = []
+
+    for compromiso in compromisos:
+        eventos.append(
+            HistorialTransiciones.objects.create(
+                compromiso=compromiso,
+                funcionario=funcionario,
+                estado_anterior=compromiso.estado,
+                estado_nuevo=compromiso.estado,
+                observacion=observacion,
+            )
+        )
+
+    return eventos[0]

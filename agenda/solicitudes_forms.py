@@ -5,7 +5,7 @@ from django.utils import timezone
 from core.forms import BootstrapFormMixin
 from organizations.models import Delegacion
 
-from .models import Compromiso
+from .models import SolicitudVecinal
 from .solicitudes_services import (
     normalizar_rut,
     rut_valido,
@@ -17,7 +17,6 @@ class SolicitudVecinalForm(
     BootstrapFormMixin,
     forms.Form,
 ):
-
     nombre_solicitante = forms.CharField(
         max_length=150,
         required=False,
@@ -39,7 +38,7 @@ class SolicitudVecinalForm(
     )
 
     relacion_vecinal = forms.ChoiceField(
-        choices=Compromiso.RELACIONES_VECINALES,
+        choices=SolicitudVecinal.RELACIONES_VECINALES,
         label="Relación con la junta de vecinos",
     )
 
@@ -75,7 +74,7 @@ class SolicitudVecinalForm(
     )
 
     tipo_solicitud = forms.ChoiceField(
-        choices=Compromiso.TIPOS_SOLICITUD,
+        choices=SolicitudVecinal.TIPOS,
         label="Tipo de solicitud",
     )
 
@@ -132,34 +131,32 @@ class SolicitudVecinalForm(
         )
 
     def clean_rut_solicitante(self):
-        rut_original = self.cleaned_data.get(
+        original = self.cleaned_data.get(
             "rut_solicitante",
             "",
         )
 
-        rut = normalizar_rut(rut_original)
+        rut = normalizar_rut(original)
 
-        if not rut or not rut_valido(rut_original):
+        if not rut or not rut_valido(original):
             raise forms.ValidationError(
-                "El RUT ingresado no es válido. "
-                "Ingrese solo números y un dígito verificador "
-                "numérico o K."
+                "El RUT ingresado no es válido."
             )
 
         return rut
 
     def clean_rut_menor(self):
-        rut_original = self.cleaned_data.get(
+        original = self.cleaned_data.get(
             "rut_menor",
             "",
         )
 
-        if not rut_original:
+        if not original:
             return ""
 
-        rut = normalizar_rut(rut_original)
+        rut = normalizar_rut(original)
 
-        if not rut or not rut_valido(rut_original):
+        if not rut or not rut_valido(original):
             raise forms.ValidationError(
                 "El RUT del menor no es válido."
             )
@@ -179,8 +176,7 @@ class SolicitudVecinalForm(
 
         tipo = data.get("tipo_solicitud")
 
-        if tipo == Compromiso.TIPO_GENERAL:
-
+        if tipo == SolicitudVecinal.TIPO_GENERAL:
             if not (
                 data.get("nombre_solicitante") or ""
             ).strip():
@@ -203,15 +199,13 @@ class SolicitudVecinalForm(
                     "Seleccione la delegación municipal.",
                 )
 
-        if tipo == Compromiso.TIPO_REGALO:
-
+        if tipo == SolicitudVecinal.TIPO_REGALO:
             rut = data.get("rut_solicitante")
 
             if rut and not tutor_registrado(rut):
                 self.add_error(
                     "rut_solicitante",
-                    "El adulto/tutor no está registrado en el "
-                    "padrón social del sistema.",
+                    "El adulto/tutor no está registrado en el padrón social.",
                 )
 
             rut_menor = data.get("rut_menor")
@@ -219,16 +213,15 @@ class SolicitudVecinalForm(
             if not rut_menor:
                 self.add_error(
                     "rut_menor",
-                    "Ingrese un RUT válido del menor.",
+                    "Ingrese el RUT del menor.",
                 )
 
-            elif Compromiso.objects.filter(
+            elif SolicitudVecinal.objects.filter(
                 rut_menor=rut_menor
             ).exists():
                 self.add_error(
                     "rut_menor",
-                    "Este menor ya tiene un regalo registrado "
-                    "en el sistema.",
+                    "Este menor ya tiene un regalo registrado.",
                 )
 
             if not (

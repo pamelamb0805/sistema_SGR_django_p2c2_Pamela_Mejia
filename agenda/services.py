@@ -293,10 +293,14 @@ class CRUDCompromiso:
         nuevo_estado,
         observacion="",
         actor=None,
+        sincronizar_solicitud=True,
     ):
         """
-        Actualiza el estado del compromiso, conserva la transición,
-        recalcula resultados cuando corresponde y publica el evento.
+        Actualiza el estado del compromiso.
+
+        Si pertenece a una solicitud vecinal, sincroniza el estado
+        de la solicitud, salvo que el cambio provenga del servicio
+        de gestión de solicitudes.
         """
         _exigir_permiso(
             actor,
@@ -306,6 +310,11 @@ class CRUDCompromiso:
 
         observacion = (observacion or "").strip()
         autor = get_funcionario(actor)
+
+        if autor is None:
+            raise ReglaNegocioError(
+                "No se pudo identificar al funcionario que realiza el cambio."
+            )
 
         with transaction.atomic():
             c = Compromiso.objects.select_for_update().get(
@@ -326,7 +335,8 @@ class CRUDCompromiso:
                 )
 
             if nuevo_estado not in Compromiso.TRANSICIONES.get(
-                anterior, ()
+                anterior,
+                (),
             ):
                 raise ReglaNegocioError(
                     f"Transición no permitida: de «{anterior}» "
@@ -375,7 +385,7 @@ class CRUDCompromiso:
                 )
 
             c.estado = nuevo_estado
-            
+
             if observacion:
                 c.observacion = observacion
 
@@ -412,6 +422,51 @@ class CRUDCompromiso:
 
             if toca_resultados:
                 _recalcular(c)
+
+            if sincronizar_solicitud and c.solicitud_vecinal_id:
+                from .models import SolicitudVecinal
+
+                solicitud = (
+                    SolicitudVecinal.objects
+                    .select_for_update()
+                    .get(pk=c.solicitud_vecinal_id)
+                )
+
+                estados_compromisos = list(
+                    solicitud.compromisos.values_list(
+                        "estado",
+                        flat=True,
+                    )
+                )
+
+                if estados_compromisos and all(
+                    estado == Compromiso.ESTADO_REALIZADO
+                    for estado in estados_compromisos
+                ):
+                    estado_solicitud = (
+                        SolicitudVecinal.ESTADO_CONCLUIDO
+                    )
+
+                elif Compromiso.ESTADO_EN_PROCESO in estados_compromisos:
+                    estado_solicitud = (
+                        SolicitudVecinal.ESTADO_PROCESO
+                    )
+
+                elif Compromiso.ESTADO_PENDIENTE in estados_compromisos:
+                    estado_solicitud = (
+                        SolicitudVecinal.ESTADO_PENDIENTE
+                    )
+
+                else:
+                    estado_solicitud = (
+                        SolicitudVecinal.ESTADO_CREADO
+                    )
+
+                if solicitud.estado_solicitud != estado_solicitud:
+                    solicitud.estado_solicitud = estado_solicitud
+                    solicitud.save(
+                        update_fields=["estado_solicitud"]
+                    )
 
             _notificar_crud(
                 "compromiso",

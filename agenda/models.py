@@ -215,6 +215,62 @@ class SolicitudVecinal(models.Model):
         if errores:
             raise ValidationError(errores)
 
+    @property
+    def compromiso_principal(self):
+        compromisos = list(
+            self.compromisos.select_related(
+                "funcionario",
+                "delegacion",
+                "item_medible",
+                "periodo",
+            ).order_by("id_compromiso")
+        )
+        return compromisos[0] if compromisos else None
+
+    @property
+    def delegacion(self):
+        compromiso = self.compromiso_principal
+        return compromiso.delegacion if compromiso else None
+
+    @property
+    def funcionario(self):
+        compromiso = self.compromiso_principal
+        return compromiso.funcionario if compromiso else None
+
+    @property
+    def solicitante(self):
+        compromiso = self.compromiso_principal
+        return compromiso.solicitante if compromiso else ""
+
+    @property
+    def territorio(self):
+        compromiso = self.compromiso_principal
+        return compromiso.territorio if compromiso else ""
+
+    @property
+    def categoria_solicitud(self):
+        return self.categoria
+
+    @property
+    def tipo_solicitud(self):
+        return self.tipo
+
+    @property
+    def descripcion_solicitud(self):
+        return self.descripcion
+
+    @property
+    def historial(self):
+        return HistorialTransiciones.objects.filter(
+            compromiso__solicitud_vecinal=self
+        ).select_related(
+            "funcionario",
+            "compromiso",
+        ).order_by(
+            "fecha",
+            "id_cambio",
+        )
+
 class Compromiso(models.Model):
     ESTADO_INGRESADO = "Ingresado"
     ESTADO_PENDIENTE = "Pendiente"
