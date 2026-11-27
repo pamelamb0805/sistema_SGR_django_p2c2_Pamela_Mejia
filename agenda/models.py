@@ -35,6 +35,186 @@ class CompromisoQuerySet(models.QuerySet):
         return self.abiertos().filter(fecha_comprometida__gte=hoy, fecha_comprometida__lte=hoy + timedelta(days=dias))
 
 
+class SolicitudVecinal(models.Model):
+    """
+    Solicitud vecinal independiente del compromiso de agenda.
+
+    Una solicitud puede originar uno o varios compromisos.
+    La asignación de responsable y delegación corresponde
+    a Compromiso, según el modelo entidad-relación.
+    """
+
+    CANAL_PRESENCIAL = "Presencial"
+    CANALES = [
+        (CANAL_PRESENCIAL, "Presencial"),
+    ]
+
+    TIPO_GENERAL = "General"
+    TIPO_REGALO = "Regalo / evento día festivo"
+
+    TIPOS = [
+        (TIPO_GENERAL, "Solicitud vecinal"),
+        (TIPO_REGALO, TIPO_REGALO),
+    ]
+
+    ESTADO_CREADO = "Creado"
+    ESTADO_PENDIENTE = "Pendiente"
+    ESTADO_PROCESO = "Proceso"
+    ESTADO_CONCLUIDO = "Concluido"
+
+    ESTADOS = [
+        (ESTADO_CREADO, ESTADO_CREADO),
+        (ESTADO_PENDIENTE, ESTADO_PENDIENTE),
+        (ESTADO_PROCESO, ESTADO_PROCESO),
+        (ESTADO_CONCLUIDO, ESTADO_CONCLUIDO),
+    ]
+
+    RELACIONES_VECINALES = [
+        ("Delegado", "Delegado"),
+        ("Presidente", "Presidente de junta de vecinos"),
+        ("Secretario", "Secretario de junta de vecinos"),
+        ("Miembro", "Ciudadano miembro de junta de vecinos"),
+    ]
+
+    id_solicitud_vecinal = models.AutoField(
+        primary_key=True,
+    )
+
+    rut_solicitante = models.CharField(
+        max_length=12,
+        blank=True,
+        default="",
+        db_index=True,
+    )
+
+    relacion_vecinal = models.CharField(
+        max_length=20,
+        choices=RELACIONES_VECINALES,
+        blank=True,
+        default="",
+    )
+
+    canal = models.CharField(
+        max_length=20,
+        choices=CANALES,
+        default=CANAL_PRESENCIAL,
+    )
+
+    tipo = models.CharField(
+        max_length=40,
+        choices=TIPOS,
+        blank=True,
+        default="",
+    )
+
+    categoria = models.CharField(
+        max_length=80,
+        blank=True,
+        default="",
+        db_index=True,
+    )
+
+    descripcion = models.TextField(
+        blank=True,
+        default="",
+    )
+
+    solucion = models.TextField(
+        blank=True,
+        default="",
+    )
+
+    estado_solicitud = models.CharField(
+        max_length=12,
+        choices=ESTADOS,
+        default=ESTADO_CREADO,
+        db_index=True,
+    )
+
+    fecha_creacion = models.DateTimeField(
+        default=timezone.now,
+        editable=False,
+        db_index=True,
+    )
+
+    fecha_propuesta_solucion = models.DateField(
+        null=True,
+        blank=True,
+    )
+
+    rut_menor = models.CharField(
+        max_length=12,
+        unique=True,
+        null=True,
+        blank=True,
+    )
+
+    nombre_menor = models.CharField(
+        max_length=150,
+        blank=True,
+        default="",
+    )
+
+    class Meta:
+        db_table = "solicitud_vecinal"
+        ordering = [
+            "-fecha_creacion",
+            "id_solicitud_vecinal",
+        ]
+        verbose_name = "solicitud vecinal"
+        verbose_name_plural = "solicitudes vecinales"
+
+    def __str__(self):
+        return (
+            f"Solicitud vecinal #{self.pk} "
+            f"({self.tipo or 'Sin tipo'})"
+        )
+
+    def save(self, *args, **kwargs):
+        if not self.rut_menor:
+            self.rut_menor = None
+
+        if self.pk:
+            original = (
+                type(self).objects
+                .filter(pk=self.pk)
+                .values_list("fecha_creacion", flat=True)
+                .first()
+            )
+
+            if original is not None:
+                self.fecha_creacion = original
+
+        super().save(*args, **kwargs)
+
+    def clean(self):
+        errores = {}
+
+        if self.tipo == self.TIPO_REGALO:
+            if not self.rut_solicitante:
+                errores["rut_solicitante"] = (
+                    "El RUT del adulto/tutor es obligatorio."
+                )
+
+            if not self.rut_menor:
+                errores["rut_menor"] = (
+                    "El RUT del menor es obligatorio."
+                )
+
+            if not (self.nombre_menor or "").strip():
+                errores["nombre_menor"] = (
+                    "El nombre del menor es obligatorio."
+                )
+
+        elif self.rut_menor:
+            errores["rut_menor"] = (
+                "El RUT del menor solo se utiliza "
+                "en solicitudes de regalo."
+            )
+
+        if errores:
+            raise ValidationError(errores)
+
 class Compromiso(models.Model):
     ESTADO_INGRESADO = "Ingresado"
     ESTADO_PENDIENTE = "Pendiente"
@@ -73,6 +253,15 @@ class Compromiso(models.Model):
                                      verbose_name="ítem medible")
     periodo = models.ForeignKey(Periodo, on_delete=models.PROTECT, db_column="id_periodo",
                                 related_name="compromisos", null=True, blank=True, editable=False)
+
+    solicitud_vecinal = models.ForeignKey(
+        "agenda.SolicitudVecinal",
+        on_delete=models.PROTECT,
+        db_column="id_solicitud_vecinal",
+        related_name="compromisos",
+        null=True,
+        blank=True,
+    )
 
     # Extensión de COMPROMISO para solicitudes vecinales. No crea una entidad
     # adicional y mantiene las FK del diagrama E-R original.
