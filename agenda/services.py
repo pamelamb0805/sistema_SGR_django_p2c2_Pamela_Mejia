@@ -51,10 +51,23 @@ def _exigir_permiso(actor, permiso, mensaje):
         raise ReglaNegocioError(mensaje)
 
 def compromisos_visibles(user):
-    """Agenda colectiva: todo el equipo de la delegación la ve; Administrador/Coordinador ven todas."""
-    qs = Compromiso.objects.select_related("funcionario", "delegacion", "item_medible", "periodo").filter(tipo_solicitud="")
-    return filtrar_por_ambito(qs, user, "delegacion_id")
+    """
+    Agenda colectiva:
+    muestra compromisos normales y compromisos vinculados
+    a solicitudes vecinales, respetando el ámbito autorizado.
+    """
+    qs = Compromiso.objects.select_related(
+        "funcionario",
+        "delegacion",
+        "item_medible",
+        "periodo",
+    )
 
+    return filtrar_por_ambito(
+        qs,
+        user,
+        "delegacion_id",
+    )
 
 def _es_responsable(actor, compromiso):
     f = get_funcionario(actor)

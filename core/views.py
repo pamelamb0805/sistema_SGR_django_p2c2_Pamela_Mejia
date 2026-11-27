@@ -1027,12 +1027,6 @@ def dashboard(request):
                 else "Sistema / técnico"
             )
 
-
-        datos["alertas_operativas"] = construir_alertas_operativas(
-        user=user,
-        periodo=periodo,
-        hoy=hoy,
-    )
     return render(
         request,
         "core/dashboard.html",

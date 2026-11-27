@@ -511,93 +511,8 @@
     </div>
     {% endif %}
 
+
     
-   
-    <!-- ALERTAS OPERATIVAS RF-037 -->
-
-    {% if d.alertas_operativas %}
-    <section class="sgr-alerts">
-
-        <div class="sgr-alerts-heading">
-            <h3>
-                <i class="bi bi-bell-fill text-danger me-1"></i>
-                Alertas operativas
-            </h3>
-
-            <span class="badge text-bg-danger">
-                {{ d.alertas_operativas|length }} pendientes
-            </span>
-        </div>
-
-        <div class="sgr-alert-list">
-
-            {% for alerta in d.alertas_operativas %}
-
-            <div class="sgr-alert-item alert-{{ alerta.nivel }}">
-
-                <i class="bi bi-exclamation-triangle-fill sgr-alert-icon"></i>
-
-                <div class="sgr-alert-content">
-
-                    <div class="sgr-alert-title">
-                        {{ alerta.titulo }}
-                    </div>
-
-                    <div>
-                        {{ alerta.motivo }}
-                    </div>
-
-                    <div class="sgr-alert-meta">
-                        <i class="bi bi-person me-1"></i>
-                        Responsable: {{ alerta.responsable }}
-
-                        <span class="mx-2">·</span>
-
-                        <i class="bi bi-calendar3 me-1"></i>
-                        Fecha: {{ alerta.fecha|date:"d/m/Y" }}
-
-                        <span class="mx-2">·</span>
-
-                        <span class="badge text-bg-warning">
-                            {{ alerta.estado }}
-                        </span>
-                    </div>
-
-                </div>
-
-                <div class="d-flex flex-column gap-1 sgr-alert-action">
-
-                    {% if alerta.url %}
-                    <a href="{{ alerta.url }}"
-                    class="btn btn-sm btn-outline-dark">
-                        Revisar
-                        <i class="bi bi-arrow-right ms-1"></i>
-                    </a>
-                    {% endif %}
-
-                    <form method="post"
-                        action="{% url 'marcar_alerta_atendida' alerta.pk %}">
-                        {% csrf_token %}
-
-                        <button type="submit"
-                                class="btn btn-sm btn-success w-100">
-                            <i class="bi bi-check-circle me-1"></i>
-                            Marcar atendida
-                        </button>
-                    </form>
-
-                </div>
-
-            </div>
-
-            {% endfor %}
-
-        </div>
-
-    </section>
-    {% endif %}
-
-
     <section class="sgr-welcome">
         <div>
             <span class="sgr-welcome-tag">SISTEMA DE GESTIÓN DE RESULTADOS</span>
@@ -707,6 +622,18 @@
            class="sgr-quick-link">
             <i class="bi bi-gear"></i>
             Panel técnico
+
+        <a href="{% url 'solicitudes:publica' %}"
+            class="sgr-quick-link">
+                <i class="bi bi-megaphone"></i>
+                Ingresar solicitud vecinal
+            </a>
+
+            <a href="{% url 'solicitudes:lista' %}"
+            class="sgr-quick-link">
+                <i class="bi bi-inbox"></i>
+                Seguimiento de solicitudes
+            </a>
         </a>
         {% endif %}
 

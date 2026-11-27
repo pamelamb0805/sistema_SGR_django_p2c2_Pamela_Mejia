@@ -32,33 +32,96 @@ def _limitar_publico(request, accion, limite=12):
     return actual <= limite
 
 
+@login_required
 def solicitud_publica(request):
     if request.method == "POST":
         if not _limitar_publico(request, "crear", 8):
-            return render(request, "solicitudes/solicitud_publica.html", {"form": SolicitudVecinalForm(request.POST), "error_seguridad": "Se alcanzó el límite temporal de envíos. Intente más tarde.", "tutor_verificado": request.session.get("sgr_tutor_verificado")}, status=429)
+            return render(
+                request,
+                "solicitudes/solicitud_publica.html",
+                {
+                    "form": SolicitudVecinalForm(request.POST),
+                    "error_seguridad": (
+                        "Se alcanzó el límite temporal de envíos. "
+                        "Intente más tarde."
+                    ),
+                },
+                status=429,
+            )
+
         form = SolicitudVecinalForm(request.POST)
+
         if form.is_valid():
             if form.cleaned_data["tipo_solicitud"] == Compromiso.TIPO_REGALO:
-                verificado = request.session.get("sgr_tutor_verificado", {})
+                verificado = request.session.get(
+                    "sgr_tutor_verificado", {}
+                )
+
                 if verificado.get("rut") != form.cleaned_data["rut_solicitante"]:
-                    form.add_error("rut_solicitante", "Primero debe verificar el RUT del adulto/tutor.")
-                    return render(request, "solicitudes/solicitud_publica.html", {"form": form, "tutor_verificado": request.session.get("sgr_tutor_verificado")})
-                menor_verificado = request.session.get("sgr_menor_verificado", {})
-                if menor_verificado.get("rut") != normalizar_rut(form.cleaned_data.get("rut_menor", "")):
-                    form.add_error("rut_menor", "Primero debe consultar el RUT del menor.")
-                    return render(request, "solicitudes/solicitud_publica.html", {"form": form, "tutor_verificado": request.session.get("sgr_tutor_verificado")})
+                    form.add_error(
+                        "rut_solicitante",
+                        "Primero debe verificar el RUT del adulto/tutor.",
+                    )
+                    return render(
+                        request,
+                        "solicitudes/solicitud_publica.html",
+                        {"form": form},
+                    )
+
+                menor_verificado = request.session.get(
+                    "sgr_menor_verificado", {}
+                )
+
+                if menor_verificado.get("rut") != normalizar_rut(
+                    form.cleaned_data.get("rut_menor", "")
+                ):
+                    form.add_error(
+                        "rut_menor",
+                        "Primero debe consultar el RUT del menor.",
+                    )
+                    return render(
+                        request,
+                        "solicitudes/solicitud_publica.html",
+                        {"form": form},
+                    )
+
             try:
                 compromiso = crear_solicitud(form.cleaned_data)
-            except (ValueError, IntegrityError, ValidationError) as exc:
-                form.add_error(None, "No fue posible registrar la solicitud. Verifique los datos y si el menor ya fue inscrito.")
+
+            except (ValueError, IntegrityError, ValidationError):
+                form.add_error(
+                    None,
+                    "No fue posible registrar la solicitud. "
+                    "Verifique los datos y si el menor ya fue inscrito.",
+                )
+
             else:
                 request.session.pop("sgr_tutor_verificado", None)
                 request.session.pop("sgr_menor_verificado", None)
-                return render(request, "solicitudes/solicitud_publica.html", {"form": SolicitudVecinalForm(), "folio": compromiso.pk})
+
+                messages.success(
+                    request,
+                    "La solicitud vecinal fue registrada correctamente.",
+                )
+
+                return redirect(
+                    "solicitudes:detalle",
+                    pk=compromiso.pk,
+                )
+
     else:
         form = SolicitudVecinalForm()
-    return render(request, "solicitudes/solicitud_publica.html", {"form": form, "tutor_verificado": request.session.get("sgr_tutor_verificado")})
 
+    return render(
+        request,
+        "solicitudes/solicitud_publica.html",
+        {
+            "form": form,
+            "tutor_verificado": request.session.get(
+                "sgr_tutor_verificado"
+            ),
+        },
+    )
 
 @require_POST
 def verificar_tutor(request):
