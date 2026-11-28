@@ -39,8 +39,12 @@ class DashboardDetailRouteTests(TestCase):
             funcionario=cls.funcionario,
         )
 
+
     def test_detalle_dashboard_envia_compromiso_a_agenda_y_solicitud_a_su_vista(self):
+        from agenda.models import SolicitudVecinal
+
         fecha = timezone.localdate() + timedelta(days=3)
+
         compromiso = Compromiso.objects.create(
             origen="Solicitud interna",
             solicitante="Vecino de prueba",
@@ -50,7 +54,18 @@ class DashboardDetailRouteTests(TestCase):
             delegacion=self.delegacion,
             estado=Compromiso.ESTADO_INGRESADO,
         )
-        solicitud = Compromiso.objects.create(
+
+        solicitud = SolicitudVecinal.objects.create(
+            rut_solicitante="12345678-5",
+            relacion_vecinal="Presidente",
+            canal=SolicitudVecinal.CANAL_PRESENCIAL,
+            tipo=SolicitudVecinal.TIPO_GENERAL,
+            categoria="Organizaciones comunitarias",
+            descripcion="Solicitud de prueba",
+            estado_solicitud=SolicitudVecinal.ESTADO_CREADO,
+        )
+
+        compromiso_vecinal = Compromiso.objects.create(
             origen="Solicitud vecinal",
             solicitante="Vecina de prueba",
             territorio="Centro",
@@ -58,25 +73,44 @@ class DashboardDetailRouteTests(TestCase):
             funcionario=self.funcionario,
             delegacion=self.delegacion,
             estado=Compromiso.ESTADO_INGRESADO,
-            tipo_solicitud=Compromiso.TIPO_GENERAL,
-            categoria_solicitud="Organizaciones comunitarias",
-            descripcion_solicitud="Solicitud de prueba",
+            solicitud_vecinal=solicitud,
         )
 
         self.client.force_login(self.usuario)
+
         respuesta = self.client.get(
             reverse("dashboard_detalle"),
-            {"tipo": "agenda", "etiqueta": Compromiso.ESTADO_INGRESADO},
+            {
+                "tipo": "agenda",
+                "etiqueta": Compromiso.ESTADO_INGRESADO,
+            },
         )
 
         self.assertEqual(respuesta.status_code, 200)
+
         filas = respuesta.json()["filas"]
-        urls = {fila["codigo"]: fila["url"] for fila in filas}
+        urls = {
+            fila["codigo"]: fila["url"]
+            for fila in filas
+        }
+
         self.assertEqual(
             urls[f"COMP-{compromiso.pk}"],
-            reverse("agenda:compromiso_detail", args=[compromiso.pk]),
+            reverse(
+                "agenda:compromiso_detail",
+                args=[compromiso.pk],
+            ),
         )
+
         self.assertEqual(
             urls[f"SOL-{solicitud.pk}"],
-            reverse("solicitudes:detalle", args=[solicitud.pk]),
+            reverse(
+                "solicitudes:detalle",
+                args=[solicitud.pk],
+            ),
+        )
+
+        self.assertNotIn(
+            f"COMP-{compromiso_vecinal.pk}",
+            urls,
         )

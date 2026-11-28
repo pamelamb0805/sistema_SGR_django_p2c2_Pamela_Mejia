@@ -418,31 +418,69 @@ def dashboard_detalle(request):
             )
 
     # 4. Compromisos por estado.
+    
+    # 4. Compromisos y solicitudes vecinales por estado.
     elif tipo == "agenda":
-        qs = _compromisos_dashboard(
-            user,
-            funcionario,
-        ).filter(
-            estado=etiqueta,
+        qs = (
+            _compromisos_dashboard(
+                user,
+                funcionario,
+            )
+            .filter(estado=etiqueta)
+            .select_related(
+                "funcionario",
+                "delegacion",
+                "solicitud_vecinal",
+            )
+            .order_by("-fecha_comprometida")
         )
 
-        filas = [
-            _fila(
-                f"COMP-{compromiso.pk}",
-                compromiso.origen,
-                compromiso.funcionario.nombre,
-                compromiso.delegacion.nombre,
-                compromiso.fecha_comprometida,
-                compromiso.estado,
-                reverse(
-                    "agenda:compromiso_detail",
-                    args=[compromiso.pk],
-                ),
+        filas = []
+        solicitudes_incluidas = set()
+
+        for compromiso in qs[:300]:
+            solicitud = compromiso.solicitud_vecinal
+
+            # Los compromisos internos se muestran como COMP.
+            if solicitud is None:
+                filas.append(
+                    _fila(
+                        f"COMP-{compromiso.pk}",
+                        compromiso.origen,
+                        compromiso.funcionario.nombre,
+                        compromiso.delegacion.nombre,
+                        compromiso.fecha_comprometida,
+                        compromiso.estado,
+                        reverse(
+                            "agenda:compromiso_detail",
+                            args=[compromiso.pk],
+                        ),
+                    )
+                )
+                continue
+
+            # Una solicitud puede originar varios compromisos.
+            # En el dashboard se muestra una sola fila SOL por solicitud.
+            if solicitud.pk in solicitudes_incluidas:
+                continue
+
+            solicitudes_incluidas.add(solicitud.pk)
+
+            filas.append(
+                _fila(
+                    f"SOL-{solicitud.pk}",
+                    solicitud.descripcion or solicitud.categoria,
+                    compromiso.funcionario.nombre,
+                    compromiso.delegacion.nombre,
+                    solicitud.fecha_creacion.date(),
+                    solicitud.estado_solicitud,
+                    reverse(
+                        "solicitudes:detalle",
+                        args=[solicitud.pk],
+                    ),
+                )
             )
-            for compromiso in qs.order_by(
-                "-fecha_comprometida"
-            )[:100]
-        ]
+
 
     # 5. Compromisos por trabajo.
     elif tipo == "trabajo":
